@@ -37,7 +37,45 @@ requires = ["poetry>=0.12"]
 build-backend = "poetry.masonry.api"
 
 [tool.black]
-line-length = 100
+line-length = 88
+target-version = ['py311', 'py312']
+exclude = '''
+/(
+    \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.pytest_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+  | venv
+)/
+'''
+
+[tool.flake8]
+max-line-length = 88
+max-complexity = 18
+
+# Ignore some warnings that are incompatible with black
+ignore = [
+    "E203",  # whitespace before `:`
+    "E266",  # too many leading `#` for block comment
+    "W503",  # line break before binary operator
+]
+
+exclude = [
+    ".git",
+    "__pycache__",
+    "_build",
+    "build",
+    "dist",
+    "venv",
+]
+
 
 [tool.isort]
 profile = "hug"
