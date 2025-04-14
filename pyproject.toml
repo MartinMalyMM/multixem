@@ -5,9 +5,13 @@ description = "Refinement pipeline for multiple data sets in structure biology"
 authors = ["Martin Maly <martin.maly.mm@email.cz>"]
 license = "MIT"
 readme = "README.md"
+packages = [{ include = "multixem" }]
+
+[tool.poetry.scripts]
+multixem = "multixem.run:main"
 
 [tool.poetry.dependencies]
-python = ">=3.7"
+python = ">=3.7,<4.0"
 
 [tool.poetry.dev-dependencies]
 vulture = ">=1.0"
