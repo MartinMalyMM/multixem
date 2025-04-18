@@ -1,4 +1,5 @@
 # coding: utf-8
+import os
 import argparse
 import gemmi
 import pandas
@@ -167,6 +168,7 @@ def merge_in_groups(unmerged, n_batches_in_group, prefix):
 
 
 def main():
+    print("Running multixem version:", __version__)
     parser = create_parser()
     args = parser.parse_args()
     print("Arguments parsed:", args)
@@ -179,13 +181,16 @@ def main():
     else:
         prefix = ""
 
+    os.mkdir("multixem_proc")
+    os.chdir("multixem_proc")
+    print("Current working directory:", os.getcwd())
+
     if args.hklin_unmerged:
         print("Unmerged diffraction data:", args.hklin_unmerged)
         # TODO: select automatically the number of batches in group (now default 60)
         n_batches_per_group = args.n_batches
         print("Number of batches in merging group:", n_batches_per_group)
         merge_in_groups(args.hklin_unmerged, n_batches_per_group, prefix)
-        pass
 
 
 if __name__ == "__main__":
