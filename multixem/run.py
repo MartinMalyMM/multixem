@@ -399,6 +399,14 @@ def compare_mtzs_fi(mtzs_fi, n_expected=0):
             )
 
         bins_stats_df = pandas.DataFrame(bins_stats)
+        # Calculate weighted average of cc over bins
+        ccF_iso_avg = (
+            bins_stats_df["ccF_iso"] * bins_stats_df["count"]
+        ).sum() / bins_stats_df["count"].sum()
+        ccI_iso_avg = (
+            bins_stats_df["ccI_iso"] * bins_stats_df["count"]
+        ).sum() / bins_stats_df["count"].sum()
+        cc_iso_avg_list = [ccF_iso_avg, ccI_iso_avg]
         mtz_fi1_base = os.path.basename(mtz_fi1)
         mtz_fi2_base = os.path.basename(mtz_fi2)
         bins_stats_df.to_csv(
@@ -408,14 +416,16 @@ def compare_mtzs_fi(mtzs_fi, n_expected=0):
             float_format="%.4f",
         )
         # pprint.pprint(bins_stats)
-        return n_refl_list
+        return n_refl_list, cc_iso_avg_list
 
     n_refl_matrix = numpy.zeros((len(mtzs_fi), len(mtzs_fi)), dtype=int)
     ratio_refl_matrix = numpy.identity(len(mtzs_fi), dtype=float)
+    ccF_iso_matrix = numpy.identity(len(mtzs_fi), dtype=float)
+    ccI_iso_matrix = numpy.identity(len(mtzs_fi), dtype=float)
     for i in range(len(mtzs_fi)):
         for j in range(i + 1, len(mtzs_fi)):
             # print(i, j)
-            n_refl_list = compare_mtz_fi_pair(mtzs_fi[i], mtzs_fi[j])
+            n_refl_list, cc_iso_avg_list = compare_mtz_fi_pair(mtzs_fi[i], mtzs_fi[j])
             if i == 0:
                 n_refl_matrix[j, j] = n_refl_list[1]
                 if j == 1:
@@ -426,6 +436,10 @@ def compare_mtzs_fi(mtzs_fi, n_expected=0):
             ratio_refl_matrix[i, j] = n_refl_list[2] / n_refl_list[0]
             # No. reflections in common / No. reflections in the second file
             ratio_refl_matrix[j, i] = n_refl_list[2] / n_refl_list[1]
+            ccF_iso_matrix[i, j] = cc_iso_avg_list[0]
+            ccF_iso_matrix[j, i] = cc_iso_avg_list[0]
+            ccI_iso_matrix[i, j] = cc_iso_avg_list[1]
+            ccI_iso_matrix[j, i] = cc_iso_avg_list[1]
     print("No. unique reflections:")
     print(n_refl_matrix)
     if n_expected:
@@ -436,6 +450,10 @@ def compare_mtzs_fi(mtzs_fi, n_expected=0):
         "Ratio of No. unique reflections in common and No. reflections in a data set:"
     )
     print(ratio_refl_matrix)
+    print("Average CCFiso:")
+    print(ccF_iso_matrix)
+    print("Average CCIiso:")
+    print(ccI_iso_matrix)
     # TODO: multiplicity
     return n_refl_matrix, ratio_refl_matrix
 
