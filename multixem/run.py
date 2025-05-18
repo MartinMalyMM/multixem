@@ -350,13 +350,14 @@ def compare_mtzs_fi(mtzs_fi, n_expected=0):
             ccF_iso = numpy.corrcoef(
                 df_bin[f_col + "1"], scale_delfofo * df_bin[f_col + "2"]
             )[0, 1]
+            """
             rF_iso_numer = (
                 abs(df_bin[f_col + "1"] - scale_delfofo * df_bin[f_col + "2"])
             ).sum()
             rF_iso_denom = (
                 abs(df_bin[f_col + "1"] + scale_delfofo * df_bin[f_col + "2"])
             ).sum()
-            rF_iso = 2 * rF_iso_numer / rF_iso_denom
+            rF_iso = 2 * rF_iso_numer / rF_iso_denom"""
             # DELFOFO
             """df.loc[df_bin.index, 'DELFOFO'] = \
                 numpy.abs(df_bin[f_col + '1'] - scale_delfofo * df_bin[f_col + '2'])
@@ -379,9 +380,10 @@ def compare_mtzs_fi(mtzs_fi, n_expected=0):
             scale_delioio_denumer = (df_bin["I2"] ** 2).sum()
             scale_delioio = scale_delioio_nomin / scale_delioio_denumer
             ccI_iso = numpy.corrcoef(df_bin["I1"], scale_delioio * df_bin["I2"])[0, 1]
+            """
             rI_iso_numer = (abs(df_bin["I1"] - scale_delioio * df_bin["I2"])).sum()
             rI_iso_denom = (abs(df_bin["I1"] + scale_delioio * df_bin["I2"])).sum()
-            rI_iso = 2 * rI_iso_numer / rI_iso_denom
+            rI_iso = 2 * rI_iso_numer / rI_iso_denom"""
 
             bins_stats.append(
                 {
@@ -389,10 +391,10 @@ def compare_mtzs_fi(mtzs_fi, n_expected=0):
                     "count": len(df_bin),
                     "scale_delfofo": scale_delfofo,
                     "ccF_iso": ccF_iso,
-                    "rF_iso": rF_iso,
+                    # "rF_iso": rF_iso,
                     "scale_delioio": scale_delfofo,
                     "ccI_iso": ccI_iso,
-                    "rI_iso": rI_iso,
+                    # "rI_iso": rI_iso,
                 }
             )
 
