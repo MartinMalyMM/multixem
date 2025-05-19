@@ -38,6 +38,7 @@ def create_parser():
     parser.add_argument(
         "-u", "--hklin_unmerged", type=str, help="Input unmerged diffraction data."
     )  # TODO - file exists?
+    # TODO more files
     parser.add_argument(
         "--hklin_free", type=str, help="Input MTZ file for test flags."
     )  # TODO - file exists?
@@ -61,7 +62,7 @@ def create_parser():
     return parser
 
 
-def merge_in_groups(unmerged, n_batches_in_group, prefix):
+def merge_in_groups(unmerged, n_batches_in_group, prefix):  # noqa: C901
 
     def merge_group(
         df_groups,
@@ -82,6 +83,32 @@ def merge_in_groups(unmerged, n_batches_in_group, prefix):
             df_groups[i_group]["I"].values,
             df_groups[i_group]["SIGI"].values,
         )
+        binner10 = gemmi.Binner()
+        binner10.setup(10, gemmi.Binner.Method.Dstar2, intensities)
+        if anom:
+            intensities.prepare_for_merging(gemmi.DataType.Anomalous)
+        else:
+            intensities.prepare_for_merging(gemmi.DataType.Mean)
+        bin_stats = intensities.calculate_merging_stats(binner10)
+        print("")
+        print(" dmax - dmin  CC1/2    CC*  Rmeas   Rpim")
+        for n, stats in enumerate(bin_stats):
+            dmax, dmin = binner10.dmax_of_bin(n), binner10.dmin_of_bin(n)
+            # TODO I/sigma ? (see gemmi/include/intensit.hpp)
+            # TODO #refl #unique multiplicity
+            print(
+                f"{dmax:5.2f} - {dmin:4.2f}"
+                f" {stats.cc_half():6.3f} {stats.cc_star():6.3f}"
+                f" {stats.r_meas():6.3f} {stats.r_pim():6.3f}"
+            )
+        overall_stats = intensities.calculate_merging_stats(None)
+        dmax, dmin = intensities.resolution_range()
+        print(
+            f"{dmax:5.2f} - {dmin:4.2f}"
+            f" {overall_stats[0].cc_half():6.3f} {overall_stats[0].cc_star():6.3f}"
+            f" {overall_stats[0].r_meas():6.3f} {overall_stats[0].r_pim():6.3f}"
+        )
+
         if anom:
             intensities.merge_in_place(gemmi.DataType.Anomalous)
         else:
@@ -106,6 +133,7 @@ def merge_in_groups(unmerged, n_batches_in_group, prefix):
         return mtz_group_merged_filename
 
     m = gemmi.read_mtz_file(unmerged)
+    # TODO gemmi.read_xds_ascii()
     print(m)
     print(list(m.columns))
 
