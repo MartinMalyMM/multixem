@@ -2,6 +2,7 @@
 import os
 import argparse
 import subprocess
+import pprint
 import numpy
 import pandas
 import gemmi
@@ -51,6 +52,12 @@ def create_parser():
         default=60,
         help="Number of batches per merging group. Must be a positive integer.",
     )
+    parser.add_argument(
+        "--n_bins",
+        type=positive_int,
+        default=20,
+        help="Number of resolution bins. Must be a positive integer.",
+    )
     # TODO: if input has Friedel pairs but a user wants to merge them
 
     def validate_args(args):
@@ -62,13 +69,14 @@ def create_parser():
     return parser
 
 
-def merge_in_groups(unmerged, n_batches_in_group, prefix):  # noqa: C901
+def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
 
     def merge_group(
         df_groups,
         i_group,
         cell,
         spacegroup,
+        binner,
         n_expected,
         wavelength=0,
         n_groups=0,
@@ -83,28 +91,28 @@ def merge_in_groups(unmerged, n_batches_in_group, prefix):  # noqa: C901
             df_groups[i_group]["I"].values,
             df_groups[i_group]["SIGI"].values,
         )
-        binner10 = gemmi.Binner()
-        binner10.setup(10, gemmi.Binner.Method.Dstar2, intensities)
+        # binner10 = gemmi.Binner()
+        # binner10.setup(10, gemmi.Binner.Method.Dstar2, intensities)
         if anom:
             intensities.prepare_for_merging(gemmi.DataType.Anomalous)
         else:
             intensities.prepare_for_merging(gemmi.DataType.Mean)
-        bin_stats = intensities.calculate_merging_stats(binner10)
+        bin_stats = intensities.calculate_merging_stats(binner)
         print("")
-        print(" dmax - dmin  CC1/2    CC*  Rmeas   Rpim")
+        print(" dmax -  dmin  CC1/2    CC*  Rmeas   Rpim")
         for n, stats in enumerate(bin_stats):
-            dmax, dmin = binner10.dmax_of_bin(n), binner10.dmin_of_bin(n)
+            dmax, dmin = binner.dmax_of_bin(n), binner.dmin_of_bin(n)
             # TODO I/sigma ? (see gemmi/include/intensit.hpp)
             # TODO #refl #unique multiplicity
             print(
-                f"{dmax:5.2f} - {dmin:4.2f}"
+                f"{dmax:5.2f} - {dmin:5.2f}"
                 f" {stats.cc_half():6.3f} {stats.cc_star():6.3f}"
                 f" {stats.r_meas():6.3f} {stats.r_pim():6.3f}"
             )
         overall_stats = intensities.calculate_merging_stats(None)
         dmax, dmin = intensities.resolution_range()
         print(
-            f"{dmax:5.2f} - {dmin:4.2f}"
+            f"{dmax:5.2f} - {dmin:5.2f}"
             f" {overall_stats[0].cc_half():6.3f} {overall_stats[0].cc_star():6.3f}"
             f" {overall_stats[0].r_meas():6.3f} {overall_stats[0].r_pim():6.3f}"
         )
@@ -193,6 +201,10 @@ def merge_in_groups(unmerged, n_batches_in_group, prefix):  # noqa: C901
         print("No wavelength found in input file.")
     dmax = m.resolution_low()
     dmin = m.resolution_high()
+    binner_master = gemmi.Binner()
+    binner_master.setup_from_1_d2(
+        n_bins, gemmi.Binner.Method.Dstar2, m.make_1_d2_array(), m.get_cell()
+    )
     # n_expected = len(gemmi.make_miller_array(m.cell, m.spacegroup, 2.2, float('inf')))
     n_expected = gemmi.count_reflections(m.cell, m.spacegroup, dmin, dmax)
     print(
@@ -253,6 +265,7 @@ def merge_in_groups(unmerged, n_batches_in_group, prefix):  # noqa: C901
             i_group,
             m.cell,
             m.spacegroup,
+            binner_master,
             n_expected,
             wavelength,
             n_groups=len(batches_split),
@@ -261,7 +274,7 @@ def merge_in_groups(unmerged, n_batches_in_group, prefix):  # noqa: C901
         )
         mtz_groups.append(mtz_group)
     print("Merged MTZ files:", mtz_groups)
-    return mtz_groups, n_expected
+    return mtz_groups, binner_master, n_expected
 
 
 def run_servalcat_fwt(mtz_groups_i, prefix=""):
@@ -332,10 +345,10 @@ def run_servalcat_refine(mtzs_fi, model, mtz_free="", source="xray"):  # , prefi
     return refined_mmcifs
 
 
-def compare_mtzs_fi(mtzs_fi, n_expected=0):
+def compare_mtzs_fi(mtzs_fi, binner, n_expected=0):
 
     # noqa: E501
-    def compare_mtz_fi_pair(mtz_fi1, mtz_fi2):
+    def compare_mtz_fi_pair(mtz_fi1, mtz_fi2, binner):
         f_col = "F"
         column_label_dropna = "F"
         mtz1 = gemmi.read_mtz_file(mtz_fi1)
@@ -393,7 +406,7 @@ def compare_mtzs_fi(mtzs_fi, n_expected=0):
         # print(hkl_common_array[:10])
         n_refl_list = [n_refl1, n_refl2, n_refl]
 
-        # Scaling per resolution bins - at least 100 reflections per bin
+        """# Scaling per resolution bins - at least 100 reflections per bin
         n_bins = int(n_refl / 200)  # only starting point
         binner = gemmi.Binner()
         binner.setup(n_bins, gemmi.Binner.Method.Dstar2, hkl_common_array, mtz1.cell)
@@ -405,9 +418,17 @@ def compare_mtzs_fi(mtzs_fi, n_expected=0):
                 n_bins, gemmi.Binner.Method.Dstar2, hkl_common_array, mtz1.cell
             )
             bins_tmp = binner.get_bins(hkl_common_array)
-            min_n_bins = min(Counter(bins_tmp).values())
+            min_n_bins = min(Counter(bins_tmp).values())"""
+        bins_tmp = binner.get_bins(hkl_common_array)
+        min_n_bins = min(Counter(bins_tmp).values())
+        if min_n_bins < 100:
+            print(
+                "WARNING: Less than 100 reflections per bin"
+                " - set up less number of bins."
+            )
         df["BIN"] = bins_tmp
         # print("Binner min_n_bins:", min_n_bins)
+        n_bins = len(set(bins_tmp))  # TODO how to use args.n_bins?
         bins_stats = []
         for b in range(n_bins):
             df_bin = df[df["BIN"] == b]
@@ -493,7 +514,9 @@ def compare_mtzs_fi(mtzs_fi, n_expected=0):
     for i in range(len(mtzs_fi)):
         for j in range(i + 1, len(mtzs_fi)):
             # print(i, j)
-            n_refl_list, cc_iso_avg_list = compare_mtz_fi_pair(mtzs_fi[i], mtzs_fi[j])
+            n_refl_list, cc_iso_avg_list = compare_mtz_fi_pair(
+                mtzs_fi[i], mtzs_fi[j], binner
+            )
             if i == 0:
                 n_refl_matrix[j, j] = n_refl_list[1]
                 if j == 1:
@@ -531,6 +554,7 @@ def main():
     parser = create_parser()
     args = parser.parse_args()
     print("Arguments parsed:", args)
+    pprint.pprint(vars(args))
 
     if args.prefix:
         prefix = args.prefix
@@ -550,15 +574,15 @@ def main():
         # TODO: select automatically the number of batches in group (now default 60)
         n_batches_per_group = args.n_batches
         print("Number of batches in merging group:", n_batches_per_group)
-        mtz_groups_i, n_expected = merge_in_groups(
-            args.hklin_unmerged, n_batches_per_group, prefix
+        mtz_groups_i, binner_master, n_expected = merge_in_groups(
+            args.hklin_unmerged, n_batches_per_group, args.n_bins, prefix
         )
         mtzs_fi = run_servalcat_fwt(mtz_groups_i, prefix)
         # TODO: free reflections if not given
 
     # TODO: check that input files have FI(R?)
     # TODO: mmCIF
-    compare_mtzs_fi(mtzs_fi, n_expected)
+    compare_mtzs_fi(mtzs_fi, binner_master, n_expected)
     if args.model:
         run_servalcat_refine(mtzs_fi, args.model, mtz_free=args.hklin_free)
 
