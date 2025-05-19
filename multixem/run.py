@@ -39,6 +39,12 @@ def create_parser():
         "-u", "--hklin_unmerged", type=str, help="Input unmerged diffraction data."
     )  # TODO - file exists?
     parser.add_argument(
+        "--hklin_free", type=str, help="Input MTZ file for test flags."
+    )  # TODO - file exists?
+    parser.add_argument(
+        "--model", type=str, help="Input atomic structure model file."
+    )  # TODO - file exists?
+    parser.add_argument(
         "--n_batches",
         type=positive_int,
         default=60,
@@ -51,6 +57,7 @@ def create_parser():
             parser.error("--n_batches requires --hklin_unmerged to be provided.")
 
     parser.set_defaults(func=validate_args)
+    # TO DO: at least two --hklin or one --hklin_unmerged
     return parser
 
 
@@ -258,10 +265,43 @@ def run_servalcat_fwt(mtz_groups_i, prefix=""):
                 subprocess.run(
                     cmd, check=True, stdout=log_file, stderr=subprocess.STDOUT
                 )
+            mtz_groups_fi.append(mtz_group_fi)
         except subprocess.CalledProcessError as e:
             print(f"Error occurred while running command: {e}")
-        mtz_groups_fi.append(mtz_group_fi)
     return mtz_groups_fi
+
+
+def run_servalcat_refine(mtzs_fi, model, mtz_free="", source="xray"):  # , prefix=""):
+    # TO DO: source -s
+    # TO DO: command line parameters for servalcat, --keyword_file, --config
+    refined_mmcifs = []
+    for i_mtz, mtz_fi in enumerate(mtzs_fi):
+        prefix = os.path.splitext(os.path.basename(mtz_fi))[0] + "_refine"
+        log_filename = prefix + ".log"
+        cmd = [
+            "servalcat",
+            "refine_xtal_norefmac",
+            "--hklin",
+            mtz_fi,
+            "--model",
+            model,
+            "-s",
+            source,
+            "-o",
+            prefix,
+        ]
+        if mtz_free:
+            cmd.extend(["--hklin_unmerged", mtz_free])
+        print("Running command:", " ".join(cmd))
+        try:
+            with open(log_filename, "w") as log_file:
+                subprocess.run(
+                    cmd, check=True, stdout=log_file, stderr=subprocess.STDOUT
+                )
+        except subprocess.CalledProcessError as e:
+            print(f"Error occurred while running command: {e}")
+        refined_mmcifs.append(prefix + ".mmcif")
+    return refined_mmcifs
 
 
 def compare_mtzs_fi(mtzs_fi, n_expected=0):
@@ -486,11 +526,13 @@ def main():
             args.hklin_unmerged, n_batches_per_group, prefix
         )
         mtzs_fi = run_servalcat_fwt(mtz_groups_i, prefix)
-        # TODO: free reflections
+        # TODO: free reflections if not given
 
     # TODO: check that input files have FI(R?)
     # TODO: mmCIF
     compare_mtzs_fi(mtzs_fi, n_expected)
+    if args.model:
+        run_servalcat_refine(mtzs_fi, args.model, mtz_free=args.hklin_free)
 
     # compute_difference_maps(mtz_groups[0], mtz_groups[-1], "output_prefix")
 
