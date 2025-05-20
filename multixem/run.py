@@ -98,30 +98,48 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
         else:
             intensities.prepare_for_merging(gemmi.DataType.Mean)
         bin_stats = intensities.calculate_merging_stats(binner)
-        print("")
-        print(" dmax -  dmin  CC1/2    CC*  Rmeas   Rpim")
+        binner_bincount = numpy.bincount(binner.get_bins(intensities.miller_array))
+        # Collect bin statistics into a list of dictionaries
+        bin_stats_list = []
         for n, stats in enumerate(bin_stats):
-            dmax, dmin = binner.dmax_of_bin(n), binner.dmin_of_bin(n)
-            # TODO I/sigma ? (see gemmi/include/intensit.hpp)
-            # TODO #refl #unique multiplicity
-            print(
-                f"{dmax:5.2f} - {dmin:5.2f}"
-                f" {stats.cc_half():6.3f} {stats.cc_star():6.3f}"
-                f" {stats.r_meas():6.3f} {stats.r_pim():6.3f}"
+            bin_stats_list.append(
+                {
+                    "bin": n + 1,
+                    "dmax": binner.dmax_of_bin(n),
+                    "dmin": binner.dmin_of_bin(n),
+                    "n_obs": binner_bincount[n],
+                    "CC1/2": stats.cc_half(),
+                    "CC*": stats.cc_star(),
+                    "Rmeas": stats.r_meas(),
+                    "Rpim": stats.r_pim(),
+                }
             )
+        # Add overall stats as a separate entry
         overall_stats = intensities.calculate_merging_stats(None)
-        dmax, dmin = intensities.resolution_range()
-        print(
-            f"{dmax:5.2f} - {dmin:5.2f}"
-            f" {overall_stats[0].cc_half():6.3f} {overall_stats[0].cc_star():6.3f}"
-            f" {overall_stats[0].r_meas():6.3f} {overall_stats[0].r_pim():6.3f}"
+        bin_stats_list.append(
+            {
+                "bin": "overall",
+                "dmax": intensities.resolution_range()[0],
+                "dmin": intensities.resolution_range()[1],
+                "n_obs": len(intensities.miller_array),
+                "CC1/2": overall_stats[0].cc_half(),
+                "CC*": overall_stats[0].cc_star(),
+                "Rmeas": overall_stats[0].r_meas(),
+                "Rpim": overall_stats[0].r_pim(),
+            }
         )
+        # Convert to DataFrame and save as CSV
+        stats_df = pandas.DataFrame(bin_stats_list)
+        stats_csv_filename = f"{prefix}group{i_group + 1}_merging_stats.csv"
+        stats_df.to_csv(stats_csv_filename, index=False, sep="\t", float_format="%.4f")
+        print(f"Saved merging statistics to {stats_csv_filename}")
 
         if anom:
             intensities.merge_in_place(gemmi.DataType.Anomalous)
         else:
             intensities.merge_in_place(gemmi.DataType.Mean)
         # SIGI from merging:  1/sqrt(∑w), where w=1/sigma^2
+        # TODO n_unique completeness multiplicity
         completeness = len(intensities.miller_array) / n_expected
         print(
             f"Merged group {i_group + 1} of batches: #reflections:",
@@ -477,8 +495,8 @@ def compare_mtzs_fi(mtzs_fi, binner, n_expected=0):
             bins_stats.append(
                 {
                     "i": b + 1,
-                    "dmax": f"{binner.dmax_of_bin(b):5.2f}",
-                    "dmin": f"{binner.dmin_of_bin(b):5.2f}",
+                    "dmax": binner.dmax_of_bin(b),
+                    "dmin": binner.dmin_of_bin(b),
                     "count": len(df_bin),
                     "scale_delfofo": scale_delfofo,
                     # "ccF_iso": ccF_iso,
