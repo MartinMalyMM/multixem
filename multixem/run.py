@@ -98,7 +98,9 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
         else:
             intensities.prepare_for_merging(gemmi.DataType.Mean)
         bin_stats = intensities.calculate_merging_stats(binner)
-        binner_bincount = numpy.bincount(binner.get_bins(intensities.miller_array))
+        binner_bincount_obs = numpy.bincount(binner.get_bins(intensities.miller_array))
+        # TODO fix n_obs and n-unique (and completeness) per bin
+        # TODO add multiplicity
         # Collect bin statistics into a list of dictionaries
         bin_stats_list = []
         for n, stats in enumerate(bin_stats):
@@ -107,7 +109,7 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
                     "bin": n + 1,
                     "dmax": binner.dmax_of_bin(n),
                     "dmin": binner.dmin_of_bin(n),
-                    "n_obs": binner_bincount[n],
+                    "n_obs": binner_bincount_obs[n],  # NOT GOOD
                     "CC1/2": stats.cc_half(),
                     "CC*": stats.cc_star(),
                     "Rmeas": stats.r_meas(),
@@ -128,18 +130,69 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
                 "Rpim": overall_stats[0].r_pim(),
             }
         )
-        # Convert to DataFrame and save as CSV
-        stats_df = pandas.DataFrame(bin_stats_list)
-        stats_csv_filename = f"{prefix}group{i_group + 1}_merging_stats.csv"
-        stats_df.to_csv(stats_csv_filename, index=False, sep="\t", float_format="%.4f")
-        print(f"Saved merging statistics to {stats_csv_filename}")
 
         if anom:
             intensities.merge_in_place(gemmi.DataType.Anomalous)
         else:
             intensities.merge_in_place(gemmi.DataType.Mean)
         # SIGI from merging:  1/sqrt(∑w), where w=1/sigma^2
-        # TODO n_unique completeness multiplicity
+        # After meringing, add n_unique completeness multiplicity to statistics
+        binner_bincount_unique = numpy.bincount(
+            binner.get_bins(intensities.miller_array)
+        )
+        for b in range(binner.size):
+            bin_n_obs_expected = gemmi.count_reflections(
+                cell,
+                spacegroup,
+                binner.dmin_of_bin(b),
+                binner.dmax_of_bin(b),
+                unique=False,
+            )
+            bin_n_unique_expected = gemmi.count_reflections(
+                cell,
+                spacegroup,
+                binner.dmin_of_bin(b),
+                binner.dmax_of_bin(b),
+                unique=True,
+            )
+            bin_stats_list[b]["n_unique"] = int(binner_bincount_unique[b])  # NOT GOOD
+            bin_stats_list[b]["n_obs_expected"] = bin_n_obs_expected
+            bin_stats_list[b]["n_unique_expected"] = bin_n_unique_expected
+            bin_stats_list[b]["completeness"] = (
+                bin_stats_list[b]["n_unique"] / bin_n_unique_expected  # NOT GOOD
+            )
+            bin_stats_list[b]["multiplicity"] = (
+                bin_stats_list[b]["n_obs"] / bin_stats_list[b]["n_unique"]  # NOT GOOD
+            )
+        bin_stats_list[-1]["n_unique"] = len(intensities.miller_array)
+        bin_stats_list[-1]["n_obs_expected"] = gemmi.count_reflections(
+            cell,
+            spacegroup,
+            intensities.resolution_range()[1],
+            intensities.resolution_range()[0],
+            unique=False,
+        )
+        bin_stats_list[-1]["n_unique_expected"] = gemmi.count_reflections(
+            cell,
+            spacegroup,
+            intensities.resolution_range()[1],
+            intensities.resolution_range()[0],
+            unique=True,
+        )
+        bin_stats_list[-1]["completeness"] = (
+            bin_stats_list[-1]["n_unique"] / bin_stats_list[-1]["n_unique_expected"]
+        )
+        bin_stats_list[-1]["multiplicity"] = (
+            bin_stats_list[-1]["n_obs"] / bin_stats_list[-1]["n_unique"]
+        )
+        print("average multiplicity", intensities.nobs_array.mean())
+        # Convert to DataFrame and save as CSV
+        stats_df = pandas.DataFrame(bin_stats_list)
+        stats_csv_filename = f"{prefix}group{i_group + 1}_merging_stats.csv"
+        stats_df.to_csv(stats_csv_filename, index=False, sep="\t", float_format="%.4f")
+        print(f"Saved merging statistics to {stats_csv_filename}")
+
+        ## n_expected = gemmi.count_reflections(m.cell, m.spacegroup, dmin, dmax)
         completeness = len(intensities.miller_array) / n_expected
         print(
             f"Merged group {i_group + 1} of batches: #reflections:",
