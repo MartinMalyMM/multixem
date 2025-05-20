@@ -209,7 +209,7 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
             g_with_leading_zeros = i_group + 1
         mtz_group_merged_filename = f"{prefix}group{g_with_leading_zeros}_I.mtz"
         mtz_group_merged.write_to_file(mtz_group_merged_filename)
-        return mtz_group_merged_filename
+        return mtz_group_merged_filename, bin_stats_list
 
     m = gemmi.read_mtz_file(unmerged)
     # TODO gemmi.read_xds_ascii()
@@ -323,7 +323,7 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
     print(batches_split)
 
     mtz_groups = []
-    mtz_groups = []
+    bin_stats_lists = []
     for i_group in range(len(batches_split) - 1):
         # print(batches_split[i_group], batches_split[i_group+1])
         df_group = df.loc[
@@ -331,7 +331,7 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
             & (df["BATCH"] < batches_split[i_group + 1])
         ]
         df_groups.append(df_group)
-        mtz_group = merge_group(
+        mtz_group, bin_stats_list = merge_group(
             df_groups,
             i_group,
             m.cell,
@@ -344,8 +344,9 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
             prefix=prefix,
         )
         mtz_groups.append(mtz_group)
+        bin_stats_lists.append(bin_stats_list)
     print("Merged MTZ files:", mtz_groups)
-    return mtz_groups, binner_master, n_expected
+    return mtz_groups, bin_stats_lists, binner_master, n_expected
 
 
 def run_servalcat_fwt(mtz_groups_i, prefix=""):
@@ -416,10 +417,12 @@ def run_servalcat_refine(mtzs_fi, model, mtz_free="", source="xray"):  # , prefi
     return refined_mmcifs
 
 
-def compare_mtzs_fi(mtzs_fi, binner, n_expected=0):
+def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=0):
 
     # noqa: E501
-    def compare_mtz_fi_pair(mtz_fi1, mtz_fi2, binner):
+    def compare_mtz_fi_pair(
+        mtz_fi1, mtz_fi2, binner, bin_stats_list1=[], bin_stats_list2=[]
+    ):
         f_col = "F"
         column_label_dropna = "F"
         mtz1 = gemmi.read_mtz_file(mtz_fi1)
@@ -560,6 +563,17 @@ def compare_mtzs_fi(mtzs_fi, binner, n_expected=0):
                 }
             )
 
+        if (
+            bin_stats_list1
+            and bin_stats_list2
+            and len(bin_stats_list1) == n_bins + 1
+            and len(bin_stats_list2) == n_bins + 1
+        ):
+            # Add CC* from bin_stats_list1 and bin_stats_list2 if available
+            for b in range(n_bins):
+                bins_stats[b]["CC*1"] = bin_stats_list1[b]["CC*"]
+                bins_stats[b]["CC*2"] = bin_stats_list2[b]["CC*"]
+
         bins_stats_df = pandas.DataFrame(bins_stats)
         # Calculate weighted average of cc over bins
         """ccF_iso_avg = (
@@ -588,7 +602,7 @@ def compare_mtzs_fi(mtzs_fi, binner, n_expected=0):
         for j in range(i + 1, len(mtzs_fi)):
             # print(i, j)
             n_refl_list, ccI_iso_avg = compare_mtz_fi_pair(
-                mtzs_fi[i], mtzs_fi[j], binner
+                mtzs_fi[i], mtzs_fi[j], binner, bin_stats_lists[i], bin_stats_lists[j]
             )
             if i == 0:
                 n_refl_matrix[j, j] = n_refl_list[1]
@@ -647,7 +661,7 @@ def main():
         # TODO: select automatically the number of batches in group (now default 60)
         n_batches_per_group = args.n_batches
         print("Number of batches in merging group:", n_batches_per_group)
-        mtz_groups_i, binner_master, n_expected = merge_in_groups(
+        mtz_groups_i, bin_stats_lists, binner_master, n_expected = merge_in_groups(
             args.hklin_unmerged, n_batches_per_group, args.n_bins, prefix
         )
         mtzs_fi = run_servalcat_fwt(mtz_groups_i, prefix)
@@ -655,7 +669,7 @@ def main():
 
     # TODO: check that input files have FI(R?)
     # TODO: mmCIF
-    compare_mtzs_fi(mtzs_fi, binner_master, n_expected)
+    compare_mtzs_fi(mtzs_fi, binner_master, bin_stats_lists, n_expected)
     if args.model:
         run_servalcat_refine(mtzs_fi, args.model, mtz_free=args.hklin_free)
 
