@@ -188,9 +188,17 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
         print("average multiplicity", intensities.nobs_array.mean())
         # Convert to DataFrame and save as CSV
         stats_df = pandas.DataFrame(bin_stats_list)
-        stats_csv_filename = f"{prefix}group{i_group + 1}_merging_stats.csv"
-        stats_df.to_csv(stats_csv_filename, index=False, sep="\t", float_format="%.4f")
-        print(f"Saved merging statistics to {stats_csv_filename}")
+        stats_filename = f"{prefix}group{i_group + 1}_merging_stats.txt"
+        # stats_df.to_csv(stats_filename, index=False, sep="\t", float_format="%.4f")
+        # Round float columns to 4 decimal places and save as fixed-width file
+        float_cols = stats_df.select_dtypes(include=["float"]).columns
+        stats_df[float_cols] = stats_df[float_cols].round(4)
+        stats_df.to_string(
+            buf=open(stats_filename, "w"),
+            index=False,
+            justify="right",
+        )
+        print(f"Saved merging statistics to {stats_filename}")
 
         ## n_expected = gemmi.count_reflections(m.cell, m.spacegroup, dmin, dmax)
         completeness = len(intensities.miller_array) / n_expected
@@ -550,7 +558,7 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=0):
 
             bins_stats.append(
                 {
-                    "i": b + 1,
+                    "bin": b + 1,
                     "dmax": binner.dmax_of_bin(b),
                     "dmin": binner.dmin_of_bin(b),
                     "count": len(df_bin),
@@ -573,6 +581,9 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=0):
             for b in range(n_bins):
                 bins_stats[b]["CC*1"] = bin_stats_list1[b]["CC*"]
                 bins_stats[b]["CC*2"] = bin_stats_list2[b]["CC*"]
+                bins_stats[b]["CC12true"] = bins_stats[b]["ccI_iso"] / (
+                    bins_stats[b]["CC*1"] * bins_stats[b]["CC*2"]
+                )
 
         bins_stats_df = pandas.DataFrame(bins_stats)
         # Calculate weighted average of cc over bins
@@ -585,11 +596,14 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=0):
         # cc_iso_avg_list = [ccF_iso_avg, ccI_iso_avg]
         mtz_fi1_base = os.path.basename(mtz_fi1)
         mtz_fi2_base = os.path.basename(mtz_fi2)
-        bins_stats_df.to_csv(
-            f"{mtz_fi1_base}_bins_stats_{mtz_fi2_base}.csv",
+        stats_filename = f"{mtz_fi1_base}_bins_stats_{mtz_fi2_base}.txt"
+        # Round float columns to 4 decimal places and save as fixed-width file
+        float_cols = bins_stats_df.select_dtypes(include=["float"]).columns
+        bins_stats_df[float_cols] = bins_stats_df[float_cols].round(4)
+        bins_stats_df.to_string(
+            buf=open(stats_filename, "w"),
             index=False,
-            sep="\t",
-            float_format="%.4f",
+            justify="right",
         )
         # pprint.pprint(bins_stats)
         return n_refl_list, ccI_iso_avg
