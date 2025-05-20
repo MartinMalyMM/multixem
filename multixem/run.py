@@ -476,7 +476,9 @@ def compare_mtzs_fi(mtzs_fi, binner, n_expected=0):
 
             bins_stats.append(
                 {
-                    "i": b,
+                    "i": b + 1,
+                    "dmax": binner.dmax_of_bin(b),
+                    "dmin": binner.dmin_of_bin(b),
                     "count": len(df_bin),
                     "scale_delfofo": scale_delfofo,
                     # "ccF_iso": ccF_iso,
