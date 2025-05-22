@@ -38,7 +38,11 @@ def create_parser():
     )
     parser.add_argument("-p", "--prefix", type=str, help="Prefix for the output files.")
     parser.add_argument(
-        "-u", "--hklin_unmerged", type=str, help="Input unmerged diffraction data."
+        "-u",
+        "--hklin_unmerged",
+        type=str,
+        nargs="+",
+        help="Input unmerged diffraction data file(s).",
     )  # TODO - file exists?
     # TODO more files
     parser.add_argument(
@@ -70,7 +74,7 @@ def create_parser():
     return parser
 
 
-def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
+def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix, i_group_prefix=0):
 
     def merge_group(
         df_groups,
@@ -83,6 +87,7 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
         n_groups=0,
         anom=True,
         prefix="",
+        i_group_prefix=0,
     ):
         intensities = gemmi.Intensities()
         intensities.set_data(
@@ -191,7 +196,9 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
         print("average multiplicity", intensities.nobs_array.mean())
         # Convert to DataFrame and save as CSV
         stats_df = pandas.DataFrame(bin_stats_list)
-        stats_filename = f"{prefix}group{i_group + 1}_merging_stats.txt"
+        stats_filename = (
+            f"{prefix}group{i_group_prefix + i_group + 1}_merging_stats.txt"
+        )
         # stats_df.to_csv(stats_filename, index=False, sep="\t", float_format="%.4f")
         # Round float columns to 4 decimal places and save as fixed-width file
         float_cols = stats_df.select_dtypes(include=["float"]).columns
@@ -206,7 +213,7 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
         ## n_expected = gemmi.count_reflections(m.cell, m.spacegroup, dmin, dmax)
         completeness = len(intensities.miller_array) / n_expected
         print(
-            f"Merged group {i_group + 1} of batches: #reflections:",
+            f"Merged group {i_group_prefix + i_group + 1} of batches: #reflections:",
             len(intensities.miller_array),
             " => completeness:",
             f"{completeness:.3f}",
@@ -215,9 +222,11 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
         if wavelength:
             mtz_group_merged.dataset(0).wavelength = wavelength
         if n_groups:
-            g_with_leading_zeros = str(i_group + 1).zfill(len(str(n_groups)))
+            g_with_leading_zeros = str(i_group_prefix + i_group + 1).zfill(
+                len(str(n_groups))
+            )
         else:
-            g_with_leading_zeros = i_group + 1
+            g_with_leading_zeros = i_group_prefix + i_group + 1
         mtz_group_merged_filename = f"{prefix}group{g_with_leading_zeros}_I.mtz"
         mtz_group_merged.write_to_file(mtz_group_merged_filename)
 
@@ -365,11 +374,13 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
             n_groups=len(batches_split),
             anom=anom,
             prefix=prefix,
+            i_group_prefix=i_group_prefix,
         )
         mtz_groups.append(mtz_group)
         bin_stats_lists.append(bin_stats_list)
+    n_expected_list = [n_expected] * len(mtz_groups)
     print("Merged MTZ files:", mtz_groups)
-    return mtz_groups, bin_stats_lists, binner_master, n_expected
+    return mtz_groups, bin_stats_lists, n_expected_list, binner_master
 
 
 def run_servalcat_fwt(mtz_groups_i, prefix=""):
@@ -391,7 +402,7 @@ def run_servalcat_fwt(mtz_groups_i, prefix=""):
     )
     mtz_groups_fi = []
     for i_group, mtz_group_i in enumerate(mtz_groups_i):
-        group_fi_prefix = f"{prefix}group{i_group + 1}_FI"
+        group_fi_prefix = os.path.splitext(os.path.basename(mtz_group_i))[0] + "F"
         log_group_fi = f"{group_fi_prefix}.log"
         mtz_group_fi = f"{group_fi_prefix}.mtz"
         cmd = ["servalcat", "fw", "--hklin", mtz_group_i, "-o", group_fi_prefix]
@@ -440,7 +451,7 @@ def run_servalcat_refine(mtzs_fi, model, mtz_free="", source="xray"):  # , prefi
     return refined_mmcifs
 
 
-def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=0):
+def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=[]):
 
     # noqa: E501
     def compare_mtz_fi_pair(
@@ -723,8 +734,8 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=0):
             ccI_iso_matrix[j, i] = ccI_iso_avg
     print("No. unique reflections:")
     print(n_refl_matrix)
-    if n_expected:
-        completeness_matrix = n_refl_matrix / n_expected
+    if n_expected and len(n_expected) == len(mtzs_fi):
+        completeness_matrix = n_refl_matrix / max(n_expected)
         print("Completeness:")
         print(completeness_matrix)
     print(
@@ -758,21 +769,35 @@ def main():
     os.chdir("multixem_proc")
     print("Current working directory:", os.getcwd())
 
-    n_expected = 0
     if args.hklin_unmerged:
         print("Unmerged diffraction data:", args.hklin_unmerged)
-        # TODO: select automatically the number of batches in group (now default 60)
-        n_batches_per_group = args.n_batches
-        print("Number of batches in merging group:", n_batches_per_group)
-        mtz_groups_i, bin_stats_lists, binner_master, n_expected = merge_in_groups(
-            args.hklin_unmerged, n_batches_per_group, args.n_bins, prefix
-        )
-        mtzs_fi = run_servalcat_fwt(mtz_groups_i, prefix)
-        # TODO: free reflections if not given
+        n_groups = 0
+        mtz_groups_i = []
+        bin_stats_lists = []
+        n_expected_list = []
+        mtzs_fi = []
+        for i, hklin_unmerged in enumerate(args.hklin_unmerged):
+            # TODO: select automatically the number of batches in group (now default 60)
+            n_batches_per_group = args.n_batches
+            print("Number of batches in merging group:", n_batches_per_group)
+            _mtz_groups_i, _bin_stats_lists, _n_expected_list, _binner_master = (
+                merge_in_groups(
+                    hklin_unmerged, n_batches_per_group, args.n_bins, prefix, n_groups
+                )
+            )
+            mtz_groups_i.extend(_mtz_groups_i)
+            n_groups = len(mtz_groups_i)
+            bin_stats_lists.extend(_bin_stats_lists)
+            n_expected_list.extend(_n_expected_list)
+            if i == 0:
+                binner_master = _binner_master
+            _mtzs_fi = run_servalcat_fwt(_mtz_groups_i, prefix)
+            mtzs_fi.extend(_mtzs_fi)
+            # TODO: free reflections if not given
 
     # TODO: check that input files have FI(R?)
     # TODO: mmCIF
-    compare_mtzs_fi(mtzs_fi, binner_master, bin_stats_lists, n_expected)
+    compare_mtzs_fi(mtzs_fi, binner_master, bin_stats_lists, n_expected_list)
     if args.model:
         run_servalcat_refine(mtzs_fi, args.model, mtz_free=args.hklin_free)
 
