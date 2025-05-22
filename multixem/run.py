@@ -99,7 +99,8 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
         else:
             intensities.prepare_for_merging(gemmi.DataType.Mean)
         bin_stats = intensities.calculate_merging_stats(binner)
-        binner_bincount_obs = numpy.bincount(binner.get_bins(intensities.miller_array))
+        # binner_bincount_obs = numpy.bincount(
+        #     binner.get_bins(intensities.miller_array))
         # TODO fix n_obs and n-unique (and completeness) per bin
         # TODO: add I/sigma
         # TODO add multiplicity
@@ -111,7 +112,7 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
                     "bin": n + 1,
                     "dmax": binner.dmax_of_bin(n),
                     "dmin": binner.dmin_of_bin(n),
-                    "n_obs": binner_bincount_obs[n],  # NOT GOOD
+                    # "n_obs": binner_bincount_obs[n],  # NOT GOOD
                     "CC1/2": stats.cc_half(),
                     "CC*": stats.cc_star(),
                     "Rmeas": stats.r_meas(),
@@ -139,9 +140,9 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
             intensities.merge_in_place(gemmi.DataType.Mean)
         # SIGI from merging:  1/sqrt(∑w), where w=1/sigma^2
         # After meringing, add n_unique completeness multiplicity to statistics
-        binner_bincount_unique = numpy.bincount(
-            binner.get_bins(intensities.miller_array)
-        )
+        # binner_bincount_unique = numpy.bincount(
+        #     binner.get_bins(intensities.miller_array)
+        # )
         for b in range(binner.size):
             bin_n_obs_expected = gemmi.count_reflections(
                 cell,
@@ -157,15 +158,15 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
                 binner.dmax_of_bin(b),
                 unique=True,
             )
-            bin_stats_list[b]["n_unique"] = int(binner_bincount_unique[b])  # NOT GOOD
+            # bin_stats_list[b]["n_unique"] = int(binner_bincount_unique[b])  # NOT GOOD
             bin_stats_list[b]["n_obs_expected"] = bin_n_obs_expected
             bin_stats_list[b]["n_unique_expected"] = bin_n_unique_expected
-            bin_stats_list[b]["completeness"] = (
-                bin_stats_list[b]["n_unique"] / bin_n_unique_expected  # NOT GOOD
-            )
-            bin_stats_list[b]["multiplicity"] = (
-                bin_stats_list[b]["n_obs"] / bin_stats_list[b]["n_unique"]  # NOT GOOD
-            )
+            # bin_stats_list[b]["completeness"] = (
+            #     bin_stats_list[b]["n_unique"] / bin_n_unique_expected  # NOT GOOD
+            # )
+            # bin_stats_list[b]["multiplicity"] = (
+            #     bin_stats_list[b]["n_obs"] / bin_stats_list[b]["n_unique"]  # NOT GOOD
+            # )
         bin_stats_list[-1]["n_unique"] = len(intensities.miller_array)
         bin_stats_list[-1]["n_obs_expected"] = gemmi.count_reflections(
             cell,
@@ -219,10 +220,24 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
             g_with_leading_zeros = i_group + 1
         mtz_group_merged_filename = f"{prefix}group{g_with_leading_zeros}_I.mtz"
         mtz_group_merged.write_to_file(mtz_group_merged_filename)
+
         return mtz_group_merged_filename, bin_stats_list
 
-    m = gemmi.read_mtz_file(unmerged)
-    # TODO gemmi.read_xds_ascii()
+    if unmerged.lower().endswith(".hkl"):
+        xds_ascii = gemmi.read_xds_ascii(unmerged)
+        m = xds_ascii.to_mtz()
+        # Read resolution range from the unmerged file if present
+        with open(unmerged, "r") as f:
+            for line in f:
+                if line.strip().startswith("!INCLUDE_RESOLUTION_RANGE="):
+                    dmax_dmin = line.strip().split("=")[-1].split()
+                    if len(dmax_dmin) >= 2:
+                        dmax, dmin = float(dmax_dmin[0]), float(dmax_dmin[1])
+                    break
+    else:
+        m = gemmi.read_mtz_file(unmerged)
+        dmax = m.resolution_low()
+        dmin = m.resolution_high()
     print(m)
     print(list(m.columns))
 
@@ -280,8 +295,6 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
     else:
         wavelength = 0.0
         print("No wavelength found in input file.")
-    dmax = m.resolution_low()
-    dmin = m.resolution_high()
     binner_master = gemmi.Binner()
     binner_master.setup_from_1_d2(
         n_bins, gemmi.Binner.Method.Dstar2, m.make_1_d2_array(), m.get_cell()
