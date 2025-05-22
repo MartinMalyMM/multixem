@@ -6,6 +6,7 @@ import pprint
 import numpy
 import pandas
 import gemmi
+import matplotlib.pyplot as plt
 from collections import Counter
 from . import __version__
 
@@ -100,6 +101,7 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix):  # noqa: C901
         bin_stats = intensities.calculate_merging_stats(binner)
         binner_bincount_obs = numpy.bincount(binner.get_bins(intensities.miller_array))
         # TODO fix n_obs and n-unique (and completeness) per bin
+        # TODO: add I/sigma
         # TODO add multiplicity
         # Collect bin statistics into a list of dictionaries
         bin_stats_list = []
@@ -561,6 +563,7 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=0):
                     "bin": b + 1,
                     "dmax": binner.dmax_of_bin(b),
                     "dmin": binner.dmin_of_bin(b),
+                    "dmin_star2": 1 / (binner.dmin_of_bin(b) ** 2),
                     "count": len(df_bin),
                     "scale_delfofo": scale_delfofo,
                     # "ccF_iso": ccF_iso,
@@ -596,8 +599,81 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=0):
         # cc_iso_avg_list = [ccF_iso_avg, ccI_iso_avg]
         mtz_fi1_base = os.path.basename(mtz_fi1)
         mtz_fi2_base = os.path.basename(mtz_fi2)
-        stats_filename = f"{mtz_fi1_base}_bins_stats_{mtz_fi2_base}.txt"
+
+        # Make a plot
+        """def star2(x):
+            # Vectorized 1/x^2, treating x==0 manually
+            x = numpy.array(x, float)
+            near_zero = numpy.isclose(x, 0)
+            x[near_zero] = 9999
+            x[~near_zero] = 1 / (x[~near_zero] ** 2)
+            return x
+        def star_sqrt(x):
+            # Vectorized 1/sqrt(x), treating x<0 manually
+            x = numpy.array(x, float)
+            negative = numpy.less(x, 0)
+            x[negative] = 9999
+            x[~negative] = 1 / numpy.sqrt(x[~negative])
+            return x"""
+        plt.figure(figsize=(8, 6))
+        plt.plot(
+            bins_stats_df["dmin_star2"],
+            bins_stats_df["ccI_iso"],
+            marker="o",
+            label="ccI_iso",
+        )
+        if "CC*1" in bins_stats_df.columns:
+            plt.plot(
+                bins_stats_df["dmin_star2"],
+                bins_stats_df["CC*1"],
+                marker="s",
+                label="CC*1",
+            )
+        if "CC*2" in bins_stats_df.columns:
+            plt.plot(
+                bins_stats_df["dmin_star2"],
+                bins_stats_df["CC*2"],
+                marker="^",
+                label="CC*2",
+            )
+        if "CC12true" in bins_stats_df.columns:
+            plt.plot(
+                bins_stats_df["dmin_star2"],
+                bins_stats_df["CC12true"],
+                marker="x",
+                label="CC12true",
+            )
+        plt.xlabel("Resolution (Å⁻²)")
+        # Show dmin labels on a secondary x-axis at the bottom
+        ax = plt.gca()
+        """secax = ax.secondary_xaxis(
+            'bottom',
+            functions=(lambda x: 1 / numpy.sqrt(x), lambda d: 1 / (d ** 2))
+            )
+        secax = ax.secondary_xaxis('top', functions=(star_sqrt, star2))"""
+        secax = ax.secondary_xaxis("top")
+        secax.set_xlabel("Resolution (Å)")
+        N = max(1, len(bins_stats_df) // 5)  # Show only some labels to avoid overlap
+        ticks = bins_stats_df["dmin_star2"]
+        dmins = bins_stats_df["dmin"]
+        labels = []
+        for i, d in enumerate(dmins):
+            if i == 0 or i == len(dmins) - 1:  # Always show the first and last labels
+                labels.append(f"{d:.2f}")
+            elif i % N == 0:
+                labels.append(f"{d:.2f}")
+            else:
+                labels.append("")
+        secax.set_xticks(ticks)
+        secax.set_xticklabels(labels)
+        plt.ylabel("Correlation")
+        plt.title("Correlation statistics per resolution bin")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(f"{mtz_fi1_base}_vs_{mtz_fi2_base}_cc_plot.png")
+        plt.close()
         # Round float columns to 4 decimal places and save as fixed-width file
+        stats_filename = f"{mtz_fi1_base}_bins_stats_{mtz_fi2_base}.txt"
         float_cols = bins_stats_df.select_dtypes(include=["float"]).columns
         bins_stats_df[float_cols] = bins_stats_df[float_cols].round(4)
         bins_stats_df.to_string(
