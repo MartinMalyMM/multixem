@@ -63,6 +63,11 @@ def create_parser():
         default=20,
         help="Number of resolution bins. Must be a positive integer.",
     )
+    parser.add_argument(
+        "--amplitude",
+        action="store_true",
+        help="Use amplitude rather than intensities (not recommended).",
+    )
     # TODO: if input has Friedel pairs but a user wants to merge them
 
     def validate_args(args):
@@ -457,8 +462,9 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=[]):
     def compare_mtz_fi_pair(
         mtz_fi1, mtz_fi2, binner, bin_stats_list1=[], bin_stats_list2=[]
     ):
-        f_col = "F"
-        column_label_dropna = "F"
+        # f_col = "F"
+        i_col = "IMEAN"  # can be just "I" after servalcat fw
+        column_label_dropna = i_col  # or F?
         mtz1 = gemmi.read_mtz_file(mtz_fi1)
         mtz2 = gemmi.read_mtz_file(mtz_fi2)
         print("")
@@ -541,10 +547,10 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=[]):
         for b in range(n_bins):
             df_bin = df[df["BIN"] == b]
             # scale_delfofo = sum_hkl F1 * F2 / sum_hkl F2**2
+            """
             scale_delfofo_numer = (df_bin[f_col + "1"] * df_bin[f_col + "2"]).sum()
             scale_delfofo_denomin = (df_bin[f_col + "2"] ** 2).sum()
             scale_delfofo = scale_delfofo_numer / scale_delfofo_denomin
-            """
             ccF_iso = numpy.corrcoef(
                 df_bin[f_col + "1"], scale_delfofo * df_bin[f_col + "2"]
             )[0, 1]
@@ -552,7 +558,7 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=[]):
                 abs(df_bin[f_col + "1"] - scale_delfofo * df_bin[f_col + "2"])
             ).sum()
             rF_iso_denom = (
-                abs(df_bin[f_col + "1"] + scale_delfofo * df_bin[f_col + "2"])
+                abs(df_bin[f_col + "1"] + scale_delFfofo * df_bin[f_col + "2"])
             ).sum()
             rF_iso = 2 * rF_iso_numer / rF_iso_denom"""
             # DELFOFO
@@ -573,13 +579,17 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=[]):
                 df_bin_flip_plus['PHFC1'] + 180
             df.loc[df_bin_flip_minus.index, 'PHDELFOFO'] = \
                 df_bin_flip_minus['PHFC1'] - 180"""
-            scale_delioio_nomin = (df_bin["I1"] * df_bin["I2"]).sum()
-            scale_delioio_denumer = (df_bin["I2"] ** 2).sum()
+            scale_delioio_nomin = (df_bin[i_col + "1"] * df_bin[i_col + "2"]).sum()
+            scale_delioio_denumer = (df_bin[i_col + "2"] ** 2).sum()
             scale_delioio = scale_delioio_nomin / scale_delioio_denumer
-            ccI_iso = numpy.corrcoef(df_bin["I1"], scale_delioio * df_bin["I2"])[0, 1]
+            ccI_iso = numpy.corrcoef(
+                df_bin[i_col + "1"], scale_delioio * df_bin[i_col + "2"]
+            )[0, 1]
             """
-            rI_iso_numer = (abs(df_bin["I1"] - scale_delioio * df_bin["I2"])).sum()
-            rI_iso_denom = (abs(df_bin["I1"] + scale_delioio * df_bin["I2"])).sum()
+            rI_iso_numer = \
+                (abs(df_bin[i_col + "1"] - scale_delioio * df_bin[i_col + "2"])).sum()
+            rI_iso_denom = \
+                (abs(df_bin[i_col + "1"] + scale_delioio * df_bin[i_col + "2"])).sum()
             rI_iso = 2 * rI_iso_numer / rI_iso_denom"""
 
             bins_stats.append(
@@ -589,10 +599,10 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=[]):
                     "dmin": binner.dmin_of_bin(b),
                     "dmin_star2": 1 / (binner.dmin_of_bin(b) ** 2),
                     "count": len(df_bin),
-                    "scale_delfofo": scale_delfofo,
+                    # "scale_delfofo": scale_delfofo,
                     # "ccF_iso": ccF_iso,
                     # "rF_iso": rF_iso,
-                    "scale_delioio": scale_delfofo,
+                    "scale_delioio": scale_delioio,
                     "ccI_iso": ccI_iso,
                     # "rI_iso": rI_iso,
                 }
@@ -791,15 +801,17 @@ def main():
             n_expected_list.extend(_n_expected_list)
             if i == 0:
                 binner_master = _binner_master
-            _mtzs_fi = run_servalcat_fwt(_mtz_groups_i, prefix)
-            mtzs_fi.extend(_mtzs_fi)
+            if args.amplitude:
+                _mtzs_fi = run_servalcat_fwt(_mtz_groups_i, prefix)
+                mtzs_fi.extend(_mtzs_fi)
             # TODO: free reflections if not given
 
     # TODO: check that input files have FI(R?)
     # TODO: mmCIF
-    compare_mtzs_fi(mtzs_fi, binner_master, bin_stats_lists, n_expected_list)
+    mtzs_i = mtz_groups_i
+    compare_mtzs_fi(mtzs_i, binner_master, bin_stats_lists, n_expected_list)
     if args.model:
-        run_servalcat_refine(mtzs_fi, args.model, mtz_free=args.hklin_free)
+        run_servalcat_refine(mtzs_i, args.model, mtz_free=args.hklin_free)
 
     # compute_difference_maps(mtz_groups[0], mtz_groups[-1], "output_prefix")
 
