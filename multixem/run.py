@@ -423,10 +423,13 @@ def run_servalcat_fwt(mtz_groups_i, prefix=""):
     return mtz_groups_fi
 
 
-def run_servalcat_refine(mtzs_fi, model, mtz_free="", source="xray"):  # , prefix=""):
+def run_servalcat_refine(
+    mtzs_fi, model, mtz_free="", source="xray", sigmaa=True
+):  # , prefix=""):
     # TO DO: source -s
     # TO DO: command line parameters for servalcat, --keyword_file, --config
     refined_mmcifs = []
+    refined_mtzs = []
     for i_mtz, mtz_fi in enumerate(mtzs_fi):
         prefix = os.path.splitext(os.path.basename(mtz_fi))[0] + "_refine"
         log_filename = prefix + ".log"
@@ -439,6 +442,7 @@ def run_servalcat_refine(mtzs_fi, model, mtz_free="", source="xray"):  # , prefi
             model,
             "-s",
             source,
+            "--hout",
             "-o",
             prefix,
         ]
@@ -452,8 +456,36 @@ def run_servalcat_refine(mtzs_fi, model, mtz_free="", source="xray"):  # , prefi
                 )
         except subprocess.CalledProcessError as e:
             print(f"Error occurred while running command: {e}")
+        if sigmaa:
+            log_filename = prefix + "_sigmaa.log"
+            cmd_sigmaa = [
+                "servalcat",
+                "sigmaa",
+                "--hklin",
+                mtz_fi,
+                "--model",
+                prefix + ".mmcif",
+                "-s",
+                source,
+                "-o",
+                prefix + "_sigmaa",
+            ]
+            print("Running command:", " ".join(cmd_sigmaa))
+            try:
+                with open(log_filename, "w") as log_file:
+                    subprocess.run(
+                        cmd_sigmaa,
+                        check=True,
+                        stdout=log_file,
+                        stderr=subprocess.STDOUT,
+                    )
+            except subprocess.CalledProcessError as e:
+                print(f"Error occurred while running command: {e}")
+            refined_mtzs.append(prefix + "_sigmaa.mtz")
+        else:
+            refined_mtzs.append(prefix + ".mtz")
         refined_mmcifs.append(prefix + ".mmcif")
-    return refined_mmcifs
+    return refined_mmcifs, refined_mtzs
 
 
 def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=[]):
@@ -760,6 +792,339 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=[]):
     return n_refl_matrix, ratio_refl_matrix
 
 
+def compute_difference_maps_pair(
+    mtz_file_1, mtz_file_2, binner, bin_stats_list1, bin_stats_list2
+):
+
+    def calc_scale_complex(df, column="F_est"):
+        # scale_complex = 2 * sum_hkl (F1RE * F2RE + F1IM * F2IM) / sum_hkl F2**2
+        scale_complex_nomin = (
+            (df[column + "1RE"] * df[column + "2RE"])
+            + (df[column + "1IM"] * df[column + "2IM"])
+        ).sum()
+        scale_complex_denomin = (df[column + "2"] ** 2).sum()
+        # equivalent to the previous line:
+        # scale_complex = (df[column + '2RE']**2 + df[column + '2IM']**2).sum()
+        scale_complex = scale_complex_nomin / scale_complex_denomin
+        return scale_complex
+
+    mtz1 = gemmi.read_mtz_file(mtz_file_1)
+    mtz2 = gemmi.read_mtz_file(mtz_file_2)
+    columns_fwt = ["FWT", "PHWT"]
+    if all(col in mtz1.column_labels() for col in ["F_est", "DFC", "PHDFC"]) and all(
+        col in mtz2.column_labels() for col in ["F_est", "DFC", "PHDFC"]
+    ):
+        columns_fwt += ["Fcombi", "PHDFC"]
+        columns_fwt1 = [col + "1" for col in columns_fwt]
+        columns_fwt1_dict = {col: col + "1" for col in columns_fwt}
+        columns_fwt2 = [col + "2" for col in columns_fwt]
+        columns_fwt2_dict = {col: col + "2" for col in columns_fwt}
+
+    mtz_df1 = pandas.DataFrame(data=mtz1.array, columns=mtz1.column_labels())
+    mtz_df1 = mtz_df1.astype({name: "int32" for name in ["H", "K", "L"]})
+    mtz_fwt_df1 = mtz_df1.copy()
+    mtz_fwt_df1["Fcombi"] = mtz_fwt_df1["F_est"].combine_first(mtz_fwt_df1["DFC"])
+    print(mtz_file_1)
+    print(mtz_df1.head(10))
+    mtz_df2 = pandas.DataFrame(data=mtz2.array, columns=mtz2.column_labels())
+    mtz_df2 = mtz_df2.astype({name: "int32" for name in ["H", "K", "L"]})
+    mtz_fwt_df2 = mtz_df2.copy()
+    mtz_fwt_df2["Fcombi"] = mtz_fwt_df2["F_est"].combine_first(mtz_fwt_df2["DFC"])
+
+    if "F_est" in mtz_df1.columns and "F_est" in mtz_df2.columns:
+        f_col = "F_est"  # Use also FP?
+        columns = ["F_est"]  # Do we need SIGFP?
+    else:
+        raise ("No column with amplitudes found.")
+    columns += ["FWT", "PHWT", "FC", "PHFC"]
+    # afterwards, rename to FP1, SIGFP1, ..., FP2, SIGFP2, ...
+    # columns1 = [col + "1" for col in columns]
+    columns1_dict = {col: col + "1" for col in columns}
+    # columns2 = [col + "2" for col in columns]
+    columns2_dict = {col: col + "2" for col in columns}
+
+    mtz_df1 = mtz_df1[["H", "K", "L"] + columns]  # Select only relevant columns
+    mtz_df1 = mtz_df1.dropna(subset=[f_col])  # Select only reflections with F
+    mtz_df1 = mtz_df1.rename(columns=columns1_dict)  # Rename
+    print("")
+    print(mtz_df1.head(10))
+    n_refl1 = len(mtz_df1)
+    print(f"No. unique reflections: {n_refl1} in file {mtz_file_1}")
+
+    mtz_df2 = mtz_df2[["H", "K", "L"] + columns]
+    mtz_df2 = mtz_df2.dropna(subset=[f_col])
+    mtz_df2 = mtz_df2.rename(columns=columns2_dict)
+    n_refl2 = len(mtz_df2)
+    print(f"No. unique reflections: {n_refl2} in file {mtz_file_2}")
+
+    # Extract common Miller indices (H, K, L)
+    df = pandas.merge(mtz_df1, mtz_df2, on=["H", "K", "L"])
+    n_refl = len(df)
+    print(
+        f"No. unique reflections: {n_refl} in common;"
+        f" ratios to the originals: {n_refl / n_refl1}   {n_refl / n_refl2}"
+    )
+    print("")
+    print(df.head(10))
+    print(df.describe())
+    hkl_common_array = numpy.array(df[["H", "K", "L"]].values, numpy.int8)
+    hkl_common_array = numpy.ascontiguousarray(hkl_common_array, dtype=numpy.int8)
+    print(len(hkl_common_array))
+    print(hkl_common_array.flags.c_contiguous)
+    print(hkl_common_array[:10])
+
+    # Scaling per resolution bins
+    df["BIN"] = binner.get_bins(hkl_common_array)
+    scale_list = []
+
+    df["FP1RE"] = df[f_col + "1"] * numpy.cos(numpy.deg2rad(df["PHFC1"]))
+    df["FP1IM"] = df[f_col + "1"] * numpy.sin(numpy.deg2rad(df["PHFC1"]))
+    df["FP2RE"] = df[f_col + "2"] * numpy.cos(numpy.deg2rad(df["PHFC2"]))
+    df["FP2IM"] = df[f_col + "2"] * numpy.sin(numpy.deg2rad(df["PHFC2"]))
+    df["FWT1RE"] = df["FWT1"] * numpy.cos(numpy.deg2rad(df["PHWT1"]))
+    df["FWT1IM"] = df["FWT1"] * numpy.sin(numpy.deg2rad(df["PHWT1"]))
+    df["FWT2RE"] = df["FWT2"] * numpy.cos(numpy.deg2rad(df["PHWT2"]))
+    df["FWT2IM"] = df["FWT2"] * numpy.sin(numpy.deg2rad(df["PHWT2"]))
+
+    # Difference map types:
+    # + DELFOFO  or DELFESFES   SR (scaling real)
+    # + DELFOFO2 or DELFESFES2  SC (scaling complex)
+    # + DELFWTFWT2              SC (scaling complex)
+    # + DELFWTFWT2all           SC (scaling complex)
+
+    for b in range(binner.size):
+        df_bin = df[df["BIN"] == b]
+        # scale_delfofo = sum_hkl FP1 * FP2 / sum_hkl FP2**2
+        scale_delfofo_nomin = (df_bin[f_col + "1"] * df_bin[f_col + "2"]).sum()
+        scale_delfofo_denomin = (df_bin[f_col + "2"] ** 2).sum()
+        scale_delfofo = scale_delfofo_nomin / scale_delfofo_denomin
+
+        # scale_delfofo2sc= 2* sum_hkl (FP1RE * FP2RE + FP1IM * FP2IM) / sum_hkl FP2^**2
+        scale_delfofo2sc_nomin = (
+            (df_bin["FP1RE"] * df_bin["FP2RE"]) + (df_bin["FP1IM"] * df_bin["FP2IM"])
+        ).sum()
+        scale_delfofo2sc_denomin = (df_bin[f_col + "2"] ** 2).sum()
+        # equivalent to the previous line:
+        # scale_delfofo2sc_denomin = (df_bin['FP2RE']**2 + df_bin['FP2IM']**2).sum()
+        scale_delfofo2sc = scale_delfofo2sc_nomin / scale_delfofo2sc_denomin
+
+        # scale_delfwtfwt2sc= 2*sum_hkl(FWT1RE*FWT2RE+FWT1IM*FWT2IM)/sum_hkl FWT2^**2
+        scale_delfwtfwt2sc_nomin = (
+            (df_bin["FWT1RE"] * df_bin["FWT2RE"])
+            + (df_bin["FWT1IM"] * df_bin["FWT2IM"])
+        ).sum()
+        scale_delfwtfwt2sc_denomin = (df_bin["FWT2"] ** 2).sum()
+        # equivalent to the previous line:
+        # scale_delfwtfwt2sc_denomin = (df_bin['FWT2RE']**2 + df_bin['FWT2IM']**2).sum()
+        scale_delfwtfwt2sc = scale_delfwtfwt2sc_nomin / scale_delfwtfwt2sc_denomin
+        scale_list.append(
+            {
+                "i": b,
+                "scale_delfofo  sr": scale_delfofo,
+                "scale_delfofo2 sc": scale_delfofo2sc,
+                # "scale_delfwtfwt2sr": scale_delfwtfwt2sr,
+                "scale_delfwtfwt2sc": scale_delfwtfwt2sc,
+                "count": len(df_bin),
+            }
+        )
+
+        # DELFOFO
+        df.loc[df_bin.index, "DELFOFO"] = numpy.abs(
+            df_bin[f_col + "1"] - scale_delfofo * df_bin[f_col + "2"]
+        )
+        df.loc[df_bin.index, "DELFOFOSIG"] = numpy.sign(
+            df_bin[f_col + "1"] - scale_delfofo * df_bin[f_col + "2"]
+        )
+        # If FP1 - scale * FP2 < 0, then add/subtract 180deg to phase
+        df_bin_noflip = df[(df["BIN"] == b) & (df["DELFOFOSIG"] != -1)]
+        df_bin_flip_plus = df[
+            (df["BIN"] == b) & (df["DELFOFOSIG"] == -1) & (df["PHFC1"] <= 0)
+        ]
+        df_bin_flip_minus = df[
+            (df["BIN"] == b) & (df["DELFOFOSIG"] == -1) & (df["PHFC1"] > 0)
+        ]
+        df.loc[df_bin_noflip.index, "PHDELFOFO"] = df_bin_noflip["PHFC1"]
+        df.loc[df_bin_flip_plus.index, "PHDELFOFO"] = df_bin_flip_plus["PHFC1"] + 180
+        df.loc[df_bin_flip_minus.index, "PHDELFOFO"] = df_bin_flip_minus["PHFC1"] - 180
+
+        # DELFOFO2SC
+        df.loc[df_bin.index, "DELFOFO2SCRE"] = (
+            df_bin["FP1RE"] - scale_delfofo2sc * df_bin["FP2RE"]
+        )
+        df.loc[df_bin.index, "DELFOFO2SCIM"] = (
+            df_bin["FP1IM"] - scale_delfofo2sc * df_bin["FP2IM"]
+        )
+        # df.loc[df_bin.index, 'DELFWTFWT2SC'] = numpy.sqrt(
+        #    (df_bin['FWT1RE'] - scale_delfwtfwt2sc*df_bin['FWT2RE'])**2 + \
+        #    (df_bin['FWT1IM'] - scale_delfwtfwt2sc*df_bin['FWT2IM'])**2)
+        df.loc[df_bin.index, "DELFOFO2SC"] = numpy.sqrt(
+            df["DELFOFO2SCRE"] ** 2 + df["DELFOFO2SCIM"] ** 2
+        )
+        df.loc[df_bin.index, "PHDELFOFO2SC"] = numpy.rad2deg(
+            numpy.arctan2(df["DELFOFO2SCIM"], df["DELFOFO2SCRE"])
+        )
+
+        # DELFWTFWT2SC
+        df.loc[df_bin.index, "DELFWTFWT2SCRE"] = (
+            df_bin["FWT1RE"] - scale_delfwtfwt2sc * df_bin["FWT2RE"]
+        )
+        df.loc[df_bin.index, "DELFWTFWT2SCIM"] = (
+            df_bin["FWT1IM"] - scale_delfwtfwt2sc * df_bin["FWT2IM"]
+        )
+        # df.loc[df_bin.index, 'DELFWTFWT2SC'] = numpy.sqrt(
+        #    (df_bin['FWT1RE'] - scale_delfwtfwt2sc*df_bin['FWT2RE'])**2 + \
+        #    (df_bin['FWT1IM'] - scale_delfwtfwt2sc*df_bin['FWT2IM'])**2)
+        df.loc[df_bin.index, "DELFWTFWT2SC"] = numpy.sqrt(
+            df["DELFWTFWT2SCRE"] ** 2 + df["DELFWTFWT2SCIM"] ** 2
+        )
+        df.loc[df_bin.index, "PHDELFWTFWT2SC"] = numpy.rad2deg(
+            numpy.arctan2(df["DELFWTFWT2SCIM"], df["DELFWTFWT2SCRE"])
+        )
+    print("Scale used:")
+    pprint.pprint(scale_list)
+
+    mtz = gemmi.Mtz(with_base=True)
+    mtz.spacegroup = mtz1.spacegroup
+    mtz.set_cell_for_all(mtz1.cell)
+    mtz.add_dataset(mtz1.datasets[0].dataset_name)
+    mtz.add_column("DELFOFO", "F")
+    mtz.add_column("PHDELFOFO", "P")
+    mtz.add_column("DELFOFO2SC", "F")
+    mtz.add_column("PHDELFOFO2SC", "P")
+    mtz.add_column("DELFWTFWT2SC", "F")
+    mtz.add_column("PHDELFWTFWT2SC", "P")
+
+    data = numpy.array(
+        df[
+            [
+                "H",
+                "K",
+                "L",
+                "DELFOFO",
+                "PHDELFOFO",
+                "DELFOFO2SC",
+                "PHDELFOFO2SC",
+                "DELFWTFWT2SC",
+                "PHDELFWTFWT2SC",
+            ]
+        ].values,
+        numpy.float32,
+    )
+    mtz.set_data(data)
+    mtz_fi1_base = os.path.basename(mtz_file_1)
+    mtz_fi2_base = os.path.basename(mtz_file_2)
+    output_prefix = f"{mtz_fi1_base}_diff_{mtz_fi2_base}"
+    output_mtz = f"{output_prefix}.mtz"
+    mtz.write_to_file(output_mtz)
+    print(f"Saved: {output_mtz}")
+
+    # For DELFWTFWT2SCall map, use all the reflections
+    mtz_fwt_df1 = mtz_fwt_df1.dropna(subset=["FWT"])
+    mtz_fwt_df1 = mtz_fwt_df1.rename(columns=columns_fwt1_dict)
+    mtz_fwt_df1 = mtz_fwt_df1[["H", "K", "L"] + columns_fwt1]
+    mtz_fwt_df2 = mtz_fwt_df2.dropna(subset=["FWT"])
+    mtz_fwt_df2 = mtz_fwt_df2.rename(columns=columns_fwt2_dict)
+    mtz_fwt_df2 = mtz_fwt_df2[["H", "K", "L"] + columns_fwt2]
+    df_fwt = pandas.merge(mtz_fwt_df1, mtz_fwt_df2, on=["H", "K", "L"])
+    hkl_common_array_fwt = numpy.array(df_fwt[["H", "K", "L"]].values, numpy.int8)
+    hkl_common_array_fwt = numpy.ascontiguousarray(
+        hkl_common_array_fwt, dtype=numpy.int8
+    )
+    print("FWT merge df len:", len(df_fwt))
+    n_bins_fwt = 80  # TO DO
+    binner_fwt = gemmi.Binner()
+    binner_fwt.setup(
+        n_bins_fwt, gemmi.Binner.Method.Dstar2, hkl_common_array_fwt, mtz1.cell
+    )
+    df_fwt["BIN"] = binner_fwt.get_bins(hkl_common_array_fwt)
+    scale_fwt_list = []
+    df_fwt["FWT1RE"] = df_fwt["FWT1"] * numpy.cos(numpy.deg2rad(df_fwt["PHWT1"]))
+    df_fwt["FWT1IM"] = df_fwt["FWT1"] * numpy.sin(numpy.deg2rad(df_fwt["PHWT1"]))
+    df_fwt["FWT2RE"] = df_fwt["FWT2"] * numpy.cos(numpy.deg2rad(df_fwt["PHWT2"]))
+    df_fwt["FWT2IM"] = df_fwt["FWT2"] * numpy.sin(numpy.deg2rad(df_fwt["PHWT2"]))
+    df_fwt["Fcombi1RE"] = df_fwt["Fcombi1"] * numpy.cos(numpy.deg2rad(df_fwt["PHDFC1"]))
+    df_fwt["Fcombi1IM"] = df_fwt["Fcombi1"] * numpy.sin(numpy.deg2rad(df_fwt["PHDFC1"]))
+    df_fwt["Fcombi2RE"] = df_fwt["Fcombi2"] * numpy.cos(numpy.deg2rad(df_fwt["PHDFC2"]))
+    df_fwt["Fcombi2IM"] = df_fwt["Fcombi2"] * numpy.sin(numpy.deg2rad(df_fwt["PHDFC2"]))
+    for b in range(n_bins_fwt):
+        df_fwt_bin = df_fwt[df_fwt["BIN"] == b]
+        scale_delfwtfwt2scall = calc_scale_complex(df_fwt_bin, "FWT")
+        scale_delfestfest2scall = calc_scale_complex(df_fwt_bin, "Fcombi")
+        scale_fwt_list.append(
+            {
+                "i": b,
+                "count": len(df_fwt_bin),
+                "scale_delfwtfwt2scall": scale_delfwtfwt2scall,
+                "scale_delfestfest2scall": scale_delfestfest2scall,
+            }
+        )
+        df_fwt.loc[df_fwt_bin.index, "DELFWTFWT2SCallRE"] = (
+            df_fwt_bin["FWT1RE"] - scale_delfwtfwt2scall * df_fwt_bin["FWT2RE"]
+        )
+        df_fwt.loc[df_fwt_bin.index, "DELFWTFWT2SCallIM"] = (
+            df_fwt_bin["FWT1IM"] - scale_delfwtfwt2scall * df_fwt_bin["FWT2IM"]
+        )
+        df_fwt.loc[df_fwt_bin.index, "DELFWTFWT2SCall"] = numpy.sqrt(
+            df_fwt["DELFWTFWT2SCallRE"] ** 2 + df_fwt["DELFWTFWT2SCallIM"] ** 2
+        )
+        df_fwt.loc[df_fwt_bin.index, "PHDELFWTFWT2SCall"] = numpy.rad2deg(
+            numpy.arctan2(df_fwt["DELFWTFWT2SCallIM"], df_fwt["DELFWTFWT2SCallRE"])
+        )
+        df_fwt.loc[df_fwt_bin.index, "DELFestFest2SCallRE"] = (
+            df_fwt_bin["Fcombi1RE"] - scale_delfestfest2scall * df_fwt_bin["Fcombi2RE"]
+        )
+        df_fwt.loc[df_fwt_bin.index, "DELFestFest2SCallIM"] = (
+            df_fwt_bin["Fcombi1IM"] - scale_delfestfest2scall * df_fwt_bin["Fcombi2IM"]
+        )
+        df_fwt.loc[df_fwt_bin.index, "DELFestFest2SCall"] = numpy.sqrt(
+            df_fwt["DELFestFest2SCallRE"] ** 2 + df_fwt["DELFestFest2SCallIM"] ** 2
+        )
+        df_fwt.loc[df_fwt_bin.index, "PHDELFestFest2SCall"] = numpy.rad2deg(
+            numpy.arctan2(df_fwt["DELFestFest2SCallIM"], df_fwt["DELFestFest2SCallRE"])
+        )
+    print("Scales used for DELFWTFWT2SCall and DELFestFest2SCall:")
+    pprint.pprint(scale_fwt_list)
+    mtz_fwt = gemmi.Mtz(with_base=True)
+    mtz_fwt.spacegroup = mtz1.spacegroup
+    mtz_fwt.set_cell_for_all(mtz1.cell)
+    mtz_fwt.add_dataset(mtz1.datasets[0].dataset_name)
+    mtz_fwt.add_column("DELFWTFWT2SCall", "F")
+    mtz_fwt.add_column("PHDELFWTFWT2SCall", "P")
+    mtz_fwt.add_column("DELFestFest2SCall", "F")
+    mtz_fwt.add_column("PHDELFestFest2SCall", "P")
+    data = numpy.array(
+        df_fwt[
+            [
+                "H",
+                "K",
+                "L",
+                "DELFWTFWT2SCall",
+                "PHDELFWTFWT2SCall",
+                "DELFestFest2SCall",
+                "PHDELFestFest2SCall",
+            ]
+        ].values,
+        numpy.float32,
+    )
+    mtz_fwt.set_data(data)
+    output_mtz_fwt = f"{output_prefix}_fwt.mtz"
+    mtz_fwt.write_to_file(output_mtz_fwt)
+    print(f"Saved: {output_mtz_fwt}")
+
+
+def compute_difference_maps(refined_mtzs, binner, bin_stats_lists=[]):
+    for i in range(len(refined_mtzs)):
+        for j in range(i + 1, len(refined_mtzs)):
+            # print(i, j)
+            compute_difference_maps_pair(
+                refined_mtzs[i],
+                refined_mtzs[j],
+                binner,
+                bin_stats_lists[i],
+                bin_stats_lists[j],
+            )
+
+
 def main():
     print("Running multixem version:", __version__)
     parser = create_parser()
@@ -811,7 +1176,10 @@ def main():
     mtzs_i = mtz_groups_i
     compare_mtzs_fi(mtzs_i, binner_master, bin_stats_lists, n_expected_list)
     if args.model:
-        run_servalcat_refine(mtzs_i, args.model, mtz_free=args.hklin_free)
+        refined_mmcifs, refined_mtzs = run_servalcat_refine(
+            mtzs_i, args.model, mtz_free=args.hklin_free
+        )
+        compute_difference_maps(refined_mtzs, binner_master, bin_stats_lists)
 
     # compute_difference_maps(mtz_groups[0], mtz_groups[-1], "output_prefix")
 
