@@ -663,8 +663,8 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=[]):
             bins_stats_df["ccI_iso"] * bins_stats_df["count"]
         ).sum() / bins_stats_df["count"].sum()
         # cc_iso_avg_list = [ccF_iso_avg, ccI_iso_avg]
-        mtz_fi1_base = os.path.basename(mtz_fi1)
-        mtz_fi2_base = os.path.basename(mtz_fi2)
+        mtz_fi1_base = os.path.splitext(os.path.basename(mtz_fi1))[0]
+        mtz_fi2_base = os.path.splitext(os.path.basename(mtz_fi2))[0]
 
         # Make a plot
         """def star2(x):
@@ -1011,9 +1011,9 @@ def compute_difference_maps_pair(
         numpy.float32,
     )
     mtz.set_data(data)
-    mtz_fi1_base = os.path.basename(mtz_file_1)
-    mtz_fi2_base = os.path.basename(mtz_file_2)
-    output_prefix = f"{mtz_fi1_base}_diff_{mtz_fi2_base}"
+    mtz_fi1_base = os.path.splitext(os.path.basename(mtz_file_1))[0]
+    mtz_fi2_base = os.path.splitext(os.path.basename(mtz_file_2))[0]
+    output_prefix = f"{mtz_fi1_base}_vs_{mtz_fi2_base}_diffmaps"
     output_mtz = f"{output_prefix}.mtz"
     mtz.write_to_file(output_mtz)
     print(f"Saved: {output_mtz}")
