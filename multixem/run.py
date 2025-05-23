@@ -7,6 +7,7 @@ import numpy
 import pandas
 import gemmi
 import matplotlib.pyplot as plt
+import warnings
 from collections import Counter
 from . import __version__
 
@@ -68,6 +69,11 @@ def create_parser():
         action="store_true",
         help="Use amplitude rather than intensities (not recommended).",
     )
+    parser.add_argument(
+        "--quick",
+        action="store_true",
+        help="Quick run (only for development).",
+    )
     # TODO: if input has Friedel pairs but a user wants to merge them
 
     def validate_args(args):
@@ -77,6 +83,22 @@ def create_parser():
     parser.set_defaults(func=validate_args)
     # TO DO: at least two --hklin or one --hklin_unmerged
     return parser
+
+
+def write_bin_stats(bin_stats_list, filename):
+    # Convert to DataFrame and save
+    stats_df = pandas.DataFrame(bin_stats_list)
+    # stats_df.to_csv(stats_filename, index=False, sep="\t", float_format="%.4f")
+    # Round float columns to 4 decimal places
+    float_cols = stats_df.select_dtypes(include=["float"]).columns
+    stats_df[float_cols] = stats_df[float_cols].round(4)
+    # Save as fixed-width file
+    stats_df.to_string(
+        buf=open(filename, "w"),
+        index=False,
+        justify="right",
+    )
+    print(f"Saved statistics to {filename}")
 
 
 def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix, i_group_prefix=0):
@@ -199,21 +221,10 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix, i_group_prefix
             bin_stats_list[-1]["n_obs"] / bin_stats_list[-1]["n_unique"]
         )
         print("average multiplicity", intensities.nobs_array.mean())
-        # Convert to DataFrame and save as CSV
-        stats_df = pandas.DataFrame(bin_stats_list)
         stats_filename = (
             f"{prefix}group{i_group_prefix + i_group + 1}_merging_stats.txt"
         )
-        # stats_df.to_csv(stats_filename, index=False, sep="\t", float_format="%.4f")
-        # Round float columns to 4 decimal places and save as fixed-width file
-        float_cols = stats_df.select_dtypes(include=["float"]).columns
-        stats_df[float_cols] = stats_df[float_cols].round(4)
-        stats_df.to_string(
-            buf=open(stats_filename, "w"),
-            index=False,
-            justify="right",
-        )
-        print(f"Saved merging statistics to {stats_filename}")
+        write_bin_stats(bin_stats_list, stats_filename)
 
         ## n_expected = gemmi.count_reflections(m.cell, m.spacegroup, dmin, dmax)
         completeness = len(intensities.miller_array) / n_expected
@@ -424,7 +435,12 @@ def run_servalcat_fwt(mtz_groups_i, prefix=""):
 
 
 def run_servalcat_refine(
-    mtzs_fi, model, mtz_free="", source="xray", sigmaa=True
+    mtzs_fi,
+    model,
+    mtz_free="",
+    source="xray",
+    sigmaa=True,
+    quick=False,
 ):  # , prefix=""):
     # TO DO: source -s
     # TO DO: command line parameters for servalcat, --keyword_file, --config
@@ -448,6 +464,8 @@ def run_servalcat_refine(
         ]
         if mtz_free:
             cmd.extend(["--hklin_free", mtz_free])
+        if quick:
+            cmd.extend(["--ncycle", "1"])
         print("Running command:", " ".join(cmd))
         try:
             with open(log_filename, "w") as log_file:
@@ -488,7 +506,7 @@ def run_servalcat_refine(
     return refined_mmcifs, refined_mtzs
 
 
-def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=[]):
+def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
 
     # noqa: E501
     def compare_mtz_fi_pair(
@@ -568,9 +586,9 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=[]):
         bins_tmp = binner.get_bins(hkl_common_array)
         min_n_bins = min(Counter(bins_tmp).values())
         if min_n_bins < 100:
-            print(
-                "WARNING: Less than 100 reflections per bin"
-                " - set up less number of bins."
+            warnings.warn(
+                "Less than 100 reflections per bin"
+                " - it is recommended to set up a lower number of bins."
             )
         df["BIN"] = bins_tmp
         # print("Binner min_n_bins:", min_n_bins)
@@ -739,16 +757,9 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=[]):
         plt.savefig(f"{mtz_fi1_base}_vs_{mtz_fi2_base}_cc_plot.png")
         plt.close()
         # Round float columns to 4 decimal places and save as fixed-width file
-        stats_filename = f"{mtz_fi1_base}_bins_stats_{mtz_fi2_base}.txt"
-        float_cols = bins_stats_df.select_dtypes(include=["float"]).columns
-        bins_stats_df[float_cols] = bins_stats_df[float_cols].round(4)
-        bins_stats_df.to_string(
-            buf=open(stats_filename, "w"),
-            index=False,
-            justify="right",
-        )
-        # pprint.pprint(bins_stats)
-        return n_refl_list, ccI_iso_avg
+        stats_filename = f"{mtz_fi1_base}_vs_{mtz_fi2_base}_bin_stats.txt"
+        write_bin_stats(bins_stats, stats_filename)
+        return bins_stats, n_refl_list, ccI_iso_avg
 
     n_refl_matrix = numpy.zeros((len(mtzs_fi), len(mtzs_fi)), dtype=int)
     ratio_refl_matrix = numpy.identity(len(mtzs_fi), dtype=float)
@@ -757,9 +768,15 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=[]):
     for i in range(len(mtzs_fi)):
         for j in range(i + 1, len(mtzs_fi)):
             # print(i, j)
-            n_refl_list, ccI_iso_avg = compare_mtz_fi_pair(
-                mtzs_fi[i], mtzs_fi[j], binner, bin_stats_lists[i], bin_stats_lists[j]
+            bins_stats, n_refl_list, ccI_iso_avg = compare_mtz_fi_pair(
+                mtzs_fi[i],
+                mtzs_fi[j],
+                binner,
+                bin_stats_matrix[i][i],
+                bin_stats_matrix[j][j],
             )
+            bin_stats_matrix[i][j] = bins_stats
+            bin_stats_matrix[j][i] = bin_stats_matrix[i][j]
             if i == 0:
                 n_refl_matrix[j, j] = n_refl_list[1]
                 if j == 1:
@@ -789,12 +806,10 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_lists=[], n_expected=[]):
     print("Average CCIiso:")
     print(ccI_iso_matrix)
     # TODO: multiplicity
-    return n_refl_matrix, ratio_refl_matrix
+    return bin_stats_matrix, n_refl_matrix, ratio_refl_matrix
 
 
-def compute_difference_maps_pair(
-    mtz_file_1, mtz_file_2, binner, bin_stats_list1, bin_stats_list2
-):
+def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=[]):
 
     def calc_scale_complex(df, column="F_est"):
         # scale_complex = 2 * sum_hkl (F1RE * F2RE + F1IM * F2IM) / sum_hkl F2**2
@@ -805,7 +820,15 @@ def compute_difference_maps_pair(
         scale_complex_denomin = (df[column + "2"] ** 2).sum()
         # equivalent to the previous line:
         # scale_complex = (df[column + '2RE']**2 + df[column + '2IM']**2).sum()
-        scale_complex = scale_complex_nomin / scale_complex_denomin
+        if not numpy.isclose(scale_complex_denomin, 0):
+            scale_complex = scale_complex_nomin / scale_complex_denomin
+        else:
+            warnings.warn(
+                f"scale denominator for bin {b + 1} is zero,"
+                " setting scale for this bin to 1."
+            )
+            scale_complex = 1
+
         return scale_complex
 
     mtz1 = gemmi.read_mtz_file(mtz_file_1)
@@ -875,7 +898,6 @@ def compute_difference_maps_pair(
 
     # Scaling per resolution bins
     df["BIN"] = binner.get_bins(hkl_common_array)
-    scale_list = []
 
     df["FP1RE"] = df[f_col + "1"] * numpy.cos(numpy.deg2rad(df["PHFC1"]))
     df["FP1IM"] = df[f_col + "1"] * numpy.sin(numpy.deg2rad(df["PHFC1"]))
@@ -892,12 +914,35 @@ def compute_difference_maps_pair(
     # + DELFWTFWT2              SC (scaling complex)
     # + DELFWTFWT2all           SC (scaling complex)
 
-    for b in range(binner.size):
+    if not bin_stats_list:
+        bin_stats_list = [
+            {
+                "bin": b + 1,
+                "dmax": binner.dmax_of_bin(b),
+                "dmin": binner.dmin_of_bin(b),
+            }
+            for b in range(binner.size)
+        ]
+    if len(bin_stats_list) != binner.size:
+        warnings.warn(
+            f"bin_stats_list has {len(bin_stats_list)} bins,"
+            f" but binner has {binner.size} bins.",
+        )
+    for b in range(len(bin_stats_list)):
         df_bin = df[df["BIN"] == b]
         # scale_delfofo = sum_hkl FP1 * FP2 / sum_hkl FP2**2
         scale_delfofo_nomin = (df_bin[f_col + "1"] * df_bin[f_col + "2"]).sum()
         scale_delfofo_denomin = (df_bin[f_col + "2"] ** 2).sum()
-        scale_delfofo = scale_delfofo_nomin / scale_delfofo_denomin
+        if not numpy.isclose(scale_delfofo_denomin, 0):
+            scale_delfofo = scale_delfofo_nomin / scale_delfofo_denomin
+        else:
+            warnings.warn(
+                f"scale_delfofo denominator for bin {b + 1} is zero"
+                f" ({bin_stats_list[b]['dmax']:.4f} -"
+                f" {bin_stats_list[b]['dmin']:.4f} A),"
+                " setting scale for this bin to 1."
+            )
+            scale_delfofo = 1
 
         # scale_delfofo2sc= 2* sum_hkl (FP1RE * FP2RE + FP1IM * FP2IM) / sum_hkl FP2^**2
         scale_delfofo2sc_nomin = (
@@ -906,7 +951,14 @@ def compute_difference_maps_pair(
         scale_delfofo2sc_denomin = (df_bin[f_col + "2"] ** 2).sum()
         # equivalent to the previous line:
         # scale_delfofo2sc_denomin = (df_bin['FP2RE']**2 + df_bin['FP2IM']**2).sum()
-        scale_delfofo2sc = scale_delfofo2sc_nomin / scale_delfofo2sc_denomin
+        if not numpy.isclose(scale_delfofo2sc_denomin, 0):
+            scale_delfofo2sc = scale_delfofo2sc_nomin / scale_delfofo2sc_denomin
+        else:
+            warnings.warn(
+                f"scale_delfofo2sc denominator for bin {b + 1} is zero,"
+                " setting scale for this bin to 1."
+            )
+            scale_delfofo2sc = 1
 
         # scale_delfwtfwt2sc= 2*sum_hkl(FWT1RE*FWT2RE+FWT1IM*FWT2IM)/sum_hkl FWT2^**2
         scale_delfwtfwt2sc_nomin = (
@@ -916,17 +968,27 @@ def compute_difference_maps_pair(
         scale_delfwtfwt2sc_denomin = (df_bin["FWT2"] ** 2).sum()
         # equivalent to the previous line:
         # scale_delfwtfwt2sc_denomin = (df_bin['FWT2RE']**2 + df_bin['FWT2IM']**2).sum()
-        scale_delfwtfwt2sc = scale_delfwtfwt2sc_nomin / scale_delfwtfwt2sc_denomin
-        scale_list.append(
-            {
-                "i": b,
-                "scale_delfofo  sr": scale_delfofo,
-                "scale_delfofo2 sc": scale_delfofo2sc,
-                # "scale_delfwtfwt2sr": scale_delfwtfwt2sr,
-                "scale_delfwtfwt2sc": scale_delfwtfwt2sc,
-                "count": len(df_bin),
-            }
-        )
+        if not numpy.isclose(scale_delfwtfwt2sc_denomin, 0):
+            scale_delfwtfwt2sc = scale_delfwtfwt2sc_nomin / scale_delfwtfwt2sc_denomin
+        else:
+            warnings.warn(
+                f"scale_delfwtfwt2sc denominator for bin {b + 1} is zero,"
+                f" ({bin_stats_list[b]['dmax']:.4f} -"
+                f" {bin_stats_list[b]['dmin']:.4f} A),"
+                " setting scale for this bin to 1."
+            )
+            scale_delfwtfwt2sc = 1
+
+        if len(df_bin) < 100:
+            warnings.warn(
+                f"Less than 100 reflections in bin {b + 1}"
+                f" ({bin_stats_list[b]['dmax']:.4f} -"
+                f" {bin_stats_list[b]['dmin']:.4f} A)."
+            )
+        bin_stats_list[b]["scale_delfofo"] = scale_delfofo
+        bin_stats_list[b]["delfofo_count"] = len(df_bin)
+        bin_stats_list[b]["scale_delfofo2sc"] = scale_delfofo2sc
+        bin_stats_list[b]["scale_delfwtfwt2sc"] = scale_delfwtfwt2sc
 
         # DELFOFO
         df.loc[df_bin.index, "DELFOFO"] = numpy.abs(
@@ -980,8 +1042,6 @@ def compute_difference_maps_pair(
         df.loc[df_bin.index, "PHDELFWTFWT2SC"] = numpy.rad2deg(
             numpy.arctan2(df["DELFWTFWT2SCIM"], df["DELFWTFWT2SCRE"])
         )
-    print("Scale used:")
-    pprint.pprint(scale_list)
 
     mtz = gemmi.Mtz(with_base=True)
     mtz.spacegroup = mtz1.spacegroup
@@ -1031,13 +1091,9 @@ def compute_difference_maps_pair(
         hkl_common_array_fwt, dtype=numpy.int8
     )
     print("FWT merge df len:", len(df_fwt))
-    n_bins_fwt = 80  # TO DO
-    binner_fwt = gemmi.Binner()
-    binner_fwt.setup(
-        n_bins_fwt, gemmi.Binner.Method.Dstar2, hkl_common_array_fwt, mtz1.cell
-    )
+    binner_fwt = binner
     df_fwt["BIN"] = binner_fwt.get_bins(hkl_common_array_fwt)
-    scale_fwt_list = []
+
     df_fwt["FWT1RE"] = df_fwt["FWT1"] * numpy.cos(numpy.deg2rad(df_fwt["PHWT1"]))
     df_fwt["FWT1IM"] = df_fwt["FWT1"] * numpy.sin(numpy.deg2rad(df_fwt["PHWT1"]))
     df_fwt["FWT2RE"] = df_fwt["FWT2"] * numpy.cos(numpy.deg2rad(df_fwt["PHWT2"]))
@@ -1046,18 +1102,14 @@ def compute_difference_maps_pair(
     df_fwt["Fcombi1IM"] = df_fwt["Fcombi1"] * numpy.sin(numpy.deg2rad(df_fwt["PHDFC1"]))
     df_fwt["Fcombi2RE"] = df_fwt["Fcombi2"] * numpy.cos(numpy.deg2rad(df_fwt["PHDFC2"]))
     df_fwt["Fcombi2IM"] = df_fwt["Fcombi2"] * numpy.sin(numpy.deg2rad(df_fwt["PHDFC2"]))
-    for b in range(n_bins_fwt):
+    for b in range(len(bin_stats_list)):
         df_fwt_bin = df_fwt[df_fwt["BIN"] == b]
         scale_delfwtfwt2scall = calc_scale_complex(df_fwt_bin, "FWT")
         scale_delfestfest2scall = calc_scale_complex(df_fwt_bin, "Fcombi")
-        scale_fwt_list.append(
-            {
-                "i": b,
-                "count": len(df_fwt_bin),
-                "scale_delfwtfwt2scall": scale_delfwtfwt2scall,
-                "scale_delfestfest2scall": scale_delfestfest2scall,
-            }
-        )
+        bin_stats_list[b]["scale_delfwtfwt2scall"] = scale_delfwtfwt2scall
+        bin_stats_list[b]["delfwtfwt2scall_count"] = len(df_fwt_bin)
+        bin_stats_list[b]["scale_delfestfest2scall"] = scale_delfestfest2scall
+        bin_stats_list[b]["scale_delfwtfwt2sc"] = scale_delfwtfwt2sc
         df_fwt.loc[df_fwt_bin.index, "DELFWTFWT2SCallRE"] = (
             df_fwt_bin["FWT1RE"] - scale_delfwtfwt2scall * df_fwt_bin["FWT2RE"]
         )
@@ -1082,8 +1134,6 @@ def compute_difference_maps_pair(
         df_fwt.loc[df_fwt_bin.index, "PHDELFestFest2SCall"] = numpy.rad2deg(
             numpy.arctan2(df_fwt["DELFestFest2SCallIM"], df_fwt["DELFestFest2SCallRE"])
         )
-    print("Scales used for DELFWTFWT2SCall and DELFestFest2SCall:")
-    pprint.pprint(scale_fwt_list)
     mtz_fwt = gemmi.Mtz(with_base=True)
     mtz_fwt.spacegroup = mtz1.spacegroup
     mtz_fwt.set_cell_for_all(mtz1.cell)
@@ -1110,19 +1160,29 @@ def compute_difference_maps_pair(
     output_mtz_fwt = f"{output_prefix}_fwt.mtz"
     mtz_fwt.write_to_file(output_mtz_fwt)
     print(f"Saved: {output_mtz_fwt}")
+    stats_filename = f"{mtz_fi1_base}_vs_{mtz_fi2_base}_bin_stats.txt"
+    write_bin_stats(bin_stats_list, stats_filename)
+    return bin_stats_list
 
 
-def compute_difference_maps(refined_mtzs, binner, bin_stats_lists=[]):
+def compute_difference_maps(refined_mtzs, binner, bin_stats_matrix=[]):
     for i in range(len(refined_mtzs)):
         for j in range(i + 1, len(refined_mtzs)):
             # print(i, j)
-            compute_difference_maps_pair(
+            bin_stats_diff = compute_difference_maps_pair(
                 refined_mtzs[i],
                 refined_mtzs[j],
                 binner,
-                bin_stats_lists[i],
-                bin_stats_lists[j],
+                bin_stats_matrix[i][j],
             )
+            if bin_stats_matrix:
+                for b in range(len(bin_stats_diff)):
+                    bin_stats_matrix[i][j][b].update(bin_stats_diff[b])
+                    bin_stats_matrix[j][i][b].update(bin_stats_diff[b])
+                filename = f"{refined_mtzs[i]}_vs_{refined_mtzs[j]}_bin_stats.txt"
+                write_bin_stats(bin_stats_matrix[i][j], filename)
+
+    return bin_stats_matrix
 
 
 def main():
@@ -1173,13 +1233,24 @@ def main():
 
     # TODO: check that input files have FI(R?)
     # TODO: mmCIF
+    bin_stats_matrix = len(bin_stats_lists) * [len(bin_stats_lists) * [None]]
+    for i in range(len(bin_stats_lists)):
+        bin_stats_matrix[i][i] = bin_stats_lists[i]
+
     mtzs_i = mtz_groups_i
-    compare_mtzs_fi(mtzs_i, binner_master, bin_stats_lists, n_expected_list)
+    bin_stats_matrix, n_refl_matrix, ratio_refl_matrix = compare_mtzs_fi(
+        mtzs_i, binner_master, bin_stats_matrix, n_expected_list
+    )
     if args.model:
         refined_mmcifs, refined_mtzs = run_servalcat_refine(
-            mtzs_i, args.model, mtz_free=args.hklin_free
+            mtzs_i,
+            args.model,
+            mtz_free=args.hklin_free,
+            quick=args.quick,
         )
-        compute_difference_maps(refined_mtzs, binner_master, bin_stats_lists)
+        bin_stats_matrix = compute_difference_maps(
+            refined_mtzs, binner_master, bin_stats_matrix
+        )
 
     # compute_difference_maps(mtz_groups[0], mtz_groups[-1], "output_prefix")
 
