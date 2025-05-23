@@ -438,7 +438,7 @@ def run_servalcat_refine(mtzs_fi, model, mtz_free="", source="xray"):  # , prefi
             prefix,
         ]
         if mtz_free:
-            cmd.extend(["--hklin_unmerged", mtz_free])
+            cmd.extend(["--hklin_free", mtz_free])
         print("Running command:", " ".join(cmd))
         try:
             with open(log_filename, "w") as log_file:
