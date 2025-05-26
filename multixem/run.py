@@ -86,6 +86,20 @@ def create_parser():
 
 
 def write_bin_stats(bin_stats_list, filename):
+    """
+    Save bin statistics to a fixed-width text file.
+
+    Args:
+        bin_stats_list (list of dict): A list where each dictionary represents
+            statistics for a resolution bin. Each dictionary can have the
+            following keys:
+            - "bin" (int or str): Bin number or "overall" for overall statistics.
+            - "dmax" (float): Maximum resolution (Å).
+            - "dmin" (float): Minimum resolution (Å).
+            - "dmin_star2" (float): Minimum inverse resolution squared (Å⁻²).
+            - Additional keys may be included for other statistics.
+        filename (str): Path to the output file.
+    """
     # Convert to DataFrame and save
     stats_df = pandas.DataFrame(bin_stats_list)
     # stats_df.to_csv(stats_filename, index=False, sep="\t", float_format="%.4f")
@@ -857,7 +871,7 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
         f_col = "F_est"  # Use also FP?
         columns = ["F_est"]  # Do we need SIGFP?
     else:
-        raise ("No column with amplitudes found.")
+        raise ValueError("No column with amplitudes found.")
     columns += ["FWT", "PHWT", "FC", "PHFC"]
     # afterwards, rename to FP1, SIGFP1, ..., FP2, SIGFP2, ...
     # columns1 = [col + "1" for col in columns]
