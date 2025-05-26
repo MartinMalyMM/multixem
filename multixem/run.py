@@ -890,6 +890,123 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
     return bin_stats_matrix, n_refl_matrix, ratio_refl_matrix
 
 
+def adp_analysis_histograms(modelPaths, prefix=""):
+
+    def adp_analysis(modelPath):
+        """
+        Perform ADP analysis on a given structure model (mmCIF)
+        and return statistics.
+
+        Args:
+            modelPath (str): Path to the mmCIF model file.
+        Returns:
+            tuple: Contains the following elements:
+                - adp_dict["All"] (list): List of all ADP values.
+                - hist (numpy.ndarray): Histogram of ADP values.
+                - bin_edges (numpy.ndarray): Edges of the histogram bins.
+                - median (float): Median of ADP values.
+                - mad (float): Median Absolute Deviation of ADP values.
+                - q1 (float): First quartile of ADP values.
+                - q3 (float): Third quartile of ADP values.
+                - iqr (float): Interquartile range of ADP values.
+        """
+        print(f"Running ADP analysis for {modelPath}")
+        adp_dict = {}
+        adp_per_resi = {}
+        adp_dict["All"] = []
+        cif_block = gemmi.cif.read(modelPath)[0]
+        st = gemmi.make_structure_from_block(cif_block)
+        # st = gemmi.read_structure(modelPath)
+        for model in st:
+            for chain in model:
+                polymer = chain.get_polymer()
+                ptype = polymer.check_polymer_type()
+                adp_dict[chain.name] = []
+                adp_per_resi[chain.name] = {"resi": [], "adp": [], "adp_sidechain": []}
+                for residue in chain:
+                    adp_this_resi = []
+                    adp_this_resi_sidechain = []
+                    for atom in residue:
+                        if not atom.is_hydrogen() and atom.occ > 0:
+                            if atom.aniso.nonzero():
+                                adp_atom = gemmi.calculate_b_est(atom)
+                            else:
+                                adp_atom = atom.b_iso
+                            adp_dict["All"].append(adp_atom)
+                            adp_dict[chain.name].append(adp_atom)
+                            if (
+                                residue.entity_type == gemmi.EntityType.Polymer
+                                and ptype
+                                in [
+                                    gemmi.PolymerType.PeptideL,
+                                    gemmi.PolymerType.PeptideD,
+                                ]
+                                and atom.name not in ["CA", "C", "O", "N", "OXT"]
+                            ):
+                                adp_this_resi_sidechain.append(adp_atom)
+                            else:
+                                adp_this_resi.append(adp_atom)
+                    try:
+                        if residue.seqid.num in adp_per_resi[chain.name]["resi"]:
+                            continue  # ignoring insertion codes, sorry
+                        adp_per_resi[chain.name]["resi"].append(residue.seqid.num)
+                        if adp_this_resi:
+                            adp_per_resi[chain.name]["adp"].append(
+                                numpy.mean(adp_this_resi)
+                            )
+                        else:
+                            adp_per_resi[chain.name]["adp"].append(None)
+                        if adp_this_resi_sidechain:
+                            adp_per_resi[chain.name]["adp_sidechain"].append(
+                                numpy.mean(adp_this_resi_sidechain)
+                            )
+                        else:
+                            adp_per_resi[chain.name]["adp_sidechain"].append(None)
+                    except (KeyError, AttributeError) as e:
+                        warnings.warn(
+                            f"Error processing residue {residue.seqid}"
+                            f" in chain {chain.name}: {e}"
+                        )
+
+        median = numpy.median(adp_dict["All"])
+        mad = numpy.median(numpy.absolute(adp_dict["All"] - median))
+        q1 = numpy.quantile(adp_dict["All"], 0.25)
+        q3 = numpy.quantile(adp_dict["All"], 0.75)
+        iqr = q3 - q1
+
+        return adp_dict["All"], median, mad, q1, q3, iqr
+
+    plt.figure(figsize=(8, 6))
+    max_value = 0
+    for modelPath in modelPaths:
+        values, median, mad, q1, q3, iqr = adp_analysis(modelPath)
+        max_value = max(max_value, max(values))
+        plt.hist(
+            values, alpha=0.7, histtype="step", label=f"{modelPath}", density=True
+        )  # bins=30, edgecolor='black'
+        plt.axvline(
+            median,
+            color="b",
+            linestyle="--",
+            label=f"Median = {median:.2f}; MAD = {mad:.2f}",
+            alpha=0.7,
+        )
+        plt.axvline(
+            q1,
+            color="r",
+            linestyle="--",
+            label=f"Q1 = {q1:.2f}; IQR = {iqr:.2f}",
+            alpha=0.7,
+        )
+        plt.axvline(q3, color="r", linestyle="--", label=f"Q3 = {q3:.2f}", alpha=0.7)
+    plt.xlabel("ADP (Atomic Displacement Parameter)")
+    plt.ylabel("Frequency")
+    plt.title("ADP Histogram")
+    plt.legend(loc="upper right")
+    plt.xlim(0, max(values) * 1.1)
+    plt.savefig(f"{prefix}adp_histogram.png")
+
+
 def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=[]):
     """
     Compute difference maps between two MTZ files from `servalcat refine_xtal_norefmac`
@@ -1237,7 +1354,7 @@ def main():
             prefix += "_"
         print("Prefix for the output files:", prefix)
     else:
-        prefix = ""
+        prefix = "multixem_"
 
     os.mkdir("multixem_proc")
     os.chdir("multixem_proc")
@@ -1287,11 +1404,10 @@ def main():
             mtz_free=args.hklin_free,
             quick=args.quick,
         )
+        adp_analysis_histograms(refined_mmcifs, prefix)
         bin_stats_matrix = compute_difference_maps(
             refined_mtzs, binner_master, bin_stats_matrix
         )
-
-    # compute_difference_maps(mtz_groups[0], mtz_groups[-1], "output_prefix")
 
 
 if __name__ == "__main__":
