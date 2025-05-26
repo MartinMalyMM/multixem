@@ -81,7 +81,7 @@ def create_parser():
             parser.error("--n_batches requires --hklin_unmerged to be provided.")
 
     parser.set_defaults(func=validate_args)
-    # TO DO: at least two --hklin or one --hklin_unmerged
+    # TODO: at least two --hklin or one --hklin_unmerged
     return parser
 
 
@@ -138,18 +138,11 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix, i_group_prefix
             df_groups[i_group]["I"].values,
             df_groups[i_group]["SIGI"].values,
         )
-        # binner10 = gemmi.Binner()
-        # binner10.setup(10, gemmi.Binner.Method.Dstar2, intensities)
         if anom:
             intensities.prepare_for_merging(gemmi.DataType.Anomalous)
         else:
             intensities.prepare_for_merging(gemmi.DataType.Mean)
         bin_stats = intensities.calculate_merging_stats(binner)
-        # binner_bincount_obs = numpy.bincount(
-        #     binner.get_bins(intensities.miller_array))
-        # TODO fix n_obs and n-unique (and completeness) per bin
-        # TODO: add I/sigma
-        # TODO add multiplicity
         # Collect bin statistics into a list of dictionaries
         bin_stats_list = []
         for n, stats in enumerate(bin_stats):
@@ -158,7 +151,6 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix, i_group_prefix
                     "bin": n + 1,
                     "dmax": binner.dmax_of_bin(n),
                     "dmin": binner.dmin_of_bin(n),
-                    # "n_obs": binner_bincount_obs[n],  # NOT GOOD
                     "CC1/2": stats.cc_half(),
                     "CC*": stats.cc_star(),
                     "Rmeas": stats.r_meas(),
@@ -172,7 +164,6 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix, i_group_prefix
                 "bin": "overall",
                 "dmax": intensities.resolution_range()[0],
                 "dmin": intensities.resolution_range()[1],
-                "n_obs": len(intensities.miller_array),
                 "CC1/2": overall_stats[0].cc_half(),
                 "CC*": overall_stats[0].cc_star(),
                 "Rmeas": overall_stats[0].r_meas(),
@@ -185,18 +176,22 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix, i_group_prefix
         else:
             intensities.merge_in_place(gemmi.DataType.Mean)
         # SIGI from merging:  1/sqrt(∑w), where w=1/sigma^2
-        # After meringing, add n_unique completeness multiplicity to statistics
-        # binner_bincount_unique = numpy.bincount(
-        #     binner.get_bins(intensities.miller_array)
-        # )
-        for b in range(binner.size):
-            bin_n_obs_expected = gemmi.count_reflections(
-                cell,
-                spacegroup,
-                binner.dmin_of_bin(b),
-                binner.dmax_of_bin(b),
-                unique=False,
+        mtz_group_merged = intensities.prepare_merged_mtz(with_nobs=True)
+        if wavelength:
+            mtz_group_merged.dataset(0).wavelength = wavelength
+        if n_groups:
+            g_with_leading_zeros = str(i_group_prefix + i_group + 1).zfill(
+                len(str(n_groups))
             )
+        else:
+            g_with_leading_zeros = i_group_prefix + i_group + 1
+        # After merging, add <I> <I/sigI> n_unique n_obs completeness multiplicity
+        df = pandas.DataFrame(
+            data=mtz_group_merged.array, columns=mtz_group_merged.column_labels()
+        )
+        df["BIN"] = binner.get_bins(mtz_group_merged)
+        for b in range(binner.size):
+            df_bin = df[df["BIN"] == b]
             bin_n_unique_expected = gemmi.count_reflections(
                 cell,
                 spacegroup,
@@ -204,37 +199,29 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix, i_group_prefix
                 binner.dmax_of_bin(b),
                 unique=True,
             )
-            # bin_stats_list[b]["n_unique"] = int(binner_bincount_unique[b])  # NOT GOOD
-            bin_stats_list[b]["n_obs_expected"] = bin_n_obs_expected
-            bin_stats_list[b]["n_unique_expected"] = bin_n_unique_expected
-            # bin_stats_list[b]["completeness"] = (
-            #     bin_stats_list[b]["n_unique"] / bin_n_unique_expected  # NOT GOOD
-            # )
-            # bin_stats_list[b]["multiplicity"] = (
-            #     bin_stats_list[b]["n_obs"] / bin_stats_list[b]["n_unique"]  # NOT GOOD
-            # )
-        bin_stats_list[-1]["n_unique"] = len(intensities.miller_array)
-        bin_stats_list[-1]["n_obs_expected"] = gemmi.count_reflections(
-            cell,
-            spacegroup,
-            intensities.resolution_range()[1],
-            intensities.resolution_range()[0],
-            unique=False,
-        )
-        bin_stats_list[-1]["n_unique_expected"] = gemmi.count_reflections(
+            bin_stats_list[b]["<I>"] = df_bin["IMEAN"].mean()
+            bin_stats_list[b]["<I/sigI>"] = (
+                df_bin["IMEAN"] / df_bin["SIGIMEAN"]
+            ).mean()
+            bin_stats_list[b]["n_unique"] = len(df_bin)
+            bin_stats_list[b]["completeness"] = len(df_bin) / bin_n_unique_expected
+            bin_stats_list[b]["n_obs"] = int(df_bin["NOBS"].sum())
+            bin_stats_list[b]["multiplicity"] = df_bin["NOBS"].mean()
+        n_unique_expected = gemmi.count_reflections(
             cell,
             spacegroup,
             intensities.resolution_range()[1],
             intensities.resolution_range()[0],
             unique=True,
         )
-        bin_stats_list[-1]["completeness"] = (
-            bin_stats_list[-1]["n_unique"] / bin_stats_list[-1]["n_unique_expected"]
-        )
-        bin_stats_list[-1]["multiplicity"] = (
-            bin_stats_list[-1]["n_obs"] / bin_stats_list[-1]["n_unique"]
-        )
-        print("average multiplicity", intensities.nobs_array.mean())
+        bin_stats_list[-1]["<I>"] = df["IMEAN"].mean()
+        bin_stats_list[-1]["<I/sigI>"] = (df["IMEAN"] / df["SIGIMEAN"]).mean()
+        bin_stats_list[-1]["n_unique"] = len(df)
+        # TODO: overall completeness is not correct
+        bin_stats_list[-1]["completeness"] = len(df) / n_unique_expected
+        bin_stats_list[-1]["n_obs"] = int(df["NOBS"].sum())
+        bin_stats_list[-1]["multiplicity"] = df["NOBS"].mean()
+        bin_stats_list[-1]["n_unique"] = len(intensities.miller_array)
         stats_filename = (
             f"{prefix}group{i_group_prefix + i_group + 1}_merging_stats.txt"
         )
@@ -248,15 +235,7 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix, i_group_prefix
             " => completeness:",
             f"{completeness:.3f}",
         )
-        mtz_group_merged = intensities.prepare_merged_mtz(with_nobs=True)
-        if wavelength:
-            mtz_group_merged.dataset(0).wavelength = wavelength
-        if n_groups:
-            g_with_leading_zeros = str(i_group_prefix + i_group + 1).zfill(
-                len(str(n_groups))
-            )
-        else:
-            g_with_leading_zeros = i_group_prefix + i_group + 1
+
         mtz_group_merged_filename = f"{prefix}group{g_with_leading_zeros}_I.mtz"
         mtz_group_merged.write_to_file(mtz_group_merged_filename)
 
