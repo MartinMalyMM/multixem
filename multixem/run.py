@@ -520,6 +520,73 @@ def run_servalcat_refine(
     return refined_mmcifs, refined_mtzs
 
 
+def calc_scale_real(df, column="FP", b=0, dmax=0.0, dmin=0.0):
+    """
+    Assumes that df contains columns F1 and F2.
+    scale_real = sum_hkl (F1 * F2) / sum_hkl F2**2.
+    If denominator is zero, returns 1.
+
+    Args:
+        df (pandas.DataFrame): DataFrame with columns for F1 and F2.
+        column (str): Base name of the columns for F1 and F2.
+        b (int): Bin number, used for warnings.
+        dmax (float): Maximum resolution for the bin, used in warnings.
+        dmin (float): Minimum resolution for the bin, used in warnings.
+    Returns:
+        float: Scale factor for the bin.
+    """
+    nomin = (df[column + "1"] * df[column + "2"]).sum()
+    denomin = (df[column + "2"] ** 2).sum()
+    if not numpy.isclose(denomin, 0):
+        return nomin / denomin
+    else:
+        if b and dmax and dmin:
+            warnings.warn(
+                f"Scale denominator for bin {b + 1} is zero"
+                f" ({dmax} - {dmin} A),"
+                " setting scale for this bin to 1."
+            )
+        return 1.0
+
+
+def calc_scale_complex(df, column="F_est", column_denom="", b=0, dmax=0.0, dmin=0.0):
+    """
+    Assumes that df contains columns `F_est`1RE, `F_est`1IM,
+    `F_est`2RE, `F_est`2IM and `F_est`2.
+    scale_complex = sum_hkl (F1RE * F2RE + F1IM * F2IM) / sum_hkl F2**2
+    If denominator is zero, returns 1.
+
+    Args:
+        df (pandas.DataFrame): DataFrame with columns for F1 and F2.
+        column (str): Base name of the columns for F1 and F2.
+        column_denom (str): Column name for the denominator, if different from F2.
+        b (int): Bin number, used for warnings.
+        dmax (float): Maximum resolution for the bin, used in warnings.
+        dmin (float): Minimum resolution for the bin, used in warnings.
+    Returns:
+        float: Scale factor for the bin.
+    """
+    scale_complex_numer = (
+        (df[column + "1RE"] * df[column + "2RE"])
+        + (df[column + "1IM"] * df[column + "2IM"])
+    ).sum()
+    if column_denom:
+        scale_complex_denomin = (df[column_denom] ** 2).sum()
+    else:
+        scale_complex_denomin = (df[column + "2"] ** 2).sum()
+    # equivalent to the previous line:
+    # scale_complex_denomin = (df[column + '2RE']**2 + df[column + '2IM']**2).sum()
+    if not numpy.isclose(scale_complex_denomin, 0):
+        return scale_complex_numer / scale_complex_denomin
+    else:
+        warnings.warn(
+            f"Scale denominator for bin {b + 1} is zero"
+            f" ({dmax} - {dmin} A),"
+            " setting scale for this bin to 1."
+        )
+        return 1.0
+
+
 def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
 
     # noqa: E501
@@ -643,9 +710,9 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
                 df_bin_flip_plus['PHFC1'] + 180
             df.loc[df_bin_flip_minus.index, 'PHDELFOFO'] = \
                 df_bin_flip_minus['PHFC1'] - 180"""
-            scale_delioio_nomin = (df_bin[i_col + "1"] * df_bin[i_col + "2"]).sum()
-            scale_delioio_denumer = (df_bin[i_col + "2"] ** 2).sum()
-            scale_delioio = scale_delioio_nomin / scale_delioio_denumer
+            scale_delioio = calc_scale_real(
+                df_bin, i_col, b, binner.dmax_of_bin(b), binner.dmin_of_bin(b)
+            )
             ccI_iso = numpy.corrcoef(
                 df_bin[i_col + "1"], scale_delioio * df_bin[i_col + "2"]
             )[0, 1]
@@ -825,26 +892,6 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
 
 def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=[]):
 
-    def calc_scale_complex(df, column="F_est"):
-        # scale_complex = 2 * sum_hkl (F1RE * F2RE + F1IM * F2IM) / sum_hkl F2**2
-        scale_complex_nomin = (
-            (df[column + "1RE"] * df[column + "2RE"])
-            + (df[column + "1IM"] * df[column + "2IM"])
-        ).sum()
-        scale_complex_denomin = (df[column + "2"] ** 2).sum()
-        # equivalent to the previous line:
-        # scale_complex = (df[column + '2RE']**2 + df[column + '2IM']**2).sum()
-        if not numpy.isclose(scale_complex_denomin, 0):
-            scale_complex = scale_complex_nomin / scale_complex_denomin
-        else:
-            warnings.warn(
-                f"scale denominator for bin {b + 1} is zero,"
-                " setting scale for this bin to 1."
-            )
-            scale_complex = 1
-
-        return scale_complex
-
     mtz1 = gemmi.read_mtz_file(mtz_file_1)
     mtz2 = gemmi.read_mtz_file(mtz_file_2)
     columns_fwt = ["FWT", "PHWT"]
@@ -871,6 +918,7 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
         f_col = "F_est"  # Use also FP?
         columns = ["F_est"]  # Do we need SIGFP?
     else:
+        raise ValueError("No column with amplitudes found.")
         raise ValueError("No column with amplitudes found.")
     columns += ["FWT", "PHWT", "FC", "PHFC"]
     # afterwards, rename to FP1, SIGFP1, ..., FP2, SIGFP2, ...
@@ -937,53 +985,25 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
     for b in range(len(bin_stats_list)):
         df_bin = df[df["BIN"] == b]
         # scale_delfofo = sum_hkl FP1 * FP2 / sum_hkl FP2**2
-        scale_delfofo_nomin = (df_bin[f_col + "1"] * df_bin[f_col + "2"]).sum()
-        scale_delfofo_denomin = (df_bin[f_col + "2"] ** 2).sum()
-        if not numpy.isclose(scale_delfofo_denomin, 0):
-            scale_delfofo = scale_delfofo_nomin / scale_delfofo_denomin
-        else:
-            warnings.warn(
-                f"scale_delfofo denominator for bin {b + 1} is zero"
-                f" ({bin_stats_list[b]['dmax']:.4f} -"
-                f" {bin_stats_list[b]['dmin']:.4f} A),"
-                " setting scale for this bin to 1."
-            )
-            scale_delfofo = 1
-
-        # scale_delfofo2sc= 2* sum_hkl (FP1RE * FP2RE + FP1IM * FP2IM) / sum_hkl FP2^**2
-        scale_delfofo2sc_nomin = (
-            (df_bin["FP1RE"] * df_bin["FP2RE"]) + (df_bin["FP1IM"] * df_bin["FP2IM"])
-        ).sum()
-        scale_delfofo2sc_denomin = (df_bin[f_col + "2"] ** 2).sum()
-        # equivalent to the previous line:
-        # scale_delfofo2sc_denomin = (df_bin['FP2RE']**2 + df_bin['FP2IM']**2).sum()
-        if not numpy.isclose(scale_delfofo2sc_denomin, 0):
-            scale_delfofo2sc = scale_delfofo2sc_nomin / scale_delfofo2sc_denomin
-        else:
-            warnings.warn(
-                f"scale_delfofo2sc denominator for bin {b + 1} is zero,"
-                " setting scale for this bin to 1."
-            )
-            scale_delfofo2sc = 1
-
-        # scale_delfwtfwt2sc= 2*sum_hkl(FWT1RE*FWT2RE+FWT1IM*FWT2IM)/sum_hkl FWT2^**2
-        scale_delfwtfwt2sc_nomin = (
-            (df_bin["FWT1RE"] * df_bin["FWT2RE"])
-            + (df_bin["FWT1IM"] * df_bin["FWT2IM"])
-        ).sum()
-        scale_delfwtfwt2sc_denomin = (df_bin["FWT2"] ** 2).sum()
-        # equivalent to the previous line:
-        # scale_delfwtfwt2sc_denomin = (df_bin['FWT2RE']**2 + df_bin['FWT2IM']**2).sum()
-        if not numpy.isclose(scale_delfwtfwt2sc_denomin, 0):
-            scale_delfwtfwt2sc = scale_delfwtfwt2sc_nomin / scale_delfwtfwt2sc_denomin
-        else:
-            warnings.warn(
-                f"scale_delfwtfwt2sc denominator for bin {b + 1} is zero,"
-                f" ({bin_stats_list[b]['dmax']:.4f} -"
-                f" {bin_stats_list[b]['dmin']:.4f} A),"
-                " setting scale for this bin to 1."
-            )
-            scale_delfwtfwt2sc = 1
+        scale_delfofo = calc_scale_real(
+            df_bin, f_col, b, bin_stats_list[b]["dmax"], bin_stats_list[b]["dmin"]
+        )
+        scale_delfofo2sc = calc_scale_complex(
+            df_bin,
+            "FP",
+            f_col + "2",
+            b,
+            bin_stats_list[b]["dmax"],
+            bin_stats_list[b]["dmin"],
+        )
+        scale_delfwtfwt2sc = calc_scale_complex(
+            df_bin,
+            "FWT",
+            "FWT2",
+            b,
+            bin_stats_list[b]["dmax"],
+            bin_stats_list[b]["dmin"],
+        )
 
         if len(df_bin) < 100:
             warnings.warn(
