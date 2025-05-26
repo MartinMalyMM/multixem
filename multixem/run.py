@@ -847,8 +847,7 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
     mtz_df1 = mtz_df1.astype({name: "int32" for name in ["H", "K", "L"]})
     mtz_fwt_df1 = mtz_df1.copy()
     mtz_fwt_df1["Fcombi"] = mtz_fwt_df1["F_est"].combine_first(mtz_fwt_df1["DFC"])
-    print(mtz_file_1)
-    print(mtz_df1.head(10))
+
     mtz_df2 = pandas.DataFrame(data=mtz2.array, columns=mtz2.column_labels())
     mtz_df2 = mtz_df2.astype({name: "int32" for name in ["H", "K", "L"]})
     mtz_fwt_df2 = mtz_df2.copy()
@@ -869,8 +868,6 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
     mtz_df1 = mtz_df1[["H", "K", "L"] + columns]  # Select only relevant columns
     mtz_df1 = mtz_df1.dropna(subset=[f_col])  # Select only reflections with F
     mtz_df1 = mtz_df1.rename(columns=columns1_dict)  # Rename
-    print("")
-    print(mtz_df1.head(10))
     n_refl1 = len(mtz_df1)
     print(f"No. unique reflections: {n_refl1} in file {mtz_file_1}")
 
@@ -887,14 +884,9 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
         f"No. unique reflections: {n_refl} in common;"
         f" ratios to the originals: {n_refl / n_refl1}   {n_refl / n_refl2}"
     )
-    print("")
-    print(df.head(10))
-    print(df.describe())
     hkl_common_array = numpy.array(df[["H", "K", "L"]].values, numpy.int8)
     hkl_common_array = numpy.ascontiguousarray(hkl_common_array, dtype=numpy.int8)
-    print(len(hkl_common_array))
-    print(hkl_common_array.flags.c_contiguous)
-    print(hkl_common_array[:10])
+    # print(len(hkl_common_array))  # should be equal to n_refl
 
     # Scaling per resolution bins
     df["BIN"] = binner.get_bins(hkl_common_array)
@@ -1090,7 +1082,8 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
     hkl_common_array_fwt = numpy.ascontiguousarray(
         hkl_common_array_fwt, dtype=numpy.int8
     )
-    print("FWT merge df len:", len(df_fwt))
+    output_mtz_fwt = f"{output_prefix}_fwt.mtz"
+    print(f"No. reflections in {output_mtz_fwt}: {len(df_fwt)}")
     binner_fwt = binner
     df_fwt["BIN"] = binner_fwt.get_bins(hkl_common_array_fwt)
 
@@ -1157,7 +1150,6 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
         numpy.float32,
     )
     mtz_fwt.set_data(data)
-    output_mtz_fwt = f"{output_prefix}_fwt.mtz"
     mtz_fwt.write_to_file(output_mtz_fwt)
     print(f"Saved: {output_mtz_fwt}")
     stats_filename = f"{mtz_fi1_base}_vs_{mtz_fi2_base}_bin_stats.txt"
