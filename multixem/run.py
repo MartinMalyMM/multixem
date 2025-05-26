@@ -891,6 +891,50 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
 
 
 def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=[]):
+    """
+    Compute difference maps between two MTZ files from `servalcat refine_xtal_norefmac`
+    or `servalcat sigmaa` and save the results in a new MTZ file.
+
+    Args:
+        mtz_file_1 (str): Path to the first MTZ file.
+        mtz_file_2 (str): Path to the second MTZ file.
+        binner (gemmi.Binner): Binner object for resolution binning.
+        bin_stats_list (list of dict): A list where each dictionary represents
+            statistics for a resolution bin.
+    Returns:
+        bin_stats_list (list of dict): Updated list with statistics
+            for each resolution bin.
+    """
+
+    def write_difference_mtz(df, mtz_ref, columns, filename):
+        """
+        Create a gemmi.Mtz object with difference map columns and save to file.
+
+        Args:
+            df (pandas.DataFrame): DataFrame containing columns for H, K, L
+                and difference map data.
+            mtz_ref (gemmi.Mtz): Reference MTZ object for cell and spacegroup.
+            columns (list of str): List of column names to include after H, K, L.
+            filename (str): Output filename for the MTZ file.
+        Returns:
+            None
+        """
+        mtz = gemmi.Mtz(with_base=True)
+        mtz.spacegroup = mtz_ref.spacegroup
+        mtz.set_cell_for_all(mtz_ref.cell)
+        mtz.add_dataset(mtz_ref.datasets[0].dataset_name)
+        # Add columns as F or P depending on their names
+        for col in columns:
+            col_type = "F" if not col.startswith("PH") else "P"
+            mtz.add_column(col, col_type)
+        data = numpy.array(
+            df[["H", "K", "L"] + columns].values,
+            numpy.float32,
+        )
+        mtz.set_data(data)
+        mtz.write_to_file(filename)
+        print(f"Saved: {filename}")
+        return
 
     mtz1 = gemmi.read_mtz_file(mtz_file_1)
     mtz2 = gemmi.read_mtz_file(mtz_file_2)
@@ -1069,40 +1113,23 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
             numpy.arctan2(df["DELFWTFWT2SCIM"], df["DELFWTFWT2SCRE"])
         )
 
-    mtz = gemmi.Mtz(with_base=True)
-    mtz.spacegroup = mtz1.spacegroup
-    mtz.set_cell_for_all(mtz1.cell)
-    mtz.add_dataset(mtz1.datasets[0].dataset_name)
-    mtz.add_column("DELFOFO", "F")
-    mtz.add_column("PHDELFOFO", "P")
-    mtz.add_column("DELFOFO2SC", "F")
-    mtz.add_column("PHDELFOFO2SC", "P")
-    mtz.add_column("DELFWTFWT2SC", "F")
-    mtz.add_column("PHDELFWTFWT2SC", "P")
-
-    data = numpy.array(
-        df[
-            [
-                "H",
-                "K",
-                "L",
-                "DELFOFO",
-                "PHDELFOFO",
-                "DELFOFO2SC",
-                "PHDELFOFO2SC",
-                "DELFWTFWT2SC",
-                "PHDELFWTFWT2SC",
-            ]
-        ].values,
-        numpy.float32,
-    )
-    mtz.set_data(data)
     mtz_fi1_base = os.path.splitext(os.path.basename(mtz_file_1))[0]
     mtz_fi2_base = os.path.splitext(os.path.basename(mtz_file_2))[0]
     output_prefix = f"{mtz_fi1_base}_vs_{mtz_fi2_base}_diffmaps"
     output_mtz = f"{output_prefix}.mtz"
-    mtz.write_to_file(output_mtz)
-    print(f"Saved: {output_mtz}")
+    write_difference_mtz(
+        df,
+        mtz1,
+        [
+            "DELFOFO",
+            "PHDELFOFO",
+            "DELFOFO2SC",
+            "PHDELFOFO2SC",
+            "DELFWTFWT2SC",
+            "PHDELFWTFWT2SC",
+        ],
+        output_mtz,
+    )
 
     # For DELFWTFWT2SCall map, use all the reflections
     mtz_fwt_df1 = mtz_fwt_df1.dropna(subset=["FWT"])
@@ -1161,31 +1188,17 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
         df_fwt.loc[df_fwt_bin.index, "PHDELFestFest2SCall"] = numpy.rad2deg(
             numpy.arctan2(df_fwt["DELFestFest2SCallIM"], df_fwt["DELFestFest2SCallRE"])
         )
-    mtz_fwt = gemmi.Mtz(with_base=True)
-    mtz_fwt.spacegroup = mtz1.spacegroup
-    mtz_fwt.set_cell_for_all(mtz1.cell)
-    mtz_fwt.add_dataset(mtz1.datasets[0].dataset_name)
-    mtz_fwt.add_column("DELFWTFWT2SCall", "F")
-    mtz_fwt.add_column("PHDELFWTFWT2SCall", "P")
-    mtz_fwt.add_column("DELFestFest2SCall", "F")
-    mtz_fwt.add_column("PHDELFestFest2SCall", "P")
-    data = numpy.array(
-        df_fwt[
-            [
-                "H",
-                "K",
-                "L",
-                "DELFWTFWT2SCall",
-                "PHDELFWTFWT2SCall",
-                "DELFestFest2SCall",
-                "PHDELFestFest2SCall",
-            ]
-        ].values,
-        numpy.float32,
+    write_difference_mtz(
+        df_fwt,
+        mtz1,
+        [
+            "DELFWTFWT2SCall",
+            "PHDELFWTFWT2SCall",
+            "DELFestFest2SCall",
+            "PHDELFestFest2SCall",
+        ],
+        output_mtz_fwt,
     )
-    mtz_fwt.set_data(data)
-    mtz_fwt.write_to_file(output_mtz_fwt)
-    print(f"Saved: {output_mtz_fwt}")
     stats_filename = f"{mtz_fi1_base}_vs_{mtz_fi2_base}_bin_stats.txt"
     write_bin_stats(bin_stats_list, stats_filename)
     return bin_stats_list
