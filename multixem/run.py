@@ -244,6 +244,7 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix, i_group_prefix
     if unmerged.lower().endswith(".hkl"):
         xds_ascii = gemmi.read_xds_ascii(unmerged)
         m = xds_ascii.to_mtz()
+        # TODO: calculate resolution range
         # Read resolution range from the unmerged file if present
         with open(unmerged, "r") as f:
             for line in f:
@@ -435,8 +436,9 @@ def run_servalcat_refine(
     sigmaa=True,
     quick=False,
 ):  # , prefix=""):
-    # TO DO: source -s
-    # TO DO: command line parameters for servalcat, --keyword_file, --config
+    # TODO: source -s
+    # TODO: command line parameters for servalcat, --keyword_file, --config
+    # TODO: paralelisation
     refined_mmcifs = []
     refined_mtzs = []
     for i_mtz, mtz_fi in enumerate(mtzs_fi):
@@ -1311,9 +1313,22 @@ def compute_difference_maps(refined_mtzs, binner, bin_stats_matrix=[]):
                 bin_stats_matrix[i][j],
             )
             if bin_stats_matrix:
-                for b in range(len(bin_stats_diff)):
-                    bin_stats_matrix[i][j][b].update(bin_stats_diff[b])
-                    bin_stats_matrix[j][i][b].update(bin_stats_diff[b])
+                print(
+                    len(bin_stats_matrix[i][j]),
+                    len(bin_stats_matrix[j][i]),
+                    len(bin_stats_diff),
+                )
+                for b in range(len(bin_stats_matrix[i][j])):
+                    try:
+                        bin_stats_matrix[i][j][b].update(bin_stats_diff[b])
+                        bin_stats_matrix[j][i][b].update(bin_stats_diff[b])
+                    except IndexError:
+                        warnings.warn(
+                            f"IndexError: bin_stats_matrix[{i}][{j}] or"
+                            f" bin_stats_matrix[{j}][{i}] does not have"
+                            f" enough bins."
+                        )
+                        break
                 filename = f"{refined_mtzs[i]}_vs_{refined_mtzs[j]}_bin_stats.txt"
                 write_bin_stats(bin_stats_matrix[i][j], filename)
 
