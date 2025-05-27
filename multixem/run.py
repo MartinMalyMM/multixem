@@ -244,21 +244,14 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix, i_group_prefix
     if unmerged.lower().endswith(".hkl"):
         xds_ascii = gemmi.read_xds_ascii(unmerged)
         m = xds_ascii.to_mtz()
-        # TODO: calculate resolution range
-        # Read resolution range from the unmerged file if present
-        with open(unmerged, "r") as f:
-            for line in f:
-                if line.strip().startswith("!INCLUDE_RESOLUTION_RANGE="):
-                    dmax_dmin = line.strip().split("=")[-1].split()
-                    if len(dmax_dmin) >= 2:
-                        dmax, dmin = float(dmax_dmin[0]), float(dmax_dmin[1])
-                    break
+        # Calculate resolution range from the unmerged file
+        d_array = m.cell.calculate_d_array(m.make_miller_array())
+        dmax = max(d_array)
+        dmin = min(d_array)
     else:
         m = gemmi.read_mtz_file(unmerged)
         dmax = m.resolution_low()
         dmin = m.resolution_high()
-    print(m)
-    print(list(m.columns))
 
     # Scan the columns of the input unmerged MTZ file
     # and check if Friedel pairs are present or not
