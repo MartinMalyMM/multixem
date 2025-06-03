@@ -9,6 +9,7 @@ import gemmi
 import matplotlib.pyplot as plt
 import warnings
 from collections import Counter
+import concurrent.futures
 from . import __version__
 
 
@@ -26,9 +27,19 @@ def create_parser():
             raise argparse.ArgumentTypeError(f"{value} is not a positive integer.")
         return ivalue
 
+    class ArgumentDefaultsHelpFormatterCustom(argparse.ArgumentDefaultsHelpFormatter):
+        def _get_help_string(self, action):
+            help_str = action.help
+            # Only show default if it's not None and not suppressed
+            if action.default is not None and action.default != argparse.SUPPRESS:
+                if "%(default)" not in help_str:
+                    help_str += f" (default: {action.default})"
+            return help_str
+
     parser = argparse.ArgumentParser(
         prog="multixem",
         description="Refinement pipeline for multiple data sets in structure biology.",
+        formatter_class=ArgumentDefaultsHelpFormatterCustom,
     )
     parser.add_argument(
         "-v",
@@ -63,6 +74,13 @@ def create_parser():
         type=positive_int,
         default=20,
         help="Number of resolution bins. Must be a positive integer.",
+    )
+    parser.add_argument(
+        "--n_proc",
+        type=positive_int,
+        default=4,
+        help="Number of processes to use for paralallisation."
+        + " Must be a positive integer.",
     )
     parser.add_argument(
         "--amplitude",
@@ -386,7 +404,7 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix, i_group_prefix
     return mtz_groups, bin_stats_lists, n_expected_list, binner_master
 
 
-def run_servalcat_fwt(mtz_groups_i, prefix=""):
+def run_servalcat_fwt(mtz_groups_i, prefix="", n_proc=1):
     """
     Run `servalcat fw` to perform French Wilson conversion of intensities
        to structure factor amplitudes.
@@ -404,7 +422,9 @@ def run_servalcat_fwt(mtz_groups_i, prefix=""):
         "Running servalcat fw to convert intensities to structure factor amplitudes..."
     )
     mtz_groups_fi = []
-    for i_group, mtz_group_i in enumerate(mtz_groups_i):
+
+    def run_fw_one(args):
+        i_group, mtz_group_i = args
         group_fi_prefix = os.path.splitext(os.path.basename(mtz_group_i))[0] + "F"
         log_group_fi = f"{group_fi_prefix}.log"
         mtz_group_fi = f"{group_fi_prefix}.mtz"
@@ -415,9 +435,14 @@ def run_servalcat_fwt(mtz_groups_i, prefix=""):
                 subprocess.run(
                     cmd, check=True, stdout=log_file, stderr=subprocess.STDOUT
                 )
-            mtz_groups_fi.append(mtz_group_fi)
+            return mtz_group_fi
         except subprocess.CalledProcessError as e:
             print(f"Error occurred while running command: {e}")
+            return None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=n_proc) as executor:
+        results = list(executor.map(run_fw_one, enumerate(mtz_groups_i)))
+    mtz_groups_fi.extend([r for r in results if r])
     return mtz_groups_fi
 
 
@@ -428,15 +453,20 @@ def run_servalcat_refine(
     source="xray",
     sigmaa=True,
     quick=False,
+    n_proc=1,
 ):  # , prefix=""):
     # TODO: source -s
     # TODO: command line parameters for servalcat, --keyword_file, --config
     # TODO: paralelisation
     refined_mmcifs = []
     refined_mtzs = []
-    for i_mtz, mtz_fi in enumerate(mtzs_fi):
-        prefix = os.path.splitext(os.path.basename(mtz_fi))[0] + "_refine"
-        log_filename = prefix + ".log"
+
+    def refine_one(args):
+        i_mtz, mtz_fi = args
+        local_refined_mmcifs = []
+        local_refined_mtzs = []
+        prefix_local = os.path.splitext(os.path.basename(mtz_fi))[0] + "_refine"
+        log_filename = prefix_local + ".log"
         cmd = [
             "servalcat",
             "refine_xtal_norefmac",
@@ -448,7 +478,7 @@ def run_servalcat_refine(
             source,
             "--hout",
             "-o",
-            prefix,
+            prefix_local,
         ]
         if mtz_free:
             cmd.extend(["--hklin_free", mtz_free])
@@ -463,22 +493,22 @@ def run_servalcat_refine(
         except subprocess.CalledProcessError as e:
             print(f"Error occurred while running command: {e}")
         if sigmaa:
-            log_filename = prefix + "_sigmaa.log"
+            log_filename_sigmaa = prefix_local + "_sigmaa.log"
             cmd_sigmaa = [
                 "servalcat",
                 "sigmaa",
                 "--hklin",
                 mtz_fi,
                 "--model",
-                prefix + ".mmcif",
+                prefix_local + ".mmcif",
                 "-s",
                 source,
                 "-o",
-                prefix + "_sigmaa",
+                prefix_local + "_sigmaa",
             ]
             print("Running command:", " ".join(cmd_sigmaa))
             try:
-                with open(log_filename, "w") as log_file:
+                with open(log_filename_sigmaa, "w") as log_file:
                     subprocess.run(
                         cmd_sigmaa,
                         check=True,
@@ -487,10 +517,17 @@ def run_servalcat_refine(
                     )
             except subprocess.CalledProcessError as e:
                 print(f"Error occurred while running command: {e}")
-            refined_mtzs.append(prefix + "_sigmaa.mtz")
+            local_refined_mtzs.append(prefix_local + "_sigmaa.mtz")
         else:
-            refined_mtzs.append(prefix + ".mtz")
-        refined_mmcifs.append(prefix + ".mmcif")
+            local_refined_mtzs.append(prefix_local + ".mtz")
+        local_refined_mmcifs.append(prefix_local + ".mmcif")
+        return local_refined_mmcifs[0], local_refined_mtzs[0]
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=n_proc) as executor:
+        results = list(executor.map(refine_one, enumerate(mtzs_fi)))
+    for mmcif, mtz in results:
+        refined_mmcifs.append(mmcif)
+        refined_mtzs.append(mtz)
     return refined_mmcifs, refined_mtzs
 
 
@@ -1411,6 +1448,7 @@ def main():
     os.mkdir("multixem_proc")
     os.chdir("multixem_proc")
     print("Current working directory:", os.getcwd())
+    n_proc = min(os.cpu_count(), args.n_proc)
 
     if args.hklin_unmerged:
         print("Unmerged diffraction data:", args.hklin_unmerged)
@@ -1435,7 +1473,7 @@ def main():
             if i == 0:
                 binner_master = _binner_master
             if args.amplitude:
-                _mtzs_fi = run_servalcat_fwt(_mtz_groups_i, prefix)
+                _mtzs_fi = run_servalcat_fwt(_mtz_groups_i, prefix, n_proc)
                 mtzs_fi.extend(_mtzs_fi)
             # TODO: free reflections if not given
 
@@ -1455,6 +1493,7 @@ def main():
             args.model,
             mtz_free=args.hklin_free,
             quick=args.quick,
+            n_proc=n_proc,
         )
         adp_analysis_histograms(refined_mmcifs, prefix)
         compute_structure_differences(refined_mmcifs)
