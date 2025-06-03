@@ -1328,6 +1328,71 @@ def compute_difference_maps(refined_mtzs, binner, bin_stats_matrix=[]):
     return bin_stats_matrix
 
 
+def compute_structure_differences(refined_mmcifs):
+    for i in range(len(refined_mmcifs)):
+        for j in range(i + 1, len(refined_mmcifs)):
+            compute_structure_differences_pair(
+                refined_mmcifs[i],
+                refined_mmcifs[j],
+                output=f"{refined_mmcifs[i]}_vs_{refined_mmcifs[j]}_differences.csv",
+            )
+
+
+def compute_structure_differences_pair(
+    structure1, structure2, output=None, minCoordDev=0, minAdpDev=0
+):
+
+    def makeAddressStr(cra):
+        address = cra.chain.name + "/" + cra.residue.name + " "
+        address += str(cra.residue.seqid.num)
+        if cra.residue.seqid.icode.strip():
+            address += str(cra.residue.seqid.icode)
+        address += "/"
+        address += cra.atom.name
+        if cra.atom.has_altloc():
+            address += "."
+            address += cra.atom.altloc
+        return address
+
+    def search(st1Cras, st2Cras, output, minCoordDev, minAdpDev):
+        records = []
+        for cra1 in st1Cras:
+            for j, cra2 in enumerate(st2Cras):
+                if (
+                    cra1.atom.name == cra2.atom.name
+                    and cra1.atom.altloc == cra2.atom.altloc
+                    and cra1.residue.name == cra2.residue.name
+                    and cra1.residue.seqid == cra2.residue.seqid
+                    and cra1.chain.name == cra2.chain.name
+                ):
+                    coordDev = cra1.atom.pos.dist(cra2.atom.pos)
+                    adpDev = cra2.atom.b_iso - cra1.atom.b_iso
+                    if coordDev >= minCoordDev or abs(adpDev) >= minAdpDev:
+                        record = {
+                            "AtomAddress": makeAddressStr(cra1),
+                            "CoordDev": round(coordDev, 2),
+                            "ADPDev": round(adpDev, 2),
+                        }
+                        records.append(record)
+                    del st2Cras[j]
+                    break
+        df = pandas.DataFrame.from_records(records)
+        if output:
+            df.to_csv(output, index=False)
+        return df
+
+    st1 = gemmi.read_structure(structure1)
+    st2 = gemmi.read_structure(structure2)
+    st1Cras = list(st1[0].all())
+    st2Cras = list(st2[0].all())
+    if len(st1Cras) != len(st2Cras):
+        warnings.warn(
+            f"Number of atoms in {structure1} does not match the number"
+            f" of atoms in {structure2}."
+        )
+    return search(st1Cras, st2Cras, output, minCoordDev, minAdpDev)
+
+
 def main():
     print("Running multixem version:", __version__)
     parser = create_parser()
@@ -1392,6 +1457,7 @@ def main():
             quick=args.quick,
         )
         adp_analysis_histograms(refined_mmcifs, prefix)
+        compute_structure_differences(refined_mmcifs)
         bin_stats_matrix = compute_difference_maps(
             refined_mtzs, binner_master, bin_stats_matrix
         )
