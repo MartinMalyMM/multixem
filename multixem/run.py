@@ -22,10 +22,16 @@ def create_parser():
     """
 
     def positive_int(value):
-        ivalue = int(value)
-        if ivalue <= 0:
-            raise argparse.ArgumentTypeError(f"{value} is not a positive integer.")
-        return ivalue
+        if isinstance(value, list):
+            positive_int(v for v in value)
+        else:
+            try:
+                ivalue = int(value)
+            except ValueError:
+                raise argparse.ArgumentTypeError(f"{value} is not an integer.")
+            if ivalue <= 0:
+                raise argparse.ArgumentTypeError(f"{value} is not a positive integer.")
+            return ivalue
 
     class ArgumentDefaultsHelpFormatterCustom(argparse.ArgumentDefaultsHelpFormatter):
         def _get_help_string(self, action):
@@ -66,8 +72,11 @@ def create_parser():
     parser.add_argument(
         "--n_batches",
         type=positive_int,
+        nargs="+",
         default=60,
-        help="Number of batches per merging group. Must be a positive integer.",
+        help="Number of batches per merging group, or list of batch edges"
+        + " where to split the data."
+        + " Must be a positive integer or space-separated list of positive integers.",
     )
     parser.add_argument(
         "--n_bins",
@@ -140,7 +149,9 @@ def write_bin_stats(bin_stats_list, filename):
     print(f"Saved statistics to {filename}")
 
 
-def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix, i_group_prefix=0):
+def merge_in_groups(
+    unmerged, n_bins, prefix, n_batches_per_group=60, batches_edges=[], i_group_prefix=0
+):
 
     def merge_group(
         df_groups,
@@ -378,8 +389,13 @@ def merge_in_groups(unmerged, n_batches_in_group, n_bins, prefix, i_group_prefix
     # TODO: a function that converts any selection criteria in lists of batches.
     # Note that batch numberring is 1, 2, ..., 2000
     # but Python numberring is 0, 1, ..., 1999
-    batches_split = list(range(0, len(m.batches), n_batches_in_group))
-    batches_split.append(len(m.batches))
+    if batches_edges:
+        batches_split = [0]
+        for i in range(len(batches_edges)):
+            batches_split.append(batches_split[-1] + batches_edges[i])
+    elif n_batches_per_group:
+        batches_split = list(range(0, len(m.batches), n_batches_per_group))
+        batches_split.append(len(m.batches))
     print(batches_split)
 
     mtz_groups = []
@@ -1606,13 +1622,28 @@ def main():
         mtzs_fi = []
         for i, hklin_unmerged in enumerate(args.hklin_unmerged):
             # TODO: select automatically the number of batches in group (now default 60)
-            n_batches_per_group = args.n_batches
-            print("Number of batches in merging group:", n_batches_per_group)
-            _mtz_groups_i, _bin_stats_lists, _n_expected_list, _binner_master = (
-                merge_in_groups(
-                    hklin_unmerged, n_batches_per_group, args.n_bins, prefix, n_groups
+            if len(args.n_batches) == 1:
+                n_batches_per_group = args.n_batches[0]
+                print("Number of batches in merging group:", n_batches_per_group)
+                _mtz_groups_i, _bin_stats_lists, _n_expected_list, _binner_master = (
+                    merge_in_groups(
+                        hklin_unmerged,
+                        args.n_bins,
+                        prefix,
+                        n_batches_per_group=n_batches_per_group,
+                        i_group_prefix=n_groups,
+                    )
                 )
-            )
+            else:
+                _mtz_groups_i, _bin_stats_lists, _n_expected_list, _binner_master = (
+                    merge_in_groups(
+                        hklin_unmerged,
+                        args.n_bins,
+                        prefix,
+                        batches_edges=args.n_batches,
+                        i_group_prefix=n_groups,
+                    )
+                )
             mtz_groups_i.extend(_mtz_groups_i)
             n_groups = len(mtz_groups_i)
             bin_stats_lists.extend(_bin_stats_lists)
