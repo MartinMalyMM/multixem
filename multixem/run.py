@@ -88,6 +88,13 @@ def create_parser():
         help="Use amplitude rather than intensities (not recommended).",
     )
     parser.add_argument(
+        "--bootstrap",
+        type=positive_int,
+        default=0,
+        help="No. of bootstrapped sub data sets to be created and used for refinement."
+        + " Must be a positive integer.",
+    )
+    parser.add_argument(
         "--quick",
         action="store_true",
         help="Quick run (only for development).",
@@ -926,7 +933,7 @@ def write_mtz_from_df(df, mtz_ref, columns, filename):
     )
     mtz.set_data(data)
     mtz.write_to_file(filename)
-    print(f"Saved: {filename}")
+    print(f"Saved {len(df)} reflections to {filename}.")
     return
 
 
@@ -1457,6 +1464,119 @@ def compute_structure_differences_pair(
     return search(st1Cras, st2Cras, output, minCoordDev, minAdpDev)
 
 
+def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
+    """
+    Bootstrap the dataset from an MTZ file and save the results in new MTZ files.
+
+    Args:
+        mtz_file (str): Path to the input MTZ file.
+        seeds (list of int): List of random seeds for bootstrapping.
+        n_bins (int): Number of resolution bins to use for bootstrapping.
+    Returns:
+        list of str: List of output MTZ filenames created during bootstrapping.
+    """
+
+    def bootstrap_bin(df, seed=1001):
+        """
+        For a DataFrame, create a `weight_bootstrap` column.
+
+        Args:
+            df (pandas.DataFrame): DataFrame containing reflections.
+            seed (int): Random seed for reproducibility.
+        Returns:
+            pandas.Series: Series with the bootstrap weights for each reflection.
+        """
+        rng = numpy.random.default_rng(seed)
+        df_bootstrap_bin = pandas.DataFrame(
+            rng.integers(1, len(df) + 1, size=len(df)), columns=["index_bootstrap"]
+        )
+        df_bootstrap_bin_weight = (
+            df_bootstrap_bin.groupby(["index_bootstrap"])
+            .size()
+            .reindex(range(len(df)), fill_value=0)
+        )
+        return df_bootstrap_bin_weight.rename("weight_bootstrap")
+
+    mtzs_out = []
+    mtz = gemmi.read_mtz_file(mtz_file)
+    df = pandas.DataFrame(data=mtz.array, columns=mtz.column_labels())
+    df = df.astype({name: "int32" for name in ["H", "K", "L"]})
+
+    i_col = "I"  # can be just "I" after servalcat fw or sigmaa, or IMEAN?
+    column_label_dropna = i_col  # or F?
+    if column_label_dropna in df.columns:
+        df = df.dropna(subset=[column_label_dropna])
+
+    hkl_array = numpy.array(df[["H", "K", "L"]].values, numpy.int8)
+    hkl_array = numpy.ascontiguousarray(hkl_array, dtype=numpy.int8)
+    df["bin"] = binner.get_bins(hkl_array)
+    # print("No. unique reflections:", len(df))
+    # print(df.head(10))
+    # print(df.describe())
+
+    df_bootstrap1_weight_master = pandas.DataFrame()
+
+    for i, seed in enumerate(seeds):
+        df_bootstrap1_weight = pandas.concat(
+            [bootstrap_bin(group, seed) for _, group in df.groupby("bin")],
+            ignore_index=True,
+        )
+        # Merge columns H, K, L from df and weight_bootstrap from df_bootstrap1_weight
+        df_bootstrap1_weight_hkl = df[["H", "K", "L"]].copy()
+        df_bootstrap1_weight_hkl = df_bootstrap1_weight_hkl.merge(
+            df_bootstrap1_weight, left_index=True, right_index=True
+        )
+
+        write_mtz_from_df(
+            df_bootstrap1_weight_hkl,
+            mtz,
+            columns={"weight_bootstrap": "I"},
+            filename=f"{os.path.splitext(mtz_file)[0]}_weight_bootstrap_{i}.mtz",
+        )
+
+        if i == 0:
+            df_bootstrap1_weight_master = df_bootstrap1_weight.copy()
+            df_bootstrap1_weight_master = df_bootstrap1_weight_master.rename(
+                "weight_bootstrap_0"
+            ).to_frame()
+        else:
+            df_bootstrap1_weight_master[f"weight_bootstrap_{i}"] = (
+                df_bootstrap1_weight.values
+            )
+
+        # TODO: FreeR_flag
+        columns = {i_col: "J", "SIG" + i_col: "Q", "weight_bootstrap": "I"}
+        if "FreeR_flag" in df.columns:
+            columns["FreeR_flag"] = "I"
+        df_bootstrap1_data = df.merge(
+            df_bootstrap1_weight.copy(), left_index=True, right_index=True, how="left"
+        )
+        df_bootstrap1_data = df_bootstrap1_data[
+            df_bootstrap1_data["weight_bootstrap"] > 0
+        ]
+        mtz_out_name = f"{os.path.splitext(mtz_file)[0]}_bootstrap_data_{i}.mtz"
+        write_mtz_from_df(df_bootstrap1_data, mtz, columns, filename=mtz_out_name)
+        mtzs_out.append(mtz_out_name)
+
+    df_bootstrap1 = df.merge(
+        df_bootstrap1_weight_master, left_index=True, right_index=True, how="left"
+    )
+    # print(df_bootstrap1.head(10))
+    # print(df_bootstrap1.describe())
+    # TODO: other columns than I and FreeRflag?
+    columns = {i_col: "J", "SIG" + i_col: "Q"}
+    if "FreeR_flag" in df.columns:
+        columns["FreeR_flag"] = "I"
+    columns.update({f"weight_bootstrap_{i}": "I" for i in range(len(seeds))})
+    write_mtz_from_df(
+        df_bootstrap1,
+        mtz,
+        columns,
+        filename=f"{os.path.splitext(mtz_file)[0]}_bootstrap.mtz",
+    )
+    return mtzs_out
+
+
 def main():
     print("Running multixem version:", __version__)
     parser = create_parser()
@@ -1527,6 +1647,11 @@ def main():
         bin_stats_matrix = compute_difference_maps(
             refined_mtzs, binner_master, bin_stats_matrix
         )
+        if args.bootstrap:
+            mtzs_bootstrap = bootstrap_dataset(
+                refined_mtzs[0], binner_master, seeds=range(1001, 1001 + args.bootstrap)
+            )
+            print("Bootstrapped MTZ files:", mtzs_bootstrap)
 
 
 if __name__ == "__main__":
