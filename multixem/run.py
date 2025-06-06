@@ -901,6 +901,35 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
     return bin_stats_matrix, n_refl_matrix, ratio_refl_matrix
 
 
+def write_mtz_from_df(df, mtz_ref, columns, filename):
+    """
+    Create a gemmi.Mtz object from a pandas dataframe and save to file.
+
+    Args:
+        df (pandas.DataFrame): DataFrame containing columns for H, K, L and other data.
+        mtz_ref (gemmi.Mtz): Reference MTZ object for cell and spacegroup.
+        columns (dict): Dictionary of column names and their MTZ data types
+            to include after H, K, L.
+        filename (str): Output filename for the MTZ file.
+    Returns:
+        None
+    """
+    mtz = gemmi.Mtz(with_base=True)
+    mtz.spacegroup = mtz_ref.spacegroup
+    mtz.set_cell_for_all(mtz_ref.cell)
+    mtz.add_dataset(mtz_ref.datasets[0].dataset_name)
+    for col_name, col_type in columns.items():
+        mtz.add_column(col_name, col_type)
+    data = numpy.array(
+        df[["H", "K", "L"] + list(columns.keys())].values,
+        numpy.float32,
+    )
+    mtz.set_data(data)
+    mtz.write_to_file(filename)
+    print(f"Saved: {filename}")
+    return
+
+
 def adp_analysis_histograms(modelPaths, prefix=""):
 
     def adp_analysis(modelPath):
@@ -1245,19 +1274,18 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
     mtz_fi2_base = os.path.splitext(os.path.basename(mtz_file_2))[0]
     output_prefix = f"{mtz_fi1_base}_vs_{mtz_fi2_base}_diffmaps"
     output_mtz = f"{output_prefix}.mtz"
-    write_difference_mtz(
-        df,
-        mtz1,
-        [
-            "DELFOFO",
-            "PHDELFOFO",
-            "DELFOFO2SC",
-            "PHDELFOFO2SC",
-            "DELFWTFWT2SC",
-            "PHDELFWTFWT2SC",
-        ],
-        output_mtz,
-    )
+    columns_to_write_list = [
+        "DELFOFO",
+        "PHDELFOFO",
+        "DELFOFO2SC",
+        "PHDELFOFO2SC",
+        "DELFWTFWT2SC",
+        "PHDELFWTFWT2SC",
+    ]
+    columns_to_write_dict = {
+        col: ("F" if not col.startswith("PH") else "P") for col in columns_to_write_list
+    }
+    write_mtz_from_df(df, mtz1, columns_to_write_dict, output_mtz)
 
     # For DELFWTFWT2SCall map, use all the reflections
     mtz_fwt_df1 = mtz_fwt_df1.dropna(subset=["FWT"])
@@ -1316,17 +1344,16 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
         df_fwt.loc[df_fwt_bin.index, "PHDELFestFest2SCall"] = numpy.rad2deg(
             numpy.arctan2(df_fwt["DELFestFest2SCallIM"], df_fwt["DELFestFest2SCallRE"])
         )
-    write_difference_mtz(
-        df_fwt,
-        mtz1,
-        [
-            "DELFWTFWT2SCall",
-            "PHDELFWTFWT2SCall",
-            "DELFestFest2SCall",
-            "PHDELFestFest2SCall",
-        ],
-        output_mtz_fwt,
-    )
+    columns_to_write_list = [
+        "DELFWTFWT2SCall",
+        "PHDELFWTFWT2SCall",
+        "DELFestFest2SCall",
+        "PHDELFestFest2SCall",
+    ]
+    columns_to_write_dict = {
+        col: ("F" if not col.startswith("PH") else "P") for col in columns_to_write_list
+    }
+    write_mtz_from_df(df_fwt, mtz1, columns_to_write_dict, output_mtz_fwt)
     stats_filename = f"{mtz_fi1_base}_vs_{mtz_fi2_base}_bin_stats.txt"
     write_bin_stats(bin_stats_list, stats_filename)
     return bin_stats_list
