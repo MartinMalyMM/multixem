@@ -1651,7 +1651,14 @@ def main():
             mtzs_bootstrap = bootstrap_dataset(
                 refined_mtzs[0], binner_master, seeds=range(1001, 1001 + args.bootstrap)
             )
-            print("Bootstrapped MTZ files:", mtzs_bootstrap)
+            # refined_mmcifs_bootstrap, refined_mtzs_bootstrap = run_servalcat_refine(
+            run_servalcat_refine(
+                mtzs_bootstrap,
+                args.model,
+                # mtz_free=args.hklin_free,
+                quick=args.quick,
+                n_proc=n_proc,
+            )
 
 
 if __name__ == "__main__":
