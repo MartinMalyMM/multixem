@@ -1086,36 +1086,6 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
             for each resolution bin.
     """
 
-    def write_difference_mtz(df, mtz_ref, columns, filename):
-        """
-        Create a gemmi.Mtz object with difference map columns and save to file.
-
-        Args:
-            df (pandas.DataFrame): DataFrame containing columns for H, K, L
-                and difference map data.
-            mtz_ref (gemmi.Mtz): Reference MTZ object for cell and spacegroup.
-            columns (list of str): List of column names to include after H, K, L.
-            filename (str): Output filename for the MTZ file.
-        Returns:
-            None
-        """
-        mtz = gemmi.Mtz(with_base=True)
-        mtz.spacegroup = mtz_ref.spacegroup
-        mtz.set_cell_for_all(mtz_ref.cell)
-        mtz.add_dataset(mtz_ref.datasets[0].dataset_name)
-        # Add columns as F or P depending on their names
-        for col in columns:
-            col_type = "F" if not col.startswith("PH") else "P"
-            mtz.add_column(col, col_type)
-        data = numpy.array(
-            df[["H", "K", "L"] + columns].values,
-            numpy.float32,
-        )
-        mtz.set_data(data)
-        mtz.write_to_file(filename)
-        print(f"Saved: {filename}")
-        return
-
     mtz1 = gemmi.read_mtz_file(mtz_file_1)
     mtz2 = gemmi.read_mtz_file(mtz_file_2)
     columns_fwt = ["FWT", "PHWT"]
