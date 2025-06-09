@@ -1067,7 +1067,10 @@ def adp_analysis_histograms(modelPaths, prefix=""):
     plt.title("ADP Histogram")
     plt.legend(loc="upper right")
     plt.xlim(0, max(values) * 1.1)
-    plt.savefig(f"{prefix}adp_histogram.png")
+    png_filename = f"{prefix}adp_histogram.png"
+    plt.savefig(png_filename)
+    # TODO: same histogram ranges
+    return png_filename
 
 
 def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=[]):
@@ -1565,7 +1568,9 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
     return mtzs_out
 
 
-def bootstrap_analyse_structures(refined_mmcifs_bootstrap, skip_hydrogen=True):
+def bootstrap_analyse_structures(
+    refined_mmcifs_bootstrap, idx=0, prefix="", skip_hydrogen=True
+):
     """
     Analyse structure models (mmCIF files) to compute mean coordinates and B-factors.
     The structure models are expected to be after refinement against a bootstrapped
@@ -1573,6 +1578,9 @@ def bootstrap_analyse_structures(refined_mmcifs_bootstrap, skip_hydrogen=True):
 
     Args:
         refined_mmcifs_bootstrap (list of str): List of mmCIF filenames.
+        idx (int): Index for naming the output files (applies if not set to 0).
+        prefix (str): Prefix for the output filenames.
+        skip_hydrogen (bool): If True, skip hydrogen atoms in the analysis.
 
     Returns:
         None: Writes the statistics in 'bootstrap_stats.csv' and
@@ -1640,8 +1648,11 @@ def bootstrap_analyse_structures(refined_mmcifs_bootstrap, skip_hydrogen=True):
             }
         )
     df_csv = pandas.DataFrame(csv_data)
-    df_csv.to_csv("bootstrap_stats.csv", index=False)
-    print("Mean structure statistics written to bootstrap_stats.csv.")
+    csv_filename = (
+        f"{prefix}group{idx}_bootstrap_stats.csv" if idx else "bootstrap_stats.csv"
+    )
+    df_csv.to_csv(csv_filename, index=False)
+    print(f"Mean structure statistics written to {csv_filename}.")
 
     # Write mean structure as mmCIF
     for i, cra in enumerate(st_master_cras):
@@ -1649,12 +1660,17 @@ def bootstrap_analyse_structures(refined_mmcifs_bootstrap, skip_hydrogen=True):
         cra.atom.pos = gemmi.Position(*mean_coords[i])
         # Replace B-factor with norm of std deviation (or square it if desired)
         cra.atom.b_iso = 1000 * std_coords_norm[i]  # or (8π²/3)*σ² ???
-    st_master.make_mmcif_document().write_file("bootstrap_mean_structure.mmcif")
-    print("Mean structure written to bootstrap_mean_structure.mmcif.")
+    mmcif_filename = (
+        f"{prefix}group{idx}_bootstrap_mean_structure.mmcif"
+        if idx
+        else "bootstrap_mean_structure.mmcif"
+    )
+    st_master.make_mmcif_document().write_file(mmcif_filename)
+    print(f"Mean structure written to {mmcif_filename}.")
     return
 
 
-def bootstrap_mean_map(refined_mtzs_bootstrap):
+def bootstrap_mean_map(refined_mtzs_bootstrap, idx=0, prefix=""):
     """
     Calculate the mean 2Fo-Fc map from refined MTZ files after bootstrapping.
     The maps are expected to be after refinement against a bootstrapped
@@ -1662,6 +1678,8 @@ def bootstrap_mean_map(refined_mtzs_bootstrap):
 
     Args:
         refined_mtzs_bootstrap (list of str): List of MTZ filenames.
+        idx (int): Index for naming the output file (applies if not set to 0).
+        prefix (str): Prefix for the output filename.
 
     Returns:
         None: Writes the mean map in 'bootstrap_mean_map.mtz'.
@@ -1681,26 +1699,26 @@ def bootstrap_mean_map(refined_mtzs_bootstrap):
     df_master["F_complex"] = df_master["FWT"] * numpy.exp(
         1j * numpy.deg2rad(df_master["PHWT"])
     )
-    df_mean = (
-        df_master.groupby(["H", "K", "L"])["F_complex"]
-        .mean()
-        .rename("F_complex")
-        .reset_index()
-    )
-    print(df_mean.head(10))
-    df_mean["FWT"] = numpy.abs(df_mean["F_complex"])
-    df_mean["PHWT"] = numpy.rad2deg(numpy.angle(df_mean["F_complex"]))
-    print(df_mean.head(10))
-    df_mean = df_mean.astype({name: "int32" for name in ["H", "K", "L"]})
-
+    df_master = df_master.groupby(["H", "K", "L"])["F_complex"].mean().reset_index()
+    df_master["FWT"] = numpy.abs(df_master["F_complex"])
+    df_master["PHWT"] = numpy.rad2deg(numpy.angle(df_master["F_complex"]))
+    df_master = df_master.astype({name: "int32" for name in ["H", "K", "L"]})
+    # print(df_master.head(10))
+    # print(df_master[["H", "K", "L", "FWT", "PHWT"]].describe())
     # Save the mean map as an MTZ file using refined_mtzs_bootstrap[0] as reference
     mtz_ref = gemmi.read_mtz_file(refined_mtzs_bootstrap[0])
     columns = {"FWT": "F", "PHWT": "P"}
+    mtz_filename = (
+        f"{prefix}group{idx}_bootstrap_mean_map.mtz"
+        if idx
+        else f"{prefix}bootstrap_mean_map.mtz"
+    )
+
     write_mtz_from_df(
-        df_mean[["H", "K", "L", "FWT", "PHWT"]],
+        df_master[["H", "K", "L", "FWT", "PHWT"]],
         mtz_ref,
         columns,
-        filename="bootstrap_mean_map.mtz",
+        filename=mtz_filename,
     )
     return
 
@@ -1720,8 +1738,8 @@ def main():
     else:
         prefix = "multixem_"
 
-    os.mkdir("multixem_tmp")
-    os.chdir("multixem_tmp")
+    os.mkdir("multixem_proc")
+    os.chdir("multixem_proc")
     print("Current working directory:", os.getcwd())
     n_proc = min(os.cpu_count(), args.n_proc)
 
@@ -1795,7 +1813,7 @@ def main():
                 mtzs_in = mtzs_fi
             else:
                 mtzs_in = mtzs_i
-            for mtz_in in mtzs_in:
+            for i, mtz_in in enumerate(mtzs_in):
                 mtzs_bootstrap = bootstrap_dataset(
                     mtz_in, binner_master, seeds=range(1001, 1001 + args.bootstrap)
                 )
@@ -1806,8 +1824,10 @@ def main():
                     quick=args.quick,
                     n_proc=n_proc,
                 )
-                bootstrap_analyse_structures(refined_mmcifs_bootstrap)
-                bootstrap_mean_map(refined_mtzs_bootstrap)
+                bootstrap_analyse_structures(
+                    refined_mmcifs_bootstrap, i + 1, args.prefix
+                )
+                bootstrap_mean_map(refined_mtzs_bootstrap, i + 1, args.prefix)
 
 
 if __name__ == "__main__":
