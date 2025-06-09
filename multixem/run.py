@@ -1484,12 +1484,13 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
         )
         return df_bootstrap_bin_weight.rename("weight_bootstrap")
 
+    print("\nBootstrapping dataset", mtz_file)
     mtzs_out = []
     mtz = gemmi.read_mtz_file(mtz_file)
     df = pandas.DataFrame(data=mtz.array, columns=mtz.column_labels())
     df = df.astype({name: "int32" for name in ["H", "K", "L"]})
 
-    i_col = "I"  # can be just "I" after servalcat fw or sigmaa, or IMEAN?
+    i_col = "IMEAN"  # can be just "I" after servalcat fw or sigmaa, or IMEAN?
     column_label_dropna = i_col  # or F?
     if column_label_dropna in df.columns:
         df = df.dropna(subset=[column_label_dropna])
@@ -1739,17 +1740,22 @@ def main():
             refined_mtzs, binner_master, bin_stats_matrix
         )
         if args.bootstrap:
-            mtzs_bootstrap = bootstrap_dataset(
-                refined_mtzs[0], binner_master, seeds=range(1001, 1001 + args.bootstrap)
-            )
-            refined_mmcifs_bootstrap, refined_mtzs_bootstrap = run_servalcat_refine(
-                mtzs_bootstrap,
-                args.model,
-                # mtz_free=args.hklin_free,
-                quick=args.quick,
-                n_proc=n_proc,
-            )
-            bootstrap_analyse(refined_mmcifs_bootstrap)
+            if args.amplitude:
+                mtzs_in = mtzs_fi
+            else:
+                mtzs_in = mtzs_i
+            for mtz_in in mtzs_in:
+                mtzs_bootstrap = bootstrap_dataset(
+                    mtz_in, binner_master, seeds=range(1001, 1001 + args.bootstrap)
+                )
+                refined_mmcifs_bootstrap, refined_mtzs_bootstrap = run_servalcat_refine(
+                    mtzs_bootstrap,
+                    args.model,
+                    # mtz_free=args.hklin_free,
+                    quick=args.quick,
+                    n_proc=n_proc,
+                )
+                bootstrap_analyse(refined_mmcifs_bootstrap)
 
 
 if __name__ == "__main__":
