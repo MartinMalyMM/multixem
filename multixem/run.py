@@ -1565,7 +1565,7 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
     return mtzs_out
 
 
-def bootstrap_analyse(refined_mmcifs_bootstrap, skip_hydrogen=True):
+def bootstrap_analyse_structures(refined_mmcifs_bootstrap, skip_hydrogen=True):
     """
     Analyse structure models (mmCIF files) to compute mean coordinates and B-factors.
     The structure models are expected to be after refinement against a bootstrapped
@@ -1654,6 +1654,57 @@ def bootstrap_analyse(refined_mmcifs_bootstrap, skip_hydrogen=True):
     return
 
 
+def bootstrap_mean_map(refined_mtzs_bootstrap):
+    """
+    Calculate the mean 2Fo-Fc map from refined MTZ files after bootstrapping.
+    The maps are expected to be after refinement against a bootstrapped
+    data set.
+
+    Args:
+        refined_mtzs_bootstrap (list of str): List of MTZ filenames.
+
+    Returns:
+        None: Writes the mean map in 'bootstrap_mean_map.mtz'.
+    """
+    df_master = pandas.DataFrame(columns=["H", "K", "L", "FWT", "PHWT"])
+    for mtz_file in refined_mtzs_bootstrap:
+        mtz = gemmi.read_mtz_file(mtz_file)
+        # TODO: reflection weights?
+        df = pandas.DataFrame(data=mtz.array, columns=mtz.column_labels())
+        df = df[["H", "K", "L", "FWT", "PHWT"]]
+        if not df.empty:
+            df_master = pandas.concat([df_master, df], ignore_index=True)
+        else:
+            warnings.warn(f"No reflections in {mtz_file} for FWT and PHWT.")
+
+    # Convert FWT and PHWT to complex numbers and calculate mean
+    df_master["F_complex"] = df_master["FWT"] * numpy.exp(
+        1j * numpy.deg2rad(df_master["PHWT"])
+    )
+    df_mean = (
+        df_master.groupby(["H", "K", "L"])["F_complex"]
+        .mean()
+        .rename("F_complex")
+        .reset_index()
+    )
+    print(df_mean.head(10))
+    df_mean["FWT"] = numpy.abs(df_mean["F_complex"])
+    df_mean["PHWT"] = numpy.rad2deg(numpy.angle(df_mean["F_complex"]))
+    print(df_mean.head(10))
+    df_mean = df_mean.astype({name: "int32" for name in ["H", "K", "L"]})
+
+    # Save the mean map as an MTZ file using refined_mtzs_bootstrap[0] as reference
+    mtz_ref = gemmi.read_mtz_file(refined_mtzs_bootstrap[0])
+    columns = {"FWT": "F", "PHWT": "P"}
+    write_mtz_from_df(
+        df_mean[["H", "K", "L", "FWT", "PHWT"]],
+        mtz_ref,
+        columns,
+        filename="bootstrap_mean_map.mtz",
+    )
+    return
+
+
 def main():
     print("Running multixem version:", __version__)
     parser = create_parser()
@@ -1669,8 +1720,8 @@ def main():
     else:
         prefix = "multixem_"
 
-    os.mkdir("multixem_proc")
-    os.chdir("multixem_proc")
+    os.mkdir("multixem_tmp")
+    os.chdir("multixem_tmp")
     print("Current working directory:", os.getcwd())
     n_proc = min(os.cpu_count(), args.n_proc)
 
@@ -1755,7 +1806,8 @@ def main():
                     quick=args.quick,
                     n_proc=n_proc,
                 )
-                bootstrap_analyse(refined_mmcifs_bootstrap)
+                bootstrap_analyse_structures(refined_mmcifs_bootstrap)
+                bootstrap_mean_map(refined_mtzs_bootstrap)
 
 
 if __name__ == "__main__":
