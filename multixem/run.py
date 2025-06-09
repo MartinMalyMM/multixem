@@ -1425,21 +1425,22 @@ def compute_structure_differences(refined_mmcifs):
             )
 
 
+def makeAddressStr(cra):
+    address = cra.chain.name + "/" + cra.residue.name + " "
+    address += str(cra.residue.seqid.num)
+    if cra.residue.seqid.icode.strip():
+        address += str(cra.residue.seqid.icode)
+    address += "/"
+    address += cra.atom.name
+    if cra.atom.has_altloc():
+        address += "."
+        address += cra.atom.altloc
+    return address
+
+
 def compute_structure_differences_pair(
     structure1, structure2, output=None, minCoordDev=0, minAdpDev=0
 ):
-
-    def makeAddressStr(cra):
-        address = cra.chain.name + "/" + cra.residue.name + " "
-        address += str(cra.residue.seqid.num)
-        if cra.residue.seqid.icode.strip():
-            address += str(cra.residue.seqid.icode)
-        address += "/"
-        address += cra.atom.name
-        if cra.atom.has_altloc():
-            address += "."
-            address += cra.atom.altloc
-        return address
 
     def search(st1Cras, st2Cras, output, minCoordDev, minAdpDev):
         records = []
@@ -1593,6 +1594,95 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
     return mtzs_out
 
 
+def bootstrap_analyse(refined_mmcifs_bootstrap, skip_hydrogen=True):
+    """
+    Analyse structure models (mmCIF files) to compute mean coordinates and B-factors.
+    The structure models are expected to be after refinement against a bootstrapped
+    data set. They must have the same number of atoms and the same atom identifiers.
+
+    Args:
+        refined_mmcifs_bootstrap (list of str): List of mmCIF filenames.
+
+    Returns:
+        None: Writes the statistics in 'bootstrap_stats.csv' and
+              the mean structure to 'bootstrap_mean_structure.mmcif' with
+              where 1000 * sigma_coordinate is saved as B-values.
+    """
+
+    # numpy.set_printoptions(threshold=numpy.inf)
+    st_master = gemmi.read_structure(refined_mmcifs_bootstrap[0])
+    st_master_cras = list(st_master[0].all())
+    if skip_hydrogen:
+        st_master_cras = [cra for cra in st_master_cras if not cra.atom.is_hydrogen()]
+    print(len(st_master_cras), "atoms in the master structure")
+
+    atom_addresses = [makeAddressStr(cra) for cra in st_master_cras]
+    coords = numpy.zeros(
+        (len(st_master_cras), 3, len(refined_mmcifs_bootstrap)), dtype=numpy.float32
+    )
+    b_values = numpy.zeros(
+        (len(st_master_cras), len(refined_mmcifs_bootstrap)), dtype=numpy.float32
+    )
+
+    # Collect coordinates and B-values
+    for s, mmcif in enumerate(refined_mmcifs_bootstrap):
+        st = gemmi.read_structure(mmcif)
+        st_cras = list(st[0].all())
+        if skip_hydrogen:
+            st_cras = [cra for cra in st_cras if not cra.atom.is_hydrogen()]
+        assert len(st_master_cras) == len(st_cras), "Different number of atoms in"
+        f" structure models after bootstrapping: {mmcif}."
+        for a, (cra_master, cra) in enumerate(zip(st_master_cras, st_cras)):
+            assert (
+                cra_master.atom.name == cra.atom.name
+                and cra_master.atom.altloc == cra.atom.altloc
+                and cra_master.residue.name == cra.residue.name
+                and cra_master.residue.seqid == cra.residue.seqid
+                and cra_master.chain.name == cra.chain.name
+            ), f"Inconsistent structure models after bootstrapping: {mmcif}."
+            coords[a, :, s] = [cra.atom.pos.x, cra.atom.pos.y, cra.atom.pos.z]
+            b_values[a, s] = cra.atom.b_iso
+
+    # Compute mean and standard deviation per atom
+    mean_coords = numpy.mean(coords, axis=2)  # shape: (n_atoms, 3)
+    std_coords = numpy.std(coords, axis=2)  # shape: (n_atoms, 3)
+    # std_coords_norm = sqrt(σ_x² + σ_y² + σ_z²)
+    std_coords_norm = numpy.linalg.norm(std_coords, axis=1)  # shape: (n_atoms,)
+    mean_b_values = numpy.mean(b_values, axis=1)  # shape: (n_atoms,)
+    std_b_values = numpy.std(b_values, axis=1)  # shape: (n_atoms,)
+
+    # Write calculated data as a CSV file
+    csv_data = []
+    for i, atom_address in enumerate(atom_addresses):
+        csv_data.append(
+            {
+                "atom_id": atom_address,
+                "mean_x": mean_coords[i][0],
+                "mean_y": mean_coords[i][1],
+                "mean_z": mean_coords[i][2],
+                "sigma_x": std_coords[i][0],
+                "sigma_y": std_coords[i][1],
+                "sigma_z": std_coords[i][2],
+                "sigma_coord": std_coords_norm[i],
+                "mean_b": mean_b_values[i],
+                "sigma_b": std_b_values[i],
+            }
+        )
+    df_csv = pandas.DataFrame(csv_data)
+    df_csv.to_csv("bootstrap_stats.csv", index=False)
+    print("Mean structure statistics written to bootstrap_stats.csv.")
+
+    # Write mean structure as mmCIF
+    for i, cra in enumerate(st_master_cras):
+        # Replace position with mean coordinates
+        cra.atom.pos = gemmi.Position(*mean_coords[i])
+        # Replace B-factor with norm of std deviation (or square it if desired)
+        cra.atom.b_iso = 1000 * std_coords_norm[i]  # or (8π²/3)*σ² ???
+    st_master.make_mmcif_document().write_file("bootstrap_mean_structure.mmcif")
+    print("Mean structure written to bootstrap_mean_structure.mmcif.")
+    return
+
+
 def main():
     print("Running multixem version:", __version__)
     parser = create_parser()
@@ -1682,14 +1772,14 @@ def main():
             mtzs_bootstrap = bootstrap_dataset(
                 refined_mtzs[0], binner_master, seeds=range(1001, 1001 + args.bootstrap)
             )
-            # refined_mmcifs_bootstrap, refined_mtzs_bootstrap = run_servalcat_refine(
-            run_servalcat_refine(
+            refined_mmcifs_bootstrap, refined_mtzs_bootstrap = run_servalcat_refine(
                 mtzs_bootstrap,
                 args.model,
                 # mtz_free=args.hklin_free,
                 quick=args.quick,
                 n_proc=n_proc,
             )
+            bootstrap_analyse(refined_mmcifs_bootstrap)
 
 
 if __name__ == "__main__":
