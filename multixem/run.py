@@ -1699,7 +1699,9 @@ def bootstrap_mean_map(refined_mtzs_bootstrap, idx=0, prefix=""):
     df_master["F_complex"] = df_master["FWT"] * numpy.exp(
         1j * numpy.deg2rad(df_master["PHWT"])
     )
-    df_master = df_master.groupby(["H", "K", "L"])["F_complex"].mean().reset_index()
+    df_master = (
+        df_master.groupby(["H", "K", "L"])["F_complex"].apply(numpy.mean).reset_index()
+    )
     df_master["FWT"] = numpy.abs(df_master["F_complex"])
     df_master["PHWT"] = numpy.rad2deg(numpy.angle(df_master["F_complex"]))
     df_master = df_master.astype({name: "int32" for name in ["H", "K", "L"]})
