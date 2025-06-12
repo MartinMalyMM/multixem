@@ -1626,7 +1626,17 @@ def bootstrap_analyse_structures(
     mean_coords = numpy.mean(coords, axis=2)  # shape: (n_atoms, 3)
     std_coords = numpy.std(coords, axis=2)  # shape: (n_atoms, 3)
     # std_coords_norm = sqrt(σ_x² + σ_y² + σ_z²)
-    std_coords_norm = numpy.linalg.norm(std_coords, axis=1)  # shape: (n_atoms,)
+    #  (when assuming no correlation which is not the case)
+    # std_coords_norm = numpy.linalg.norm(std_coords, axis=1)  # shape: (n_atoms,)
+    #
+    # std_coords_norm = sqrt(σ_x² + σ_y² + σ_z² + 2 * (σ_xy + σ_xz + σ_yz))
+    # Calculate joint sigma of coordinates, assuming correlation between x, y, z
+    std_coords_norm = numpy.zeros(len(st_master_cras))
+    for i in range(len(st_master_cras)):
+        cov = numpy.cov(coords[i, :, :])
+        std_coords_norm[i] = numpy.sqrt(
+            numpy.trace(cov) + 2 * (cov[0, 1] + cov[0, 2] + cov[1, 2])
+        )
     mean_b_values = numpy.mean(b_values, axis=1)  # shape: (n_atoms,)
     std_b_values = numpy.std(b_values, axis=1)  # shape: (n_atoms,)
 
