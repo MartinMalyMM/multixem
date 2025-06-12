@@ -1682,7 +1682,7 @@ def bootstrap_analyse_structures(
 
 def bootstrap_mean_map(refined_mtzs_bootstrap, idx=0, prefix=""):
     """
-    Calculate the mean 2Fo-Fc map from refined MTZ files after bootstrapping.
+    Calculate the mean 2Fo-Fc and Fo-Fc maps from refined MTZ files after bootstrapping.
     The maps are expected to be after refinement against a bootstrapped
     data set.
 
@@ -1692,34 +1692,47 @@ def bootstrap_mean_map(refined_mtzs_bootstrap, idx=0, prefix=""):
         prefix (str): Prefix for the output filename.
 
     Returns:
-        None: Writes the mean map in 'bootstrap_mean_map.mtz'.
+        None: Writes the mean maps in '{prefix}bootstrap_mean_map.mtz' or
+              '{prefix}group{idx}_bootstrap_mean_map.mtz' if idx is set.
     """
-    df_master = pandas.DataFrame(columns=["H", "K", "L", "FWT", "PHWT"])
+    df_master = pandas.DataFrame(
+        columns=["H", "K", "L", "FWT", "PHWT", "DELFWT", "PHDELWT"]
+    )
     for mtz_file in refined_mtzs_bootstrap:
         mtz = gemmi.read_mtz_file(mtz_file)
-        # TODO: reflection weights?
-        df = pandas.DataFrame(data=mtz.array, columns=mtz.column_labels())
-        df = df[["H", "K", "L", "FWT", "PHWT"]]
+        col_labels = mtz.column_labels()
+        df = pandas.DataFrame(data=mtz.array, columns=col_labels)
+        df = df[["H", "K", "L", "FWT", "PHWT", "DELFWT", "PHDELWT"]]
         if not df.empty:
             df_master = pandas.concat([df_master, df], ignore_index=True)
         else:
-            warnings.warn(f"No reflections in {mtz_file} for FWT and PHWT.")
+            warnings.warn(f"No reflections in {mtz_file} for FWT/PHWT/DELFWT/PHDELWT.")
 
-    # Convert FWT and PHWT to complex numbers and calculate mean
+    # Convert FWT & PHWT and DELFWT & PHDELWT to complex numbers and calculate mean
     df_master["F_complex"] = df_master["FWT"] * numpy.exp(
         1j * numpy.deg2rad(df_master["PHWT"])
     )
-    df_master = (
-        df_master.groupby(["H", "K", "L"])["F_complex"].apply(numpy.mean).reset_index()
+    # Fo-Fc
+    df_master["DEL_F_complex"] = df_master["DELFWT"] * numpy.exp(
+        1j * numpy.deg2rad(df_master["PHDELWT"])
     )
-    df_master["FWT"] = numpy.abs(df_master["F_complex"])
-    df_master["PHWT"] = numpy.rad2deg(numpy.angle(df_master["F_complex"]))
-    df_master = df_master.astype({name: "int32" for name in ["H", "K", "L"]})
+    grouped = df_master.groupby(["H", "K", "L"])
+    df_mean = grouped.agg(
+        {"F_complex": numpy.mean, "DEL_F_complex": numpy.mean}
+    ).reset_index()
+
+    df_mean["FWT"] = numpy.abs(df_mean["F_complex"])
+    df_mean["PHWT"] = numpy.rad2deg(numpy.angle(df_mean["F_complex"]))
+    df_mean["DELFWT"] = numpy.abs(df_mean["DEL_F_complex"])
+    df_mean["PHDELWT"] = numpy.rad2deg(numpy.angle(df_mean["DEL_F_complex"]))
+
+    df_mean = df_mean.astype({name: "int32" for name in ["H", "K", "L"]})
+
     # print(df_master.head(10))
     # print(df_master[["H", "K", "L", "FWT", "PHWT"]].describe())
-    # Save the mean map as an MTZ file using refined_mtzs_bootstrap[0] as reference
+    # Save the mean maps as an MTZ file using refined_mtzs_bootstrap[0] as reference
     mtz_ref = gemmi.read_mtz_file(refined_mtzs_bootstrap[0])
-    columns = {"FWT": "F", "PHWT": "P"}
+    columns = {"FWT": "F", "PHWT": "P", "DELFWT": "F", "PHDELWT": "P"}
     mtz_filename = (
         f"{prefix}group{idx}_bootstrap_mean_map.mtz"
         if idx
@@ -1727,7 +1740,7 @@ def bootstrap_mean_map(refined_mtzs_bootstrap, idx=0, prefix=""):
     )
 
     write_mtz_from_df(
-        df_master[["H", "K", "L", "FWT", "PHWT"]],
+        df_mean[["H", "K", "L", "FWT", "PHWT", "DELFWT", "PHDELWT"]],
         mtz_ref,
         columns,
         filename=mtz_filename,
