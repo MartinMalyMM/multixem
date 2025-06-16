@@ -85,6 +85,13 @@ def create_parser():
         help="Number of resolution bins. Must be a positive integer.",
     )
     parser.add_argument(
+        "--servalcat_args",
+        type=str,
+        default=[],
+        help="Command line arguments for Servalcat, recommend to put them"
+        + " between apostrophes.",
+    )
+    parser.add_argument(
         "--n_proc",
         type=positive_int,
         default=4,
@@ -472,23 +479,29 @@ def run_servalcat_fwt(mtz_groups_i, prefix="", n_proc=1):
 def run_servalcat_refine(
     mtzs_fi,
     model,
-    mtz_free="",
+    mtzs_free=[],
     source="xray",
+    arguments=[],
     sigmaa=True,
     quick=False,
     n_proc=1,
 ):  # , prefix=""):
     # TODO: source -s
-    # TODO: command line parameters for servalcat, --keyword_file, --config
-    # TODO: paralelisation
+    # TODO: --keyword_file, --config
     refined_mmcifs = []
     refined_mtzs = []
 
     def refine_one(args):
-        i_mtz, mtz_fi = args
+        i_mtz, (mtz_fi, mtz_free) = args
         local_refined_mmcifs = []
         local_refined_mtzs = []
-        prefix_local = os.path.splitext(os.path.basename(mtz_fi))[0] + "_refine"
+        if mtzs_free and "--labin_llweight" in arguments:
+            prefix_local = (
+                f"{os.path.splitext(os.path.basename(mtz_fi))[0]}_"
+                f"llweight{i_mtz}_refine"
+            )
+        else:
+            prefix_local = f"{os.path.splitext(os.path.basename(mtz_fi))[0]}_refine"
         log_filename = prefix_local + ".log"
         cmd = [
             "servalcat",
@@ -505,6 +518,8 @@ def run_servalcat_refine(
         ]
         if mtz_free:
             cmd.extend(["--hklin_free", mtz_free])
+        if arguments:
+            cmd.extend(arguments)
         if quick:
             cmd.extend(["--ncycle", "1"])
         print("Running command:", " ".join(cmd))
@@ -546,8 +561,22 @@ def run_servalcat_refine(
         local_refined_mmcifs.append(prefix_local + ".mmcif")
         return local_refined_mmcifs[0], local_refined_mtzs[0]
 
+    if mtzs_free and len(mtzs_free) >= 2 and len(mtzs_fi) == 1:
+        # refinement after bootstrapping
+        mtz_zip = zip(mtzs_fi * len(mtzs_free), mtzs_free)
+    elif not mtzs_free:
+        # refinement after merging, no free set provided
+        mtz_zip = zip(mtzs_fi, [None] * len(mtzs_fi))
+    elif len(mtzs_free) == 1:
+        # refinement after merging, single free set provided
+        mtz_zip = zip(mtzs_fi, mtzs_free * len(mtzs_fi))
+    else:
+        # unexpected case, should not happen
+        raise ValueError(
+            "Unexpected case: both mtzs_fi and mtzs_free have" " more than one element."
+        )
     with concurrent.futures.ThreadPoolExecutor(max_workers=n_proc) as executor:
-        results = list(executor.map(refine_one, enumerate(mtzs_fi)))
+        results = list(executor.map(refine_one, enumerate(mtz_zip)))
     for mmcif, mtz in results:
         refined_mmcifs.append(mmcif)
         refined_mtzs.append(mtz)
@@ -1468,7 +1497,7 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
 
     def bootstrap_bin(df, seed=1001):
         """
-        For a DataFrame, create a `weight_bootstrap` column.
+        For a DataFrame, create a `llweight` column.
 
         Args:
             df (pandas.DataFrame): DataFrame containing reflections.
@@ -1485,7 +1514,7 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
             .size()
             .reindex(range(len(df)), fill_value=0)
         )
-        return df_bootstrap_bin_weight.rename("weight_bootstrap")
+        return df_bootstrap_bin_weight.rename("llweight")
 
     print("\nBootstrapping dataset", mtz_file)
     mtzs_out = []
@@ -1505,51 +1534,53 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
     # print(df.head(10))
     # print(df.describe())
 
-    df_bootstrap1_weight_master = pandas.DataFrame()
+    # df_bootstrap1_weight_master = pandas.DataFrame()
 
     for i, seed in enumerate(seeds):
         df_bootstrap1_weight = pandas.concat(
             [bootstrap_bin(group, seed) for _, group in df.groupby("bin")],
             ignore_index=True,
         )
-        # Merge columns H, K, L from df and weight_bootstrap from df_bootstrap1_weight
+        # Merge columns H, K, L from df and llweight from df_bootstrap1_weight
         df_bootstrap1_weight_hkl = df[["H", "K", "L"]].copy()
         df_bootstrap1_weight_hkl = df_bootstrap1_weight_hkl.merge(
             df_bootstrap1_weight, left_index=True, right_index=True
         )
-
+        # TODO: FreeR_flag
+        mtz_out_name = f"{os.path.splitext(mtz_file)[0]}_llweight_{i}.mtz"
         write_mtz_from_df(
             df_bootstrap1_weight_hkl,
             mtz,
-            columns={"weight_bootstrap": "I"},
-            filename=f"{os.path.splitext(mtz_file)[0]}_weight_bootstrap_{i}.mtz",
+            columns={"llweight": "I"},
+            filename=mtz_out_name,
         )
+        mtzs_out.append(mtz_out_name)
 
-        if i == 0:
+        """if i == 0:
             df_bootstrap1_weight_master = df_bootstrap1_weight.copy()
             df_bootstrap1_weight_master = df_bootstrap1_weight_master.rename(
-                "weight_bootstrap_0"
+                "llweight_0"
             ).to_frame()
         else:
-            df_bootstrap1_weight_master[f"weight_bootstrap_{i}"] = (
+            df_bootstrap1_weight_master[f"llweight_{i}"] = (
                 df_bootstrap1_weight.values
             )
 
         # TODO: FreeR_flag
-        columns = {i_col: "J", "SIG" + i_col: "Q", "weight_bootstrap": "I"}
+        columns = {i_col: "J", "SIG" + i_col: "Q", "llweight": "I"}
         if "FreeR_flag" in df.columns:
             columns["FreeR_flag"] = "I"
         df_bootstrap1_data = df.merge(
             df_bootstrap1_weight.copy(), left_index=True, right_index=True, how="left"
         )
         df_bootstrap1_data = df_bootstrap1_data[
-            df_bootstrap1_data["weight_bootstrap"] > 0
+            df_bootstrap1_data["llweight"] > 0
         ]
         mtz_out_name = f"{os.path.splitext(mtz_file)[0]}_bootstrap_data_{i}.mtz"
         write_mtz_from_df(df_bootstrap1_data, mtz, columns, filename=mtz_out_name)
-        mtzs_out.append(mtz_out_name)
+        mtzs_out.append(mtz_out_name)"""
 
-    df_bootstrap1 = df.merge(
+    """df_bootstrap1 = df.merge(
         df_bootstrap1_weight_master, left_index=True, right_index=True, how="left"
     )
     # print(df_bootstrap1.head(10))
@@ -1558,13 +1589,13 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
     columns = {i_col: "J", "SIG" + i_col: "Q"}
     if "FreeR_flag" in df.columns:
         columns["FreeR_flag"] = "I"
-    columns.update({f"weight_bootstrap_{i}": "I" for i in range(len(seeds))})
+    columns.update({f"llweight_{i}": "I" for i in range(len(seeds))})
     write_mtz_from_df(
         df_bootstrap1,
         mtz,
         columns,
         filename=f"{os.path.splitext(mtz_file)[0]}_bootstrap.mtz",
-    )
+    )"""
     return mtzs_out
 
 
@@ -1767,6 +1798,7 @@ def main():
     os.chdir("multixem_proc")
     print("Current working directory:", os.getcwd())
     n_proc = min(os.cpu_count(), args.n_proc)
+    servalcat_args = args.servalcat_args.split() if args.servalcat_args else []
 
     if args.hklin_unmerged:
         print("Unmerged diffraction data:", args.hklin_unmerged)
@@ -1824,7 +1856,8 @@ def main():
         refined_mmcifs, refined_mtzs = run_servalcat_refine(
             mtzs_i,
             args.model,
-            mtz_free=args.hklin_free,
+            mtzs_free=[args.hklin_free],
+            arguments=servalcat_args,
             quick=args.quick,
             n_proc=n_proc,
         )
@@ -1838,21 +1871,23 @@ def main():
                 mtzs_in = mtzs_fi
             else:
                 mtzs_in = mtzs_i
-            for i, mtz_in in enumerate(mtzs_in):
+            for i_group, mtz_in in enumerate(mtzs_in):
                 mtzs_bootstrap = bootstrap_dataset(
                     mtz_in, binner_master, seeds=range(1001, 1001 + args.bootstrap)
                 )
                 refined_mmcifs_bootstrap, refined_mtzs_bootstrap = run_servalcat_refine(
-                    mtzs_bootstrap,
+                    [mtz_in],
                     args.model,
-                    # mtz_free=args.hklin_free,
+                    mtzs_free=mtzs_bootstrap,
+                    arguments=servalcat_args + ["--labin_llweight", "llweight"],
+                    sigmaa=False,
                     quick=args.quick,
                     n_proc=n_proc,
                 )
                 bootstrap_analyse_structures(
-                    refined_mmcifs_bootstrap, i + 1, args.prefix
+                    refined_mmcifs_bootstrap, i_group + 1, args.prefix
                 )
-                bootstrap_mean_map(refined_mtzs_bootstrap, i + 1, args.prefix)
+                bootstrap_mean_map(refined_mtzs_bootstrap, i_group + 1, args.prefix)
 
 
 if __name__ == "__main__":
