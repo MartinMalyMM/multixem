@@ -1495,26 +1495,27 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
         list of str: List of output MTZ filenames created during bootstrapping.
     """
 
-    def bootstrap_bin(df, seed=1001):
+    def resample(n, seed=1001, column_name="llweight"):
         """
-        For a DataFrame, create a `llweight` column.
+        Create a DataFrame`llweight` column for resampling.
 
         Args:
-            df (pandas.DataFrame): DataFrame containing reflections.
+            n (int): Number of items to resample.
             seed (int): Random seed for reproducibility.
+            column_name (str): Name of the column to create in the DataFrame.
         Returns:
             pandas.Series: Series with the bootstrap weights for each reflection.
         """
         rng = numpy.random.default_rng(seed)
-        df_bootstrap_bin = pandas.DataFrame(
-            rng.integers(1, len(df) + 1, size=len(df)), columns=["index_bootstrap"]
+        df_random = pandas.DataFrame(
+            rng.integers(1, n + 1, size=n), columns=["index_resample"]
         )
-        df_bootstrap_bin_weight = (
-            df_bootstrap_bin.groupby(["index_bootstrap"])
+        df_weight = (
+            df_random.groupby(["index_resample"])
             .size()
-            .reindex(range(len(df)), fill_value=0)
+            .reindex(range(1, n + 1), fill_value=0)
         )
-        return df_bootstrap_bin_weight.rename("llweight")
+        return df_weight.rename(column_name)
 
     print("\nBootstrapping dataset", mtz_file)
     mtzs_out = []
@@ -1538,7 +1539,7 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
 
     for i, seed in enumerate(seeds):
         df_bootstrap1_weight = pandas.concat(
-            [bootstrap_bin(group, seed) for _, group in df.groupby("bin")],
+            [resample(len(group), seed) for _, group in df.groupby("bin")],
             ignore_index=True,
         )
         # Merge columns H, K, L from df and llweight from df_bootstrap1_weight
@@ -1811,7 +1812,7 @@ def bootstrap_mean_map(refined_mtzs_bootstrap, idx=0, prefix=""):
     df_master_llweight_pos = df_master[df_master["llweight"] > 0].copy()
 
     mtz_ref = gemmi.read_mtz_file(refined_mtzs_bootstrap[0])
-    # save 3 mean maps: all reflections, llweight ==0 and llweight > 0
+    # save 3 mean maps: all reflections, llweight == 0 and llweight > 0
     merge_reflections_bootstrap(df_master, mtz_ref, prefix, "_all", idx)
     merge_reflections_bootstrap(
         df_master_llweight_0, mtz_ref, prefix, "_llweight0", idx
