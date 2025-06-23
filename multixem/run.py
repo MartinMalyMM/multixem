@@ -67,6 +67,12 @@ def create_parser():
         "--hklin_free", type=str, help="Input MTZ file for test flags."
     )  # TODO - file exists?
     parser.add_argument(
+        "--hklin",
+        type=str,
+        nargs="+",
+        help="Input merged diffraction data file(s).",
+    )  # TODO - file exists?
+    parser.add_argument(
         "--model", type=str, help="Input atomic structure model file."
     )  # TODO - file exists?
     parser.add_argument(
@@ -432,6 +438,73 @@ def merge_in_groups(
     n_expected_list = [n_expected] * len(mtz_groups)
     print("Merged MTZ files:", mtz_groups)
     return mtz_groups, bin_stats_lists, n_expected_list, binner_master
+
+
+def check_merged_file(hklin):
+    """
+    Check the input merged MTZ file for the presence of intensities,
+    amplitudes and Friedel pairs.
+
+    Args:
+        hklin (str): Path to the input merged MTZ file.
+
+    Returns:
+        tuple: A tuple containing three boolean values:
+            - intensities_found: True if intensity columns are found.
+            - amplitudes_found: True if amplitude columns are found.
+            - anom: True if Friedel pairs are present.
+    """
+    # TODO: CIF
+    m = gemmi.read_mtz_file(hklin)
+    # dmax = m.resolution_low()
+    # dmin = m.resolution_high()
+
+    # Scan the columns of the input merged MTZ file
+    # and check if Friedel pairs are present or not
+    anom = False
+    intensities_found = False
+    amplitudes_found = False
+    for column in m.columns:
+        if column.type == "J":
+            print(
+                "Column with intensity (type J, no Friedel pairs) found:", column.label
+            )
+            intensities_found = True
+        elif column.type == "Q":
+            print(
+                "Column with standard deviation associated to intensity/amplitude"
+                " column (type Q, no Friedel pairs) found:",
+                column.label,
+            )
+        if column.type == "K":
+            print(
+                "Column with intensity (type K, Friedel pairs)" " found:", column.label
+            )
+            print("Friedel pairs will be kept separately.")
+            anom = True
+            intensities_found = True
+        elif column.type == "M":
+            print(
+                "Column with standard deviation associated to intensity column"
+                " (type M, Friedel pairs) found:",
+                column.label,
+            )
+        elif column.type == "G":
+            print(
+                "Column with amplitude (type G, Friedel pairs)" " found:", column.label
+            )
+            amplitudes_found = True
+        elif column.type == "L":
+            print(
+                "Column with standard deviation associated to amplitude"
+                " (type L, Friedel pairs) found:",
+                column.label,
+            )
+            print(
+                "This is quite unusual for unmerged data file,"
+                " are you sure about the file?"
+            )
+    return intensities_found, amplitudes_found, anom
 
 
 def run_servalcat_fwt(mtz_groups_i, prefix="", n_proc=1):
@@ -1844,6 +1917,9 @@ def main():
     print("Current working directory:", os.getcwd())
     n_proc = min(os.cpu_count(), args.n_proc)
     servalcat_args = args.servalcat_args.split() if args.servalcat_args else []
+    mtzs_i = []
+    bin_stats_lists = []
+    binner_master = None
 
     if args.hklin_unmerged:
         print("Unmerged diffraction data:", args.hklin_unmerged)
@@ -1886,17 +1962,42 @@ def main():
                 _mtzs_fi = run_servalcat_fwt(_mtz_groups_i, prefix, n_proc)
                 mtzs_fi.extend(_mtzs_fi)
             # TODO: free reflections if not given
+            # TODO: check that input files have FI(R?)
+            # TODO: mmCIF
+        mtzs_i = mtz_groups_i
 
-    # TODO: check that input files have FI(R?)
-    # TODO: mmCIF
-    bin_stats_matrix = len(bin_stats_lists) * [len(bin_stats_lists) * [None]]
-    for i in range(len(bin_stats_lists)):
+    if args.hklin:
+        print("Merged diffraction data:", args.hklin)
+        for i, mtz_i in enumerate(args.hklin):
+            i_present, f_present, anom_present = check_merged_file(mtz_i)
+            if i_present:
+                mtzs_i.append(mtz_i)
+                bin_stats_lists.append([])
+                if not binner_master:
+                    mtz = gemmi.read_mtz_file(mtz_i)
+                    binner_master = gemmi.Binner()
+                    binner_master.setup_from_1_d2(
+                        args.n_bins,
+                        gemmi.Binner.Method.Dstar2,
+                        mtz.make_1_d2_array(),
+                        mtz.get_cell(),
+                    )
+            elif f_present:
+                # TODO: FW
+                raise RuntimeError("Not implemented yet, please provide intensities.")
+            else:
+                raise RuntimeError(
+                    f"Neither intensities nor amplitudes present in {mtz_i}."
+                )
+
+    bin_stats_matrix = len(mtzs_i) * [len(mtzs_i) * [None]]
+    for i in range(len(mtzs_i)):
         bin_stats_matrix[i][i] = bin_stats_lists[i]
+    if len(mtzs_i) >= 2:
+        bin_stats_matrix, n_refl_matrix, ratio_refl_matrix = compare_mtzs_fi(
+            mtzs_i, binner_master, bin_stats_matrix, n_expected_list
+        )
 
-    mtzs_i = mtz_groups_i
-    bin_stats_matrix, n_refl_matrix, ratio_refl_matrix = compare_mtzs_fi(
-        mtzs_i, binner_master, bin_stats_matrix, n_expected_list
-    )
     if args.model:
         refined_mmcifs, refined_mtzs = run_servalcat_refine(
             mtzs_i,
@@ -1907,16 +2008,17 @@ def main():
             n_proc=n_proc,
         )
         adp_analysis_histograms(refined_mmcifs, prefix)
-        compute_structure_differences(refined_mmcifs)
-        bin_stats_matrix = compute_difference_maps(
-            refined_mtzs, binner_master, bin_stats_matrix
-        )
+        if len(refined_mmcifs) >= 2:
+            compute_structure_differences(refined_mmcifs)
+            bin_stats_matrix = compute_difference_maps(
+                refined_mtzs, binner_master, bin_stats_matrix
+            )
         if args.bootstrap:
             if args.amplitude:
                 mtzs_in = mtzs_fi
             else:
                 mtzs_in = mtzs_i
-            for i_group, mtz_in in enumerate(mtzs_in):
+            for i_mtz, mtz_in in enumerate(mtzs_in):
                 mtzs_bootstrap = bootstrap_dataset(
                     mtz_in, binner_master, seeds=range(1001, 1001 + args.bootstrap)
                 )
@@ -1930,9 +2032,9 @@ def main():
                     n_proc=n_proc,
                 )
                 bootstrap_analyse_structures(
-                    refined_mmcifs_bootstrap, i_group + 1, args.prefix
+                    refined_mmcifs_bootstrap, i_mtz + 1, args.prefix
                 )
-                bootstrap_mean_map(refined_mtzs_bootstrap, i_group + 1, args.prefix)
+                bootstrap_mean_map(refined_mtzs_bootstrap, i_mtz + 1, args.prefix)
 
 
 if __name__ == "__main__":
