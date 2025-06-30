@@ -33,6 +33,12 @@ def create_parser():
                 raise argparse.ArgumentTypeError(f"{value} is not a positive integer.")
             return ivalue
 
+    def existing_file(path):
+        abs_norm_path = os.path.abspath(os.path.normpath(path))
+        if not os.path.isfile(abs_norm_path):
+            raise argparse.ArgumentTypeError(f"File does not exist: {abs_norm_path}")
+        return abs_norm_path
+
     class ArgumentDefaultsHelpFormatterCustom(argparse.ArgumentDefaultsHelpFormatter):
         def _get_help_string(self, action):
             help_str = action.help
@@ -58,23 +64,23 @@ def create_parser():
     parser.add_argument(
         "-u",
         "--hklin_unmerged",
-        type=str,
+        type=existing_file,
         nargs="+",
         help="Input unmerged diffraction data file(s).",
-    )  # TODO - file exists?
+    )
     # TODO more files
     parser.add_argument(
-        "--hklin_free", type=str, help="Input MTZ file for test flags."
-    )  # TODO - file exists?
+        "--hklin_free", type=existing_file, help="Input MTZ file for test flags."
+    )
     parser.add_argument(
         "--hklin",
-        type=str,
+        type=existing_file,
         nargs="+",
         help="Input merged diffraction data file(s).",
-    )  # TODO - file exists?
+    )
     parser.add_argument(
-        "--model", type=str, help="Input atomic structure model file."
-    )  # TODO - file exists?
+        "--model", type=existing_file, help="Input atomic structure model file."
+    )
     parser.add_argument(
         "--n_batches",
         type=positive_int,
