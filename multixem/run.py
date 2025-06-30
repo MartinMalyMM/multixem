@@ -1178,7 +1178,8 @@ def adp_analysis_histograms(modelPaths, prefix=""):
 def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=[]):
     """
     Compute difference maps between two MTZ files from `servalcat refine_xtal_norefmac`
-    or `servalcat sigmaa` and save the results in a new MTZ file.
+    or `servalcat sigmaa`, save the results in a new MTZ file and save the statistics
+    for each resolution bin in a txt file.
 
     Args:
         mtz_file_1 (str): Path to the first MTZ file.
@@ -1230,6 +1231,7 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
     mtz_df1 = mtz_df1.dropna(subset=[f_col])  # Select only reflections with F
     mtz_df1 = mtz_df1.rename(columns=columns1_dict)  # Rename
     n_refl1 = len(mtz_df1)
+    print("")
     print(f"No. unique reflections: {n_refl1} in file {mtz_file_1}")
 
     mtz_df2 = mtz_df2[["H", "K", "L"] + columns]
@@ -1468,11 +1470,11 @@ def compute_difference_maps(refined_mtzs, binner, bin_stats_matrix=[]):
                 bin_stats_matrix[i][j],
             )
             if bin_stats_matrix:
-                print(
+                """print(
                     len(bin_stats_matrix[i][j]),
                     len(bin_stats_matrix[j][i]),
                     len(bin_stats_diff),
-                )
+                )"""
                 for b in range(len(bin_stats_matrix[i][j])):
                     try:
                         bin_stats_matrix[i][j][b].update(bin_stats_diff[b])
@@ -1484,8 +1486,6 @@ def compute_difference_maps(refined_mtzs, binner, bin_stats_matrix=[]):
                             f" enough bins."
                         )
                         break
-                filename = f"{refined_mtzs[i]}_vs_{refined_mtzs[j]}_bin_stats.txt"
-                write_bin_stats(bin_stats_matrix[i][j], filename)
 
     return bin_stats_matrix
 
