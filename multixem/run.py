@@ -168,6 +168,84 @@ def write_bin_stats(bin_stats_list, filename):
     print(f"Saved statistics to {filename}")
 
 
+def check_reflection_file_columns(hklin, unmerged=False):
+    """
+    Check the input reflection file for the presence of intensities,
+    amplitudes and Friedel pairs.
+
+    Args:
+        hklin (str): gemmi.Mtz object or path to the input reflection file.
+
+    Returns:
+        tuple: A tuple containing three boolean values:
+            - intensities_found: True if intensity columns are found.
+            - amplitudes_found: True if amplitude columns are found.
+            - anom: True if Friedel pairs are present.
+    """
+    if not isinstance(hklin, gemmi.Mtz):
+        m = gemmi.read_mtz_file(hklin)
+    else:
+        m = hklin
+    # TODO: CIF
+    # dmax = m.resolution_low()
+    # dmin = m.resolution_high()
+    unexpected_column_warning = (
+        "This is quite unusual for unmerged data file, are you sure about the file?"
+    )
+
+    anom = False
+    intensities_found = False
+    amplitudes_found = False
+    for column in m.columns:
+        if column.type == "J":
+            print(
+                "Column with intensity (type J, no Friedel pairs) found:", column.label
+            )
+            intensities_found = True
+        elif column.type == "Q":
+            print(
+                "Column with standard deviation associated to intensity/amplitude"
+                " column (type Q, no Friedel pairs) found:",
+                column.label,
+            )
+        elif column.type == "K":
+            print(
+                "Column with intensity (type K, Friedel pairs)" " found:", column.label
+            )
+            print("Friedel pairs will be kept separately.")
+            anom = True
+            intensities_found = True
+        elif column.type == "M":
+            print(
+                "Column with standard deviation associated to intensity column"
+                " (type M, Friedel pairs) found:",
+                column.label,
+            )
+        elif column.type == "G":
+            print(
+                "Column with amplitude (type G, Friedel pairs)" " found:", column.label
+            )
+            anom = True
+            amplitudes_found = True
+            if unmerged:
+                warnings.warn(unexpected_column_warning)
+        elif column.type == "L":
+            print(
+                "Column with standard deviation associated to amplitude"
+                " (type L, Friedel pairs) found:",
+                column.label,
+            )
+        elif column.type == "F":
+            print(
+                "Column with amplitude (type F, no Friedel pairs)" " found:",
+                column.label,
+            )
+            amplitudes_found = True
+            if unmerged:
+                warnings.warn(unexpected_column_warning)
+    return intensities_found, amplitudes_found, anom
+
+
 def merge_in_groups(
     unmerged, n_bins, prefix, n_batches_per_group=60, batches_edges=[], i_group_prefix=0
 ):
@@ -311,48 +389,9 @@ def merge_in_groups(
     # Scan the columns of the input unmerged MTZ file
     # and check if Friedel pairs are present or not
     anom = False
-    for column in m.columns:
-        if column.type == "J":
-            print(
-                "Column with intensity (type J, no Friedel pairs) found:", column.label
-            )
-        elif column.type == "Q":
-            print(
-                "Column with standard deviation associated to intensity/amplitude"
-                " column (type Q, no Friedel pairs) found:",
-                column.label,
-            )
-        if column.type == "K":
-            print(
-                "Column with intensity (type K, Friedel pairs)" " found:", column.label
-            )
-            print("Friedel pairs will be kept separately.")
-            anom = True
-        elif column.type == "M":
-            print(
-                "Column with standard deviation associated to intensity column"
-                " (type M, Friedel pairs) found:",
-                column.label,
-            )
-        elif column.type == "G":
-            print(
-                "Column with amplitude (type G, Friedel pairs)" " found:", column.label
-            )
-            print(
-                "This is quite unusual for unmerged data file,"
-                " are you sure about the file?"
-            )
-        elif column.type == "L":
-            print(
-                "Column with standard deviation associated to amplitude"
-                " (type L, Friedel pairs) found:",
-                column.label,
-            )
-            print(
-                "This is quite unusual for unmerged data file,"
-                " are you sure about the file?"
-            )
-
+    intensities_found, amplitudes_found, anom = check_reflection_file_columns(
+        m, unmerged=True
+    )
     # print(m.dataset(0).wavelength) == 0.0
     # print(m.dataset(1).wavelength) OK
     # print(m.datasets[0].wavelength) == 0.0
@@ -444,73 +483,6 @@ def merge_in_groups(
     n_expected_list = [n_expected] * len(mtz_groups)
     print("Merged MTZ files:", mtz_groups)
     return mtz_groups, bin_stats_lists, n_expected_list, binner_master
-
-
-def check_merged_file(hklin):
-    """
-    Check the input merged MTZ file for the presence of intensities,
-    amplitudes and Friedel pairs.
-
-    Args:
-        hklin (str): Path to the input merged MTZ file.
-
-    Returns:
-        tuple: A tuple containing three boolean values:
-            - intensities_found: True if intensity columns are found.
-            - amplitudes_found: True if amplitude columns are found.
-            - anom: True if Friedel pairs are present.
-    """
-    # TODO: CIF
-    m = gemmi.read_mtz_file(hklin)
-    # dmax = m.resolution_low()
-    # dmin = m.resolution_high()
-
-    # Scan the columns of the input merged MTZ file
-    # and check if Friedel pairs are present or not
-    anom = False
-    intensities_found = False
-    amplitudes_found = False
-    for column in m.columns:
-        if column.type == "J":
-            print(
-                "Column with intensity (type J, no Friedel pairs) found:", column.label
-            )
-            intensities_found = True
-        elif column.type == "Q":
-            print(
-                "Column with standard deviation associated to intensity/amplitude"
-                " column (type Q, no Friedel pairs) found:",
-                column.label,
-            )
-        if column.type == "K":
-            print(
-                "Column with intensity (type K, Friedel pairs)" " found:", column.label
-            )
-            print("Friedel pairs will be kept separately.")
-            anom = True
-            intensities_found = True
-        elif column.type == "M":
-            print(
-                "Column with standard deviation associated to intensity column"
-                " (type M, Friedel pairs) found:",
-                column.label,
-            )
-        elif column.type == "G":
-            print(
-                "Column with amplitude (type G, Friedel pairs)" " found:", column.label
-            )
-            amplitudes_found = True
-        elif column.type == "L":
-            print(
-                "Column with standard deviation associated to amplitude"
-                " (type L, Friedel pairs) found:",
-                column.label,
-            )
-            print(
-                "This is quite unusual for unmerged data file,"
-                " are you sure about the file?"
-            )
-    return intensities_found, amplitudes_found, anom
 
 
 def run_servalcat_fwt(mtz_groups_i, prefix="", n_proc=1):
@@ -1977,7 +1949,9 @@ def main():
     if args.hklin:
         print("Merged diffraction data:", args.hklin)
         for i, mtz_i in enumerate(args.hklin):
-            i_present, f_present, anom_present = check_merged_file(mtz_i)
+            i_present, f_present, anom_present = check_reflection_file_columns(
+                mtz_i, unmerged=False
+            )
             if i_present:
                 mtzs_i.append(mtz_i)
                 bin_stats_lists.append([])
