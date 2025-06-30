@@ -1888,12 +1888,13 @@ def main():
         prefix = args.prefix
         if args.prefix[-1] != "_":
             prefix += "_"
-        print("Prefix for the output files:", prefix)
     else:
         prefix = "multixem_"
+    print("Prefix for the output files:", prefix)
 
-    os.mkdir("multixem_proc")
-    os.chdir("multixem_proc")
+    working_dir_name = f"multixem_{prefix[:-1]}"
+    os.mkdir(working_dir_name)
+    os.chdir(working_dir_name)
     print("Current working directory:", os.getcwd())
     n_proc = min(os.cpu_count(), args.n_proc)
     servalcat_args = args.servalcat_args.split() if args.servalcat_args else []
@@ -1909,6 +1910,8 @@ def main():
         n_expected_list = []
         mtzs_fi = []
         for i, hklin_unmerged in enumerate(args.hklin_unmerged):
+            print("")
+            print("Unmerged diffraction data file:", hklin_unmerged)
             # TODO: select automatically the number of batches in group (now default 60)
             if len(args.n_batches) == 1:
                 n_batches_per_group = args.n_batches[0]
@@ -1949,27 +1952,30 @@ def main():
     if args.hklin:
         print("Merged diffraction data:", args.hklin)
         for i, mtz_i in enumerate(args.hklin):
+            print("Merged diffraction data file:", mtz_i)
             i_present, f_present, anom_present = check_reflection_file_columns(
                 mtz_i, unmerged=False
             )
-            if i_present:
-                mtzs_i.append(mtz_i)
-                bin_stats_lists.append([])
-                if not binner_master:
-                    mtz = gemmi.read_mtz_file(mtz_i)
-                    binner_master = gemmi.Binner()
-                    binner_master.setup_from_1_d2(
-                        args.n_bins,
-                        gemmi.Binner.Method.Dstar2,
-                        mtz.make_1_d2_array(),
-                        mtz.get_cell(),
-                    )
-            elif f_present:
-                # TODO: FW
-                raise RuntimeError("Not implemented yet, please provide intensities.")
-            else:
+            if not i_present and not f_present:
                 raise RuntimeError(
                     f"Neither intensities nor amplitudes present in {mtz_i}."
+                )
+            elif f_present and not i_present:
+                warnings.warn(
+                    "The file contain only amplitudes but not intensities, however,"
+                    " providing intensities is recommended."
+                )
+            # elif i_present and not f_present: TODO FW
+            mtzs_i.append(mtz_i)
+            bin_stats_lists.append([])
+            if not binner_master:
+                mtz = gemmi.read_mtz_file(mtz_i)
+                binner_master = gemmi.Binner()
+                binner_master.setup_from_1_d2(
+                    args.n_bins,
+                    gemmi.Binner.Method.Dstar2,
+                    mtz.make_1_d2_array(),
+                    mtz.get_cell(),
                 )
 
     bin_stats_matrix = len(mtzs_i) * [len(mtzs_i) * [None]]
@@ -2014,9 +2020,9 @@ def main():
                     n_proc=n_proc,
                 )
                 bootstrap_analyse_structures(
-                    refined_mmcifs_bootstrap, i_mtz + 1, args.prefix
+                    refined_mmcifs_bootstrap, i_mtz + 1, prefix
                 )
-                bootstrap_mean_map(refined_mtzs_bootstrap, i_mtz + 1, args.prefix)
+                bootstrap_mean_map(refined_mtzs_bootstrap, i_mtz + 1, prefix)
 
 
 if __name__ == "__main__":
