@@ -1,5 +1,6 @@
 # coding: utf-8
 import os
+import sys
 import argparse
 import subprocess
 import pprint
@@ -1878,6 +1879,7 @@ def bootstrap_mean_map(refined_mtzs_bootstrap, idx=0, prefix=""):
 
 
 def main():
+    print("Command line:", " ".join(sys.argv))
     print("Running multixem version:", __version__)
     parser = create_parser()
     args = parser.parse_args()
