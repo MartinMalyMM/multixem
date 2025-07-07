@@ -61,8 +61,22 @@ def create_parser():
         version=__version__,
         help="show version and exit",
     )
-    parser.add_argument("-p", "--prefix", type=str, help="Prefix for the output files.")
-    parser.add_argument(
+
+    # Create subparsers
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    # Main pipeline subcommand (default behavior)
+    main_parser = subparsers.add_parser(
+        "pipeline",
+        help="Run the main refinement pipeline",
+        formatter_class=ArgumentDefaultsHelpFormatterCustom,
+    )
+
+    # Add all existing arguments to the main parser
+    main_parser.add_argument(
+        "-p", "--prefix", type=str, help="Prefix for the output files."
+    )
+    main_parser.add_argument(
         "-u",
         "--hklin_unmerged",
         type=existing_file,
@@ -70,19 +84,19 @@ def create_parser():
         help="Input unmerged diffraction data file(s).",
     )
     # TODO more files
-    parser.add_argument(
+    main_parser.add_argument(
         "--hklin_free", type=existing_file, help="Input MTZ file for test flags."
     )
-    parser.add_argument(
+    main_parser.add_argument(
         "--hklin",
         type=existing_file,
         nargs="+",
         help="Input merged diffraction data file(s).",
     )
-    parser.add_argument(
+    main_parser.add_argument(
         "--model", type=existing_file, help="Input atomic structure model file."
     )
-    parser.add_argument(
+    main_parser.add_argument(
         "--n_batches",
         type=positive_int,
         nargs="+",
@@ -91,51 +105,69 @@ def create_parser():
         + " where to split the data."
         + " Must be a positive integer or space-separated list of positive integers.",
     )
-    parser.add_argument(
+    main_parser.add_argument(
         "--n_bins",
         type=positive_int,
         default=20,
         help="Number of resolution bins. Must be a positive integer.",
     )
-    parser.add_argument(
+    main_parser.add_argument(
         "--servalcat_args",
         type=str,
         default=[],
         help="Command line arguments for Servalcat, recommend to put them"
         + " between apostrophes.",
     )
-    parser.add_argument(
+    main_parser.add_argument(
         "--n_proc",
         type=positive_int,
         default=4,
         help="Number of processes to use for paralallisation."
         + " Must be a positive integer.",
     )
-    parser.add_argument(
+    main_parser.add_argument(
         "--amplitude",
         action="store_true",
         help="Use amplitude rather than intensities (not recommended).",
     )
-    parser.add_argument(
+    main_parser.add_argument(
         "--bootstrap",
         type=positive_int,
         default=0,
         help="No. of bootstrapped sub data sets to be created and used for refinement."
         + " Must be a positive integer.",
     )
-    parser.add_argument(
+    main_parser.add_argument(
         "--quick",
         action="store_true",
         help="Quick run (only for development).",
     )
     # TODO: if input has Friedel pairs but a user wants to merge them
 
+    # Bootstrap mean map subcommand
+    mean_parser = subparsers.add_parser(
+        "mean",
+        help="Calculate mean maps from bootstrapped refinement results",
+        formatter_class=ArgumentDefaultsHelpFormatterCustom,
+    )
+    mean_parser.add_argument(
+        "file_name_template",
+        type=str,
+        help=(
+            "Template name for input files, e.g. put `dataset_llweight`"
+            " for `dataset_llweight*_refine.mtz` and `dataset_llweight*_refine.mmcif`."
+        ),
+    )
+    mean_parser.add_argument(
+        "--prefix", type=str, help="Prefix for the output filename"
+    )
+
     def validate_args(args):
         if args.n_batches and not args.hklin_unmerged:
             parser.error("--n_batches requires --hklin_unmerged to be provided.")
 
-    parser.set_defaults(func=validate_args)
-    # TODO: at least two --hklin or one --hklin_unmerged
+    main_parser.set_defaults(func=validate_args)
+
     return parser
 
 
@@ -1881,11 +1913,12 @@ def bootstrap_mean_map(refined_mtzs_bootstrap, idx=0, prefix=""):
 def main():
     print("Command line:", " ".join(sys.argv))
     print("Running multixem version:", __version__)
+
     parser = create_parser()
     args = parser.parse_args()
     print("Arguments parsed:", args)
-    pprint.pprint(vars(args))
 
+    pprint.pprint(vars(args))
     if args.prefix:
         prefix = args.prefix
         if args.prefix[-1] != "_":
@@ -1893,6 +1926,39 @@ def main():
     else:
         prefix = "multixem_"
     print("Prefix for the output files:", prefix)
+
+    # subcommand mean
+    if args.command == "mean":
+        # args.func(args)
+        import glob
+
+        refined_mmcifs = glob.glob(f"{args.file_name_template}*_refine.mmcif")
+        refined_mmcifs2 = glob.glob(f"{args.file_name_template}*_refine.cif")
+        refined_mmcifs = refined_mmcifs + refined_mmcifs2
+        if refined_mmcifs:
+            bootstrap_analyse_structures(refined_mmcifs, 1, prefix)
+        else:
+            print(
+                "No refined mmCIF files found with a filename template"
+                f"{args.file_name_template}*_refine.mmcif"
+            )
+        refined_mtzs = glob.glob(f"{args.file_name_template}*_refine.mtz")
+        if refined_mtzs:
+            print("Found refined MTZ files:", refined_mtzs)
+            bootstrap_mean_map(refined_mtzs, 1, prefix)
+        else:
+            print(
+                "No refined MTZ files found with a filename template"
+                f"{args.file_name_template}*_refine.mtz"
+            )
+        return
+
+    elif args.command != "pipeline" and args.command is not None:
+        parser.print_help()
+        return
+
+    # elif args.command == 'pipeline' or args.command is None:
+    # Run main pipeline
 
     working_dir_name = f"multixem_{prefix[:-1]}"
     os.mkdir(working_dir_name)
@@ -2025,7 +2091,3 @@ def main():
                     refined_mmcifs_bootstrap, i_mtz + 1, prefix
                 )
                 bootstrap_mean_map(refined_mtzs_bootstrap, i_mtz + 1, prefix)
-
-
-if __name__ == "__main__":
-    main()
