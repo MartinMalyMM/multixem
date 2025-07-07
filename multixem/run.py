@@ -1686,16 +1686,14 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
     return mtzs_out
 
 
-def bootstrap_analyse_structures(
-    refined_mmcifs_bootstrap, idx=0, prefix="", skip_hydrogen=True
-):
+def bootstrap_analyse_structures(refined_mmcifs, idx=0, prefix="", skip_hydrogen=True):
     """
     Analyse structure models (mmCIF files) to compute mean coordinates and B-factors.
     The structure models are expected to be after refinement against a bootstrapped
     data set. They must have the same number of atoms and the same atom identifiers.
 
     Args:
-        refined_mmcifs_bootstrap (list of str): List of mmCIF filenames.
+        refined_mmcifs (list of str): List of mmCIF filenames.
         idx (int): Index for naming the output files (applies if not set to 0).
         prefix (str): Prefix for the output filenames.
         skip_hydrogen (bool): If True, skip hydrogen atoms in the analysis.
@@ -1707,7 +1705,7 @@ def bootstrap_analyse_structures(
     """
 
     # numpy.set_printoptions(threshold=numpy.inf)
-    st_master = gemmi.read_structure(refined_mmcifs_bootstrap[0])
+    st_master = gemmi.read_structure(refined_mmcifs[0])
     st_master_cras = list(st_master[0].all())
     if skip_hydrogen:
         st_master_cras = [cra for cra in st_master_cras if not cra.atom.is_hydrogen()]
@@ -1715,14 +1713,15 @@ def bootstrap_analyse_structures(
 
     atom_addresses = [makeAddressStr(cra) for cra in st_master_cras]
     coords = numpy.zeros(
-        (len(st_master_cras), 3, len(refined_mmcifs_bootstrap)), dtype=numpy.float32
+        (len(st_master_cras), 3, len(refined_mmcifs)), dtype=numpy.float32
     )
     b_values = numpy.zeros(
-        (len(st_master_cras), len(refined_mmcifs_bootstrap)), dtype=numpy.float32
+        (len(st_master_cras), len(refined_mmcifs)), dtype=numpy.float32
     )
 
+    print(f"Loading {len(refined_mmcifs)} structure models...")
     # Collect coordinates and B-values
-    for s, mmcif in enumerate(refined_mmcifs_bootstrap):
+    for s, mmcif in enumerate(refined_mmcifs):
         st = gemmi.read_structure(mmcif)
         st_cras = list(st[0].all())
         if skip_hydrogen:
@@ -1776,9 +1775,7 @@ def bootstrap_analyse_structures(
             }
         )
     df_csv = pandas.DataFrame(csv_data)
-    csv_filename = (
-        f"{prefix}group{idx}_bootstrap_stats.csv" if idx else "bootstrap_stats.csv"
-    )
+    csv_filename = f"{prefix}group{idx}_mean_stats.csv" if idx else "mean_stats.csv"
     df_csv.to_csv(csv_filename, index=False)
     print(f"Mean structure statistics written to {csv_filename}.")
 
@@ -1789,23 +1786,21 @@ def bootstrap_analyse_structures(
         # Replace B-factor with norm of std deviation (or square it if desired)
         cra.atom.b_iso = 1000 * std_coords_norm[i]  # or (8π²/3)*σ² ???
     mmcif_filename = (
-        f"{prefix}group{idx}_bootstrap_mean_structure.mmcif"
-        if idx
-        else "bootstrap_mean_structure.mmcif"
+        f"{prefix}group{idx}_mean_structure.mmcif" if idx else "mean_structure.mmcif"
     )
     st_master.make_mmcif_document().write_file(mmcif_filename)
     print(f"Mean structure written to {mmcif_filename}.")
     return
 
 
-def bootstrap_mean_map(refined_mtzs_bootstrap, idx=0, prefix=""):
+def bootstrap_mean_map(refined_mtzs, idx=0, prefix=""):
     """
     Calculate the mean 2Fo-Fc and Fo-Fc maps from refined MTZ files after bootstrapping.
     The maps are expected to be after refinement against a bootstrapped
     data set.
 
     Args:
-        refined_mtzs_bootstrap (list of str): List of MTZ filenames.
+        refined_mtzs (list of str): List of MTZ filenames.
         idx (int): Index for naming the output file (applies if not set to 0).
         prefix (str): Prefix for the output filename.
 
@@ -1866,8 +1861,9 @@ def bootstrap_mean_map(refined_mtzs_bootstrap, idx=0, prefix=""):
 
         return df_mean
 
+    print(f"Loading {len(refined_mtzs)} density maps...")
     columns_selected = ["H", "K", "L", "FWT", "PHWT", "DELFWT", "PHDELWT", "llweight"]
-    for i, mtz_file in enumerate(refined_mtzs_bootstrap):
+    for i, mtz_file in enumerate(refined_mtzs):
         mtz = gemmi.read_mtz_file(mtz_file)
         col_labels = mtz.column_labels()
         df = pandas.DataFrame(data=mtz.array, columns=col_labels)
@@ -1897,7 +1893,7 @@ def bootstrap_mean_map(refined_mtzs_bootstrap, idx=0, prefix=""):
     df_master_llweight_0 = df_master[df_master["llweight"] == 0].copy()
     df_master_llweight_pos = df_master[df_master["llweight"] > 0].copy()
 
-    mtz_ref = gemmi.read_mtz_file(refined_mtzs_bootstrap[0])
+    mtz_ref = gemmi.read_mtz_file(refined_mtzs[0])
     # save 3 mean maps: all reflections, llweight == 0 and llweight > 0
     merge_reflections_bootstrap(df_master, mtz_ref, prefix, "_all", idx)
     merge_reflections_bootstrap(
@@ -1944,7 +1940,6 @@ def main():
             )
         refined_mtzs = glob.glob(f"{args.file_name_template}*_refine.mtz")
         if refined_mtzs:
-            print("Found refined MTZ files:", refined_mtzs)
             bootstrap_mean_map(refined_mtzs, 1, prefix)
         else:
             print(
