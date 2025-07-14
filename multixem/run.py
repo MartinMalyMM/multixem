@@ -1040,6 +1040,7 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
 def write_mtz_from_df(df, mtz_ref, columns, filename):
     """
     Create a gemmi.Mtz object from a pandas dataframe and save to file.
+    The numpy.float32 format is used for the data.
 
     Args:
         df (pandas.DataFrame): DataFrame containing columns for H, K, L and other data.
@@ -1631,6 +1632,8 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
         df_bootstrap1_weight_hkl = df_bootstrap1_weight_hkl.merge(
             df_bootstrap1_weight, left_index=True, right_index=True
         )
+        weight_sum = df_bootstrap1_weight.sum()
+        print(f"Sum of weight coefficients: {weight_sum}")
         # TODO: FreeR_flag
         mtz_out_name = (
             f"{os.path.splitext(os.path.basename(mtz_file))[0]}_llweight_{i}.mtz"
@@ -1827,25 +1830,82 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix=""):
             pandas.DataFrame: DataFrame with mean maps.
         """
 
-        df_master["count"] = 0
-        df_grouped = df_master.groupby(["H", "K", "L"])
-        df_mean = df_grouped.agg(
-            {"F_complex": "mean", "DEL_F_complex": "mean", "count": "count"}
-        ).reset_index()
+        # noqa: E741
+        def is_centric_vectorized(h, k, l):  # noqa: E741
+            return mtz_ref.spacegroup.operations().is_reflection_centric(
+                (int(h), int(k), int(l))  # noqa: E741
+            )
 
-        df_mean["FWT"] = numpy.abs(df_mean["F_complex"])
-        df_mean["PHWT"] = numpy.rad2deg(numpy.angle(df_mean["F_complex"]))
-        df_mean["DELFWT"] = numpy.abs(df_mean["DEL_F_complex"])
-        df_mean["PHDELWT"] = numpy.rad2deg(numpy.angle(df_mean["DEL_F_complex"]))
+        def calculate_mean_var(df, is_centric=False):
+            """Calculate variance of structure factors;
+            separately for a/centric reflections."""
+
+            if is_centric:
+                var_func = lambda x: (  # noqa: E731
+                    numpy.sqrt(numpy.var(numpy.abs(x))) if len(x) > 1 else 0
+                )
+            else:
+                var_func = lambda x: (  # noqa: E731
+                    numpy.sqrt(
+                        (numpy.var(numpy.real(x)) + numpy.var(numpy.imag(x))) / 2
+                    )
+                    if len(x) > 1
+                    else 0
+                )
+
+            df_mean_f = (
+                df.groupby(["H", "K", "L"])["F_complex"]
+                .agg(
+                    [
+                        ("F_complex_mean", lambda x: numpy.mean(x)),
+                        ("SIGFWT", var_func),
+                        ("FWTcount", "count"),
+                    ]
+                )
+                .reset_index()
+            )
+            df_mean_delf = (
+                df.groupby(["H", "K", "L"])["DEL_F_complex"]
+                .agg(
+                    [
+                        ("DEL_F_complex_mean", lambda x: numpy.mean(x)),
+                        ("SIGDELFWT", var_func),
+                        ("DELFWTcount", "count"),
+                    ]
+                )
+                .reset_index()
+            )
+
+            return df_mean_f.merge(df_mean_delf, on=["H", "K", "L"], how="outer")
+
+        df_master = df_master.astype({col: "int32" for col in ["H", "K", "L"]})
+        is_centric_vec = numpy.vectorize(is_centric_vectorized)
+        centric_mask = is_centric_vec(df_master["H"], df_master["K"], df_master["L"])
+
+        # Calculate mean and variance for a/centric reflections separately
+        acentric = df_master[~centric_mask]
+        centric = df_master[centric_mask]
+        stats_acentric = calculate_mean_var(acentric, is_centric=False)
+        stats_centric = calculate_mean_var(centric, is_centric=True)
+        df_mean = pandas.concat([stats_acentric, stats_centric], ignore_index=True)
+
+        # Convert to amplitude and phase
+        df_mean["FWT"] = numpy.abs(df_mean["F_complex_mean"])
+        df_mean["PHWT"] = numpy.rad2deg(numpy.angle(df_mean["F_complex_mean"]))
+        df_mean["DELFWT"] = numpy.abs(df_mean["DEL_F_complex_mean"])
+        df_mean["PHDELWT"] = numpy.rad2deg(numpy.angle(df_mean["DEL_F_complex_mean"]))
 
         if mtz_ref and prefix and suffix and idx:
             # Save the mean maps as an MTZ file
             columns = {
                 "FWT": "F",
                 "PHWT": "P",
+                "SIGFWT": "Q",
+                "FWTcount": "I",
                 "DELFWT": "F",
                 "PHDELWT": "P",
-                "count": "I",
+                "SIGDELFWT": "Q",
+                "DELFWTcount": "I",
             }
             mtz_filename = (
                 f"{prefix}group{idx}_bootstrap_mean_map{suffix}.mtz"
@@ -1853,7 +1913,21 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix=""):
                 else f"{prefix}bootstrap_mean_map{suffix}.mtz"
             )
             write_mtz_from_df(
-                df_mean[["H", "K", "L", "FWT", "PHWT", "DELFWT", "PHDELWT", "count"]],
+                df_mean[
+                    [
+                        "H",
+                        "K",
+                        "L",
+                        "FWT",
+                        "PHWT",
+                        "SIGFWT",
+                        "FWTcount",
+                        "DELFWT",
+                        "PHDELWT",
+                        "SIGDELFWT",
+                        "DELFWTcount",
+                    ]
+                ],
                 mtz_ref,
                 columns,
                 filename=mtz_filename,
