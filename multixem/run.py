@@ -791,8 +791,8 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
         # print("")
         # print(df.head(10))
         # print(df.describe())
-        hkl_common_array = numpy.array(df[["H", "K", "L"]].values, numpy.int8)
-        hkl_common_array = numpy.ascontiguousarray(hkl_common_array, dtype=numpy.int8)
+        hkl_common_array = numpy.array(df[["H", "K", "L"]].values, numpy.int32)
+        hkl_common_array = numpy.ascontiguousarray(hkl_common_array, dtype=numpy.int32)
         # print(len(hkl_common_array))
         # print(hkl_common_array.flags.c_contiguous)
         # print(hkl_common_array[:10])
@@ -1259,8 +1259,8 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
         f"No. unique reflections: {n_refl} in common;"
         f" ratios to the originals: {n_refl / n_refl1}   {n_refl / n_refl2}"
     )
-    hkl_common_array = numpy.array(df[["H", "K", "L"]].values, numpy.int8)
-    hkl_common_array = numpy.ascontiguousarray(hkl_common_array, dtype=numpy.int8)
+    hkl_common_array = numpy.array(df[["H", "K", "L"]].values, numpy.int32)
+    hkl_common_array = numpy.ascontiguousarray(hkl_common_array, dtype=numpy.int32)
     # print(len(hkl_common_array))  # should be equal to n_refl
 
     # Scaling per resolution bins
@@ -1407,9 +1407,9 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
     mtz_fwt_df2 = mtz_fwt_df2.rename(columns=columns_fwt2_dict)
     mtz_fwt_df2 = mtz_fwt_df2[["H", "K", "L"] + columns_fwt2]
     df_fwt = pandas.merge(mtz_fwt_df1, mtz_fwt_df2, on=["H", "K", "L"])
-    hkl_common_array_fwt = numpy.array(df_fwt[["H", "K", "L"]].values, numpy.int8)
+    hkl_common_array_fwt = numpy.array(df_fwt[["H", "K", "L"]].values, numpy.int32)
     hkl_common_array_fwt = numpy.ascontiguousarray(
-        hkl_common_array_fwt, dtype=numpy.int8
+        hkl_common_array_fwt, dtype=numpy.int32
     )
     output_mtz_fwt = f"{output_prefix}_fwt.mtz"
     print(f"No. reflections in {output_mtz_fwt}: {len(df_fwt)}")
@@ -1613,8 +1613,8 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
     if column_label_dropna in df.columns:
         df = df.dropna(subset=[column_label_dropna])
 
-    hkl_array = numpy.array(df[["H", "K", "L"]].values, numpy.int8)
-    hkl_array = numpy.ascontiguousarray(hkl_array, dtype=numpy.int8)
+    hkl_array = numpy.array(df[["H", "K", "L"]].values, numpy.int32)
+    hkl_array = numpy.ascontiguousarray(hkl_array, dtype=numpy.int32)
     df["bin"] = binner.get_bins(hkl_array)
     # print("No. unique reflections:", len(df))
     # print(df.head(10))
@@ -1963,8 +1963,8 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
 
         # Calculate statistics per bin
         if binner and mtz_ref:
-            hkl_array = numpy.array(df_mean[["H", "K", "L"]].values, numpy.int8)
-            hkl_array = numpy.ascontiguousarray(hkl_array, dtype=numpy.int8)
+            hkl_array = numpy.array(df_mean[["H", "K", "L"]].values, numpy.int32)
+            hkl_array = numpy.ascontiguousarray(hkl_array, dtype=numpy.int32)
             df_mean["bin"] = binner.get_bins(hkl_array)
             bin_stats = []
             for b in range(binner.size):
