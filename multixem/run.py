@@ -1621,7 +1621,7 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
     # print(df.describe())
 
     # df_bootstrap1_weight_master = pandas.DataFrame()
-
+    completeness_list = []
     for i, seed in enumerate(seeds):
         df_bootstrap1_weight = pandas.concat(
             [resample(len(group), seed) for _, group in df.groupby("bin")],
@@ -1633,8 +1633,14 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
             df_bootstrap1_weight, left_index=True, right_index=True
         )
         weight_sum = df_bootstrap1_weight.sum()
-        print(f"Sum of weight coefficients: {weight_sum}")
+        if weight_sum != len(df):
+            warnings.warn(
+                f"Sum of weight coefficients {weight_sum} does not match the"
+                f" number of reflections {len(df)}."
+            )
+
         # TODO: FreeR_flag
+        # Save the llweights in the MTZ file
         mtz_out_name = (
             f"{os.path.splitext(os.path.basename(mtz_file))[0]}_llweight_{i}.mtz"
         )
@@ -1645,6 +1651,20 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
             filename=mtz_out_name,
         )
         mtzs_out.append(mtz_out_name)
+
+        # Compute completeness
+        n_unique = len(
+            df_bootstrap1_weight_hkl[df_bootstrap1_weight_hkl["llweight"] > 0]
+        )
+        n_unique_expected = gemmi.count_reflections(
+            mtz.cell,
+            mtz.spacegroup,
+            mtz.resolution_high(),
+            mtz.resolution_low(),
+            unique=True,
+        )
+        completeness = n_unique / n_unique_expected
+        completeness_list.append(completeness)
 
         """if i == 0:
             df_bootstrap1_weight_master = df_bootstrap1_weight.copy()
@@ -1686,6 +1706,14 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
         columns,
         filename=f"{os.path.splitext(mtz_file)[0]}_bootstrap.mtz",
     )"""
+
+    completeness_mean = numpy.mean(completeness_list)
+    completeness_std = numpy.std(completeness_list)
+    print(
+        f"Completeness of bootstrap datasets:"
+        f" {completeness_mean:.2%} ± {completeness_std:.2%}"
+    )
+
     return mtzs_out
 
 
@@ -1796,7 +1824,7 @@ def bootstrap_analyse_structures(refined_mmcifs, idx=0, prefix="", skip_hydrogen
     return
 
 
-def bootstrap_mean_map(refined_mtzs, idx=0, prefix=""):
+def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
     """
     Calculate the mean 2Fo-Fc and Fo-Fc maps from refined MTZ files after bootstrapping.
     The maps are expected to be after refinement against a bootstrapped
@@ -1813,7 +1841,7 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix=""):
     """
 
     def merge_reflections_bootstrap(
-        df_master, mtz_ref=None, prefix="", suffix="", idx=0
+        df_master, mtz_ref=None, prefix="", suffix="", idx=0, binner=None
     ):
         """
         Merge reflections from the master DataFrame and calculate mean maps.
@@ -1933,6 +1961,77 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix=""):
                 filename=mtz_filename,
             )
 
+        # Calculate statistics per bin
+        if binner and mtz_ref:
+            hkl_array = numpy.array(df_mean[["H", "K", "L"]].values, numpy.int8)
+            hkl_array = numpy.ascontiguousarray(hkl_array, dtype=numpy.int8)
+            df_mean["bin"] = binner.get_bins(hkl_array)
+            bin_stats = []
+            for b in range(binner.size):
+                df_bin = df_mean[df_mean["bin"] == b]
+                if not df_bin.empty:
+                    mean_fwt = df_bin["FWT"].mean()
+                    mean_sigfwt = df_bin["SIGFWT"].mean()
+                    mean_fwt_sigfwt = mean_fwt / mean_sigfwt if mean_sigfwt else 0.0
+                    fwt_count = df_bin["FWTcount"].sum()
+                    mean_delfwt = df_bin["DELFWT"].mean()
+                    mean_sigdelfwt = df_bin["SIGDELFWT"].mean()
+                    mean_delfwt_sigdelfwt = (
+                        mean_delfwt / mean_sigdelfwt if mean_sigdelfwt else 0.0
+                    )
+                    delfwt_count = df_bin["DELFWTcount"].sum()
+                    bin_n_unique = len(df_bin)
+                    bin_n_unique_expected = gemmi.count_reflections(
+                        mtz_ref.cell,
+                        mtz_ref.spacegroup,
+                        binner.dmin_of_bin(b),
+                        binner.dmax_of_bin(b),
+                        unique=True,
+                    )
+                    completeness = bin_n_unique / bin_n_unique_expected
+                    bin_stats.append(
+                        {
+                            "bin": b + 1,
+                            "dmax": binner.dmax_of_bin(b),
+                            "dmin": binner.dmin_of_bin(b),
+                            "mean_FWT": mean_fwt,
+                            "mean_SIGFWT": mean_sigfwt,
+                            "mean_FWT_SIGFWT": mean_fwt_sigfwt,
+                            "FWTcount": fwt_count,
+                            "mean_DELFWT": mean_delfwt,
+                            "mean_SIGDELFWT": mean_sigdelfwt,
+                            "mean_DELFWT_SIGDELFWT": mean_delfwt_sigdelfwt,
+                            "DELFWTcount": delfwt_count,
+                            "count": bin_n_unique,
+                            "completeness": completeness,
+                        }
+                    )
+                else:
+                    bin_stats.append(
+                        {
+                            "bin": b + 1,
+                            "dmax": binner.dmax_of_bin(b),
+                            "dmin": binner.dmin_of_bin(b),
+                            "mean_FWT": 0.0,
+                            "mean_SIGFWT": 0.0,
+                            "mean_FWT_SIGFWT": 0.0,
+                            "FWTcount": 0,
+                            "mean_DELFWT": 0.0,
+                            "mean_SIGDELFWT": 0.0,
+                            "mean_DELFWT_SIGDELFWT": 0.0,
+                            "DELFWTcount": 0,
+                            "count": 0,
+                            "completeness": 0.0,
+                        }
+                    )
+            if prefix and suffix:
+                stats_filename = (
+                    f"{prefix}group{idx}_bootstrap_mean_map{suffix}.txt"
+                    if idx
+                    else f"{prefix}bootstrap_mean_map{suffix}.txt"
+                )
+                write_bin_stats(bin_stats, stats_filename)
+
         return df_mean
 
     print(f"Loading {len(refined_mtzs)} density maps...")
@@ -1957,24 +2056,22 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix=""):
     df_master["F_complex"] = df_master["FWT"] * numpy.exp(
         1j * numpy.deg2rad(df_master["PHWT"])
     )
-    # Fo-Fc
     df_master["DEL_F_complex"] = df_master["DELFWT"] * numpy.exp(
         1j * numpy.deg2rad(df_master["PHDELWT"])
     )
     # print(df_master.head(10))
     # print(df_master[["H", "K", "L", "FWT", "PHWT"]].describe())
-
     df_master_llweight_0 = df_master[df_master["llweight"] == 0].copy()
     df_master_llweight_pos = df_master[df_master["llweight"] > 0].copy()
 
     mtz_ref = gemmi.read_mtz_file(refined_mtzs[0])
     # save 3 mean maps: all reflections, llweight == 0 and llweight > 0
-    merge_reflections_bootstrap(df_master, mtz_ref, prefix, "_all", idx)
+    merge_reflections_bootstrap(df_master, mtz_ref, prefix, "_all", idx, binner)
     merge_reflections_bootstrap(
-        df_master_llweight_0, mtz_ref, prefix, "_llweight0", idx
+        df_master_llweight_0, mtz_ref, prefix, "_llweight0", idx, binner
     )
     merge_reflections_bootstrap(
-        df_master_llweight_pos, mtz_ref, prefix, "_llweightpos", idx
+        df_master_llweight_pos, mtz_ref, prefix, "_llweightpos", idx, binner
     )
 
     return
@@ -2159,4 +2256,6 @@ def main():
                 bootstrap_analyse_structures(
                     refined_mmcifs_bootstrap, i_mtz + 1, prefix
                 )
-                bootstrap_mean_map(refined_mtzs_bootstrap, i_mtz + 1, prefix)
+                bootstrap_mean_map(
+                    refined_mtzs_bootstrap, i_mtz + 1, prefix, binner_master
+                )
