@@ -122,13 +122,18 @@ def create_parser():
         "--n_proc",
         type=positive_int,
         default=4,
-        help="Number of processes to use for paralallisation."
+        help="Number of processes to use for parallelisation."
         + " Must be a positive integer.",
     )
     main_parser.add_argument(
         "--amplitude",
         action="store_true",
         help="Use amplitude rather than intensities (not recommended).",
+    )
+    main_parser.add_argument(
+        "--molrep",
+        action="store_true",
+        help="Run MolRep for molecular replacement before structure refinement.",
     )
     main_parser.add_argument(
         "--bootstrap",
@@ -434,6 +439,11 @@ def merge_in_groups(
     else:
         wavelength = 0.0
         print("No wavelength found in input file.")
+    print(
+        "Setting up resolution bins according to the file",
+        unmerged,
+        f"with resolution limits {dmax:.3f} - {dmin:.3f} A",
+    )
     binner_master = gemmi.Binner()
     binner_master.setup_from_1_d2(
         n_bins, gemmi.Binner.Method.Dstar2, m.make_1_d2_array(), m.get_cell()
@@ -518,6 +528,31 @@ def merge_in_groups(
     return mtz_groups, bin_stats_lists, n_expected_list, binner_master
 
 
+def run_molrep(model, mtz):
+    import shutil
+
+    prefix_local = f"{os.path.splitext(os.path.basename(mtz))[0]}_molrep"
+    log_filename = prefix_local + ".log"
+    pdb_filename = prefix_local + ".pdb"
+    cmd = [
+        "molrep",
+        "-f",
+        mtz,
+        "-m",
+        model,
+    ]
+    print("Running command:", " ".join(cmd))
+    try:
+        with open(log_filename, "w") as log_file:
+            subprocess.run(cmd, check=True, stdout=log_file, stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as e:
+        print(f"Error occurred while running command: {e}")
+    shutil.copy2(
+        os.path.join(os.getcwd(), "molrep.pdb"), os.path.join(os.getcwd(), pdb_filename)
+    )
+    return pdb_filename
+
+
 def run_servalcat_fwt(mtz_groups_i, prefix="", n_proc=1):
     """
     Run `servalcat fw` to perform French Wilson conversion of intensities
@@ -562,7 +597,7 @@ def run_servalcat_fwt(mtz_groups_i, prefix="", n_proc=1):
 
 def run_servalcat_refine(
     mtzs_fi,
-    model,
+    models,
     mtzs_free=[],
     source="xray",
     arguments=[],
@@ -575,8 +610,8 @@ def run_servalcat_refine(
     refined_mmcifs = []
     refined_mtzs = []
 
-    def refine_one(args):
-        i_mtz, (mtz_fi, mtz_free) = args
+    def refine_one(params):
+        i_mtz, (mtz_fi, mtz_free, model) = params
         local_refined_mmcifs = []
         local_refined_mtzs = []
         if mtzs_free and "--labin_llweight" in arguments:
@@ -628,13 +663,17 @@ def run_servalcat_refine(
                 "-o",
                 prefix_local + "_sigmaa",
             ]
+            if mtz_free:
+                cmd_sigmaa.extend(["--hklin_free", mtz_free])
+            if arguments:
+                cmd_sigmaa.extend(arguments)
             print("Running command:", " ".join(cmd_sigmaa))
             try:
-                with open(log_filename_sigmaa, "w") as log_file:
+                with open(log_filename_sigmaa, "w") as log_file_sigmaa:
                     subprocess.run(
                         cmd_sigmaa,
                         check=True,
-                        stdout=log_file,
+                        stdout=log_file_sigmaa,
                         stderr=subprocess.STDOUT,
                     )
             except subprocess.CalledProcessError as e:
@@ -645,22 +684,27 @@ def run_servalcat_refine(
         local_refined_mmcifs.append(prefix_local + ".mmcif")
         return local_refined_mmcifs[0], local_refined_mtzs[0]
 
+    if len(mtzs_fi) == len(models) >= 2:
+        models_list = models
+    else:
+        models_list = [models[0]] * len(mtzs_fi)
+
     if mtzs_free and len(mtzs_free) >= 2 and len(mtzs_fi) == 1:
         # refinement after bootstrapping
-        mtz_zip = zip(mtzs_fi * len(mtzs_free), mtzs_free)
+        params = zip(mtzs_fi * len(mtzs_free), mtzs_free, models_list)
     elif not mtzs_free:
         # refinement after merging, no free set provided
-        mtz_zip = zip(mtzs_fi, [None] * len(mtzs_fi))
+        params = zip(mtzs_fi, [None] * len(mtzs_fi), models_list)
     elif len(mtzs_free) == 1:
         # refinement after merging, single free set provided
-        mtz_zip = zip(mtzs_fi, mtzs_free * len(mtzs_fi))
+        params = zip(mtzs_fi, mtzs_free * len(mtzs_fi), models_list)
     else:
         # unexpected case, should not happen
         raise ValueError(
             "Unexpected case: both mtzs_fi and mtzs_free have" " more than one element."
         )
     with concurrent.futures.ThreadPoolExecutor(max_workers=n_proc) as executor:
-        results = list(executor.map(refine_one, enumerate(mtz_zip)))
+        results = list(executor.map(refine_one, enumerate(params)))
     for mmcif, mtz in results:
         refined_mmcifs.append(mmcif)
         refined_mtzs.append(mtz)
@@ -2134,6 +2178,7 @@ def main():
     servalcat_args = args.servalcat_args.split() if args.servalcat_args else []
     mtzs_i = []
     bin_stats_lists = []
+    n_expected_list = []
     binner_master = None
 
     if args.hklin_unmerged:
@@ -2141,7 +2186,6 @@ def main():
         n_groups = 0
         mtz_groups_i = []
         bin_stats_lists = []
-        n_expected_list = []
         mtzs_fi = []
         for i, hklin_unmerged in enumerate(args.hklin_unmerged):
             print("")
@@ -2186,6 +2230,7 @@ def main():
     if args.hklin:
         print("Merged diffraction data:", args.hklin)
         for i, mtz_i in enumerate(args.hklin):
+            print("")
             print("Merged diffraction data file:", mtz_i)
             i_present, f_present, anom_present = check_reflection_file_columns(
                 mtz_i, unmerged=False
@@ -2202,8 +2247,21 @@ def main():
             # elif i_present and not f_present: TODO FW
             mtzs_i.append(mtz_i)
             bin_stats_lists.append([])
-            if not binner_master:
-                mtz = gemmi.read_mtz_file(mtz_i)
+            mtz = gemmi.read_mtz_file(mtz_i)
+            # TODO: check and fix n_expected
+            n_expected = gemmi.count_reflections(
+                mtz.cell, mtz.spacegroup, mtz.resolution_high(), mtz.resolution_low()
+            )
+            n_expected_list.append(n_expected)
+            if not binner_master or mtz.resolution_high() < 1 / numpy.sqrt(
+                binner_master.max_1_d2
+            ):
+                print(
+                    "Setting up resolution bins according to the file",
+                    mtz_i,
+                    f"with resolution limits {mtz.resolution_low():.3f}"
+                    f" - {mtz.resolution_high():.3f} A",
+                )
                 binner_master = gemmi.Binner()
                 binner_master.setup_from_1_d2(
                     args.n_bins,
@@ -2221,9 +2279,17 @@ def main():
         )
 
     if args.model:
+        if args.molrep:
+            models = []
+            for mtz_i in mtzs_i:
+                print("Running MolRep to generate a model from the input structure.")
+                model_molrep = run_molrep(args.model, mtz_i)
+                models.append(model_molrep)
+        else:
+            models = [args.model]
         refined_mmcifs, refined_mtzs = run_servalcat_refine(
             mtzs_i,
-            args.model,
+            models,
             mtzs_free=[args.hklin_free],
             arguments=servalcat_args,
             quick=args.quick,
@@ -2246,7 +2312,7 @@ def main():
                 )
                 refined_mmcifs_bootstrap, refined_mtzs_bootstrap = run_servalcat_refine(
                     [mtz_in],
-                    args.model,
+                    models,
                     mtzs_free=mtzs_bootstrap,
                     arguments=servalcat_args + ["--labin_llweight", "llweight"],
                     sigmaa=False,
