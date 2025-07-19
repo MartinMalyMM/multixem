@@ -419,11 +419,28 @@ def merge_in_groups(
         d_array = m.cell.calculate_d_array(m.make_miller_array())
         dmax = max(d_array)
         dmin = min(d_array)
+    if unmerged.lower().endswith(".cif") or unmerged.lower().endswith(".ent"):
+        doc = gemmi.cif.read(unmerged)
+        rblocks = gemmi.as_refln_blocks(doc)
+        for rblock in rblocks:
+            if not rblock.is_merged():
+                Convert = gemmi.CifToMtz()
+                m = Convert.convert_block_to_mtz(rblock)
+                d_array = m.cell.calculate_d_array(m.make_miller_array())
+                dmax = max(d_array)
+                dmin = min(d_array)
+                break
     else:
         m = gemmi.read_mtz_file(unmerged)
         dmax = m.resolution_low()
         dmin = m.resolution_high()
 
+    print(f"Resolution limits: {dmax:.3f} - {dmin:.3f} A")
+    print(f"Space group: {m.spacegroup.hm} (No. {m.spacegroup.number})")
+    print(
+        f"Unit cell: {m.cell.a:.3f} {m.cell.b:.3f} {m.cell.c:.3f}"
+        f" {m.cell.alpha:.3f} {m.cell.beta:.3f} {m.cell.gamma:.3f}"
+    )
     # Scan the columns of the input unmerged MTZ file
     # and check if Friedel pairs are present or not
     anom = False
@@ -2232,8 +2249,27 @@ def main():
         for i, mtz_i in enumerate(args.hklin):
             print("")
             print("Merged diffraction data file:", mtz_i)
+            if mtz_i.lower().endswith(".cif") or mtz_i.lower().endswith(".ent"):
+                doc = gemmi.cif.read(mtz_i)
+                rblocks = gemmi.as_refln_blocks(doc)
+                for rblock in rblocks:
+                    if rblock.is_merged():
+                        Convert = gemmi.CifToMtz()
+                        mtz = Convert.convert_block_to_mtz(rblock)
+                        break
+            else:
+                mtz = gemmi.read_mtz_file(mtz_i)
+            print(
+                f"Resolution limits: {mtz.resolution_low():.3f}"
+                f" - {mtz.resolution_high():.3f} A"
+            )
+            print(f"Space group: {mtz.spacegroup.hm} (No. {mtz.spacegroup.number})")
+            print(
+                f"Unit cell: {mtz.cell.a:.3f} {mtz.cell.b:.3f} {mtz.cell.c:.3f}"
+                f" {mtz.cell.alpha:.3f} {mtz.cell.beta:.3f} {mtz.cell.gamma:.3f}"
+            )
             i_present, f_present, anom_present = check_reflection_file_columns(
-                mtz_i, unmerged=False
+                mtz, unmerged=False
             )
             if not i_present and not f_present:
                 raise RuntimeError(
@@ -2247,7 +2283,6 @@ def main():
             # elif i_present and not f_present: TODO FW
             mtzs_i.append(mtz_i)
             bin_stats_lists.append([])
-            mtz = gemmi.read_mtz_file(mtz_i)
             # TODO: check and fix n_expected
             n_expected = gemmi.count_reflections(
                 mtz.cell, mtz.spacegroup, mtz.resolution_high(), mtz.resolution_low()
