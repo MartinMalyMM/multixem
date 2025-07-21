@@ -1492,7 +1492,6 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
         bin_stats_list[b]["scale_delfwtfwt2scall"] = scale_delfwtfwt2scall
         bin_stats_list[b]["delfwtfwt2scall_count"] = len(df_fwt_bin)
         bin_stats_list[b]["scale_delfestfest2scall"] = scale_delfestfest2scall
-        bin_stats_list[b]["scale_delfwtfwt2sc"] = scale_delfwtfwt2sc
         df_fwt.loc[df_fwt_bin.index, "DELFWTFWT2SCallRE"] = (
             df_fwt_bin["FWT1RE"] - scale_delfwtfwt2scall * df_fwt_bin["FWT2RE"]
         )
