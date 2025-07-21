@@ -8,11 +8,15 @@ import numpy
 import pandas
 import gemmi
 import matplotlib.pyplot as plt
+import matplotlib
 import warnings
 import json
 from collections import Counter
 import concurrent.futures
 from . import __version__
+
+
+matplotlib.use("Agg")
 
 
 def create_parser():
@@ -95,13 +99,16 @@ def create_parser():
         help="Input merged diffraction data file(s).",
     )
     main_parser.add_argument(
-        "--model", type=existing_file, help="Input atomic structure model file."
+        "--model",
+        type=existing_file,
+        nargs="+",
+        help="Input atomic structure model file(s).",
     )
     main_parser.add_argument(
         "--n_batches",
         type=positive_int,
         nargs="+",
-        default=60,
+        default=0,  # default values set up in validate_args()
         help="Number of batches per merging group, or list of batch edges"
         + " where to split the data."
         + " Must be a positive integer or space-separated list of positive integers.",
@@ -171,6 +178,17 @@ def create_parser():
     def validate_args(args):
         if args.n_batches and not args.hklin_unmerged:
             parser.error("--n_batches requires --hklin_unmerged to be provided.")
+        if args.hklin_unmerged and not args.n_batches:
+            args.n_batches = [60]  # Default to 60 batches if not specified
+        if args.model and len(args.model) > 1:
+            if len(args.model or []) < (
+                len(args.hklin or []) + len(args.hklin_unmerged or [])
+            ):
+                parser.error(
+                    "Just a single model can be provided for multiple data sets,"
+                    " or the number of input structure models must match the number"
+                    " of provided data sets."
+                )
 
     main_parser.set_defaults(func=validate_args)
 
@@ -1327,7 +1345,7 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
     n_refl = len(df)
     print(
         f"No. unique reflections: {n_refl} in common;"
-        f" ratios to the originals: {n_refl / n_refl1}   {n_refl / n_refl2}"
+        f" ratios to the originals: {n_refl / n_refl1:.4f}   {n_refl / n_refl2:.4f}"
     )
     hkl_common_array = numpy.array(df[["H", "K", "L"]].values, numpy.int32)
     hkl_common_array = numpy.ascontiguousarray(hkl_common_array, dtype=numpy.int32)
@@ -2194,6 +2212,8 @@ def main():
 
     # elif args.command == 'pipeline' or args.command is None:
     # Run main pipeline
+    if hasattr(args, "func"):
+        args.func(args)
 
     working_dir_name = f"multixem_{prefix[:-1]}"
     os.mkdir(working_dir_name)
@@ -2321,15 +2341,17 @@ def main():
             mtzs_i, binner_master, bin_stats_matrix, n_expected_list
         )
 
+    models = []
     if args.model:
         if args.molrep:
-            models = []
-            for mtz_i in mtzs_i:
+            models_molrep = []
+            for model, mtz_i in zip(args.model, mtzs_i):
                 print("Running MolRep to generate a model from the input structure.")
-                model_molrep = run_molrep(args.model, mtz_i)
-                models.append(model_molrep)
+                model_molrep = run_molrep(model, mtz_i)
+                models_molrep.append(model_molrep)
+            models = models_molrep
         else:
-            models = [args.model]
+            models = args.model
         refined_mmcifs, refined_mtzs = run_servalcat_refine(
             mtzs_i,
             models,
