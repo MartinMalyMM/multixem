@@ -144,6 +144,14 @@ def create_parser():
         help="Run MolRep for molecular replacement before structure refinement.",
     )
     main_parser.add_argument(
+        "--unify_cell",
+        action="store_true",
+        help=(
+            "Set the same unit cell parameters for all datasets, "
+            "based on the first dataset."
+        ),
+    )
+    main_parser.add_argument(
         "--bootstrap",
         type=positive_int,
         default=0,
@@ -301,6 +309,31 @@ def check_reflection_file_columns(hklin, unmerged=False):
             if unmerged:
                 warnings.warn(unexpected_column_warning)
     return intensities_found, amplitudes_found, anom
+
+
+def copy_cell_mtz(mtz_input, mtz_reference):
+    """
+    Copy unit cell parameters from a reference MTZ file to
+    an MTZ file using gemmi.
+
+    Args:
+        mtz_input (str): Path to input MTZ file
+        mtz_reference (str): Path to reference MTZ file
+    Returns:
+        str: Output MTZ file name
+    """
+    mtz = gemmi.read_mtz_file(mtz_input)
+    mtz_ref = gemmi.read_mtz_file(mtz_reference)
+    mtz.set_cell_for_all(mtz_ref.cell)
+    mtz_out_filename = os.path.basename(mtz_input).replace(".mtz", "_cell.mtz")
+    mtz.write_to_file(mtz_out_filename)
+    print(
+        f"Copied unit cell parameters"
+        f" {mtz_ref.cell.a} {mtz_ref.cell.b} {mtz_ref.cell.c}"
+        f" {mtz_ref.cell.alpha} {mtz_ref.cell.beta} {mtz_ref.cell.gamma}"
+        f" from {mtz_reference} to {mtz_out_filename}"
+    )
+    return mtz_out_filename
 
 
 def merge_in_groups(
@@ -2340,6 +2373,12 @@ def main():
         bin_stats_matrix, n_refl_matrix, ratio_refl_matrix = compare_mtzs_fi(
             mtzs_i, binner_master, bin_stats_matrix, n_expected_list
         )
+
+    if args.unify_cell:
+        for i, mtz_i in enumerate(mtzs_i):
+            if i == 0:
+                continue
+            mtzs_i[i] = copy_cell_mtz(mtzs_i[i], mtzs_i[0])
 
     models = []
     if args.model:
