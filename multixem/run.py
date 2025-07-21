@@ -9,6 +9,7 @@ import pandas
 import gemmi
 import matplotlib.pyplot as plt
 import warnings
+import json
 from collections import Counter
 import concurrent.futures
 from . import __version__
@@ -666,6 +667,14 @@ def run_servalcat_refine(
                 )
         except subprocess.CalledProcessError as e:
             print(f"Error occurred while running command: {e}")
+        with open(prefix_local + "_stats.json", "r") as stats_file:
+            stats = json.load(stats_file)
+            stats_line_list = [
+                f"{stat} = {stats[-1]['data']['summary'][stat]:.4f}"
+                for stat in stats[-1]["data"]["summary"]
+                if stat != "-LL"
+            ]
+            print(f"Finished: {prefix_local}.mmcif {", ".join(stats_line_list)}")
         if sigmaa:
             log_filename_sigmaa = prefix_local + "_sigmaa.log"
             cmd_sigmaa = [
@@ -847,7 +856,7 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
         n_refl = len(df)
         print(
             f"No. unique reflections: {n_refl} in common;"
-            f" ratios to the originals: {n_refl / n_refl1}   {n_refl / n_refl2}"
+            f" ratios to the originals: {n_refl / n_refl1:.4f}   {n_refl / n_refl2:.4f}"
         )
         # print("")
         # print(df.head(10))
