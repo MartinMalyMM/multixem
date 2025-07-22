@@ -3,20 +3,74 @@ import os
 import sys
 import argparse
 import subprocess
-import pprint
 import numpy
 import pandas
 import gemmi
 import matplotlib.pyplot as plt
 import matplotlib
-import warnings
+import logging
 import json
 from collections import Counter
 import concurrent.futures
 from . import __version__
 
-
 matplotlib.use("Agg")
+
+
+def setup_logging():
+    """
+    Set up logging to output to both console and file.
+    """
+    # Create logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # Remove any existing handlers
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+
+    # Create formatters - simple format for INFO, detailed for others
+    class CustomFormatter(logging.Formatter):
+        def format(self, record):
+            if record.levelno in [logging.INFO, logging.DEBUG]:
+                return record.getMessage()
+            else:
+                formatted_time = self.formatTime(record, datefmt="%Y-%m-%d %H:%M:%S")
+                return f"{formatted_time} - {record.levelname} - {record.getMessage()}"
+
+    formatter = CustomFormatter()
+
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    # File handler - capture everything including DEBUG
+    file_handler = logging.FileHandler("multixem.log", mode="w")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    # Capture warnings and route them through logging
+    logging.captureWarnings(True)
+    warnings_logger = logging.getLogger("py.warnings")
+    warnings_logger.setLevel(logging.WARNING)
+
+    # Also capture uncaught exceptions
+    def handle_exception(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            # Allow KeyboardInterrupt to be handled normally
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+        # Log uncaught exceptions
+        logger.error(
+            "Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback)
+        )
+
+    sys.excepthook = handle_exception
+
+    return logger
 
 
 def create_parser():
@@ -230,7 +284,7 @@ def write_bin_stats(bin_stats_list, filename):
         index=False,
         justify="right",
     )
-    print(f"Saved statistics to {filename}")
+    logging.info(f"Saved statistics to {filename}")
 
 
 def check_reflection_file_columns(hklin, unmerged=False):
@@ -263,51 +317,49 @@ def check_reflection_file_columns(hklin, unmerged=False):
     amplitudes_found = False
     for column in m.columns:
         if column.type == "J":
-            print(
-                "Column with intensity (type J, no Friedel pairs) found:", column.label
+            logging.info(
+                f"Column with intensity (type J, no Friedel pairs)"
+                f" found: {column.label}"
             )
             intensities_found = True
         elif column.type == "Q":
-            print(
-                "Column with standard deviation associated to intensity/amplitude"
-                " column (type Q, no Friedel pairs) found:",
-                column.label,
+            logging.info(
+                f"Column with standard deviation associated to intensity/amplitude"
+                f" column (type Q, no Friedel pairs) found: {column.label}"
             )
         elif column.type == "K":
-            print(
-                "Column with intensity (type K, Friedel pairs)" " found:", column.label
+            logging.info(
+                f"Column with intensity (type K, Friedel pairs) found: {column.label}"
             )
-            print("Friedel pairs will be kept separately.")
+            logging.info("Friedel pairs will be kept separately.")
             anom = True
             intensities_found = True
         elif column.type == "M":
-            print(
-                "Column with standard deviation associated to intensity column"
-                " (type M, Friedel pairs) found:",
-                column.label,
+            logging.info(
+                f"Column with standard deviation associated to intensity column"
+                f" (type M, Friedel pairs) found: {column.label}"
             )
         elif column.type == "G":
-            print(
-                "Column with amplitude (type G, Friedel pairs)" " found:", column.label
+            logging.info(
+                f"Column with amplitude (type G, Friedel pairs) found: {column.label}"
             )
             anom = True
             amplitudes_found = True
             if unmerged:
-                warnings.warn(unexpected_column_warning)
+                logging.warning(unexpected_column_warning)
         elif column.type == "L":
-            print(
-                "Column with standard deviation associated to amplitude"
-                " (type L, Friedel pairs) found:",
-                column.label,
+            logging.info(
+                f"Column with standard deviation associated to amplitude"
+                f" (type L, Friedel pairs) found: {column.label}"
             )
         elif column.type == "F":
-            print(
-                "Column with amplitude (type F, no Friedel pairs)" " found:",
-                column.label,
+            logging.info(
+                f"Column with amplitude (type F, no Friedel pairs)"
+                f" found: {column.label}"
             )
             amplitudes_found = True
             if unmerged:
-                warnings.warn(unexpected_column_warning)
+                logging.warning(unexpected_column_warning)
     return intensities_found, amplitudes_found, anom
 
 
@@ -325,15 +377,15 @@ def copy_cell_mtz(mtz_input, mtz_reference):
     mtz = gemmi.read_mtz_file(mtz_input)
     mtz_ref = gemmi.read_mtz_file(mtz_reference)
     mtz.set_cell_for_all(mtz_ref.cell)
-    mtz_out_filename = os.path.basename(mtz_input).replace(".mtz", "_cell.mtz")
-    mtz.write_to_file(mtz_out_filename)
-    print(
+    mtz_out_filepath = os.path.basename(mtz_input).replace(".mtz", "_cell.mtz")
+    mtz.write_to_file(mtz_out_filepath)
+    logging.info(
         f"Copied unit cell parameters"
         f" {mtz_ref.cell.a} {mtz_ref.cell.b} {mtz_ref.cell.c}"
         f" {mtz_ref.cell.alpha} {mtz_ref.cell.beta} {mtz_ref.cell.gamma}"
-        f" from {mtz_reference} to {mtz_out_filename}"
+        f" from {mtz_reference} to {mtz_out_filepath}"
     )
-    return mtz_out_filename
+    return mtz_out_filepath
 
 
 def merge_in_groups(
@@ -452,11 +504,10 @@ def merge_in_groups(
 
         ## n_expected = gemmi.count_reflections(m.cell, m.spacegroup, dmin, dmax)
         completeness = len(intensities.miller_array) / n_expected
-        print(
-            f"Merged group {i_group_prefix + i_group + 1} of batches: #reflections:",
-            len(intensities.miller_array),
-            " => completeness:",
-            f"{completeness:.3f}",
+        logging.info(
+            f"Merged group {i_group_prefix + i_group + 1} of batches: #reflections:"
+            f" {len(intensities.miller_array)}"
+            f" => completeness: {completeness:.3f}",
         )
 
         mtz_group_merged_filename = f"{prefix}group{g_with_leading_zeros}_I.mtz"
@@ -487,9 +538,9 @@ def merge_in_groups(
         dmax = m.resolution_low()
         dmin = m.resolution_high()
 
-    print(f"Resolution limits: {dmax:.3f} - {dmin:.3f} A")
-    print(f"Space group: {m.spacegroup.hm} (No. {m.spacegroup.number})")
-    print(
+    logging.info(
+        f"Resolution limits: {dmax:.3f} - {dmin:.3f} A\n"
+        f"Space group: {m.spacegroup.hm} (No. {m.spacegroup.number})\n"
         f"Unit cell: {m.cell.a:.3f} {m.cell.b:.3f} {m.cell.c:.3f}"
         f" {m.cell.alpha:.3f} {m.cell.beta:.3f} {m.cell.gamma:.3f}"
     )
@@ -504,14 +555,13 @@ def merge_in_groups(
     # print(m.datasets[0].wavelength) == 0.0
     if m.datasets[-1].wavelength:
         wavelength = m.datasets[-1].wavelength
-        print("Wavelength from input file:", m.datasets[-1].wavelength)
+        logging.info(f"Wavelength from input file: {m.datasets[-1].wavelength}")
     else:
         wavelength = 0.0
-        print("No wavelength found in input file.")
-    print(
-        "Setting up resolution bins according to the file",
-        unmerged,
-        f"with resolution limits {dmax:.3f} - {dmin:.3f} A",
+        logging.info("No wavelength found in input file.")
+    logging.info(
+        "Setting up resolution bins according to the file"
+        f" {unmerged} with resolution limits {dmax:.3f} - {dmin:.3f} A"
     )
     binner_master = gemmi.Binner()
     binner_master.setup_from_1_d2(
@@ -519,13 +569,13 @@ def merge_in_groups(
     )
     # n_expected = len(gemmi.make_miller_array(m.cell, m.spacegroup, 2.2, float('inf')))
     n_expected = gemmi.count_reflections(m.cell, m.spacegroup, dmin, dmax)
-    print(
+    logging.info(
         f"Expected number of reflections for resolution range ({dmax:.3f} - {dmin:.3f}"
         f" A), cell and symmetry from the input file {unmerged}:",
         n_expected,
     )
 
-    print(f"No. batches: {len(m.batches)}")
+    logging.info(f"No. batches: {len(m.batches)}")
     batch = m.batches[0]
     # print(batch)
     # print(batch.number) (0 + 1 = 1)
@@ -536,14 +586,14 @@ def merge_in_groups(
     # print(list(batch.floats))
     try:
         if len(batch.floats) > 37 and batch.floats[36] and batch.floats[37]:
-            print(
+            logging.info(
                 "Start/end phi of the first batch found:"
                 f" {batch.floats[36]}, {batch.floats[37]}"
             )
         else:
-            print("Batch start/end phi of the first batch not found.")
+            logging.info("Batch start/end phi of the first batch not found.")
     except (IndexError, AttributeError) as e:
-        print(f"Batch start and end of phi not found. Error: {e}")
+        logging.info(f"Batch start and end of phi not found. Error: {e}")
 
     # hkl = m.make_miller_array()
     # intensity = m.column_with_label('I')
@@ -566,7 +616,7 @@ def merge_in_groups(
     elif n_batches_per_group:
         batches_split = list(range(0, len(m.batches), n_batches_per_group))
         batches_split.append(len(m.batches))
-    print(batches_split)
+    logging.info(f"Batch edges for merging groups: {batches_split}")
 
     mtz_groups = []
     bin_stats_lists = []
@@ -593,7 +643,7 @@ def merge_in_groups(
         mtz_groups.append(mtz_group)
         bin_stats_lists.append(bin_stats_list)
     n_expected_list = [n_expected] * len(mtz_groups)
-    print("Merged MTZ files:", mtz_groups)
+    logging.info(f"Merged MTZ files: {mtz_groups}")
     return mtz_groups, bin_stats_lists, n_expected_list, binner_master
 
 
@@ -610,12 +660,12 @@ def run_molrep(model, mtz):
         "-m",
         model,
     ]
-    print("Running command:", " ".join(cmd))
+    logging.info("Running command: " + " ".join(cmd))
     try:
         with open(log_filename, "w") as log_file:
             subprocess.run(cmd, check=True, stdout=log_file, stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as e:
-        print(f"Error occurred while running command: {e}")
+        logging.error(f"Error occurred while running command: {e}")
     shutil.copy2(
         os.path.join(os.getcwd(), "molrep.pdb"), os.path.join(os.getcwd(), pdb_filename)
     )
@@ -636,7 +686,7 @@ def run_servalcat_fwt(mtz_groups_i, prefix="", n_proc=1):
               H K L F SIGF I SIG I + if Friedel pairs also F(+) SIGF(+) F(-) SIGF(-).
               servalcat fw drops NOBS, NOBS(+) and NOBS(-) columns.
     """
-    print(
+    logging.info(
         "Running servalcat fw to convert intensities to structure factor amplitudes..."
     )
     mtz_groups_fi = []
@@ -647,7 +697,7 @@ def run_servalcat_fwt(mtz_groups_i, prefix="", n_proc=1):
         log_group_fi = f"{group_fi_prefix}.log"
         mtz_group_fi = f"{group_fi_prefix}.mtz"
         cmd = ["servalcat", "fw", "--hklin", mtz_group_i, "-o", group_fi_prefix]
-        print("Running command:", " ".join(cmd))
+        logging.info("Running command: " + " ".join(cmd))
         try:
             with open(log_group_fi, "w") as log_file:
                 subprocess.run(
@@ -655,7 +705,7 @@ def run_servalcat_fwt(mtz_groups_i, prefix="", n_proc=1):
                 )
             return mtz_group_fi
         except subprocess.CalledProcessError as e:
-            print(f"Error occurred while running command: {e}")
+            logging.error(f"Error occurred while running command: {e}")
             return None
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=n_proc) as executor:
@@ -710,14 +760,14 @@ def run_servalcat_refine(
             cmd.extend(arguments)
         if quick:
             cmd.extend(["--ncycle", "1"])
-        print("Running command:", " ".join(cmd))
+        logging.info("Running command: " + " ".join(cmd))
         try:
             with open(log_filename, "w") as log_file:
                 subprocess.run(
                     cmd, check=True, stdout=log_file, stderr=subprocess.STDOUT
                 )
         except subprocess.CalledProcessError as e:
-            print(f"Error occurred while running command: {e}")
+            logging.error(f"Error occurred while running command: {e}")
         with open(prefix_local + "_stats.json", "r") as stats_file:
             stats = json.load(stats_file)
             stats_line_list = [
@@ -725,7 +775,7 @@ def run_servalcat_refine(
                 for stat in stats[-1]["data"]["summary"]
                 if stat != "-LL"
             ]
-            print(f"Finished: {prefix_local}.mmcif {", ".join(stats_line_list)}")
+            logging.info(f"Finished: {prefix_local}.mmcif {', '.join(stats_line_list)}")
         if sigmaa:
             log_filename_sigmaa = prefix_local + "_sigmaa.log"
             cmd_sigmaa = [
@@ -744,7 +794,7 @@ def run_servalcat_refine(
                 cmd_sigmaa.extend(["--hklin_free", mtz_free])
             if arguments:
                 cmd_sigmaa.extend(arguments)
-            print("Running command:", " ".join(cmd_sigmaa))
+            logging.info("Running command: " + " ".join(cmd_sigmaa))
             try:
                 with open(log_filename_sigmaa, "w") as log_file_sigmaa:
                     subprocess.run(
@@ -754,7 +804,7 @@ def run_servalcat_refine(
                         stderr=subprocess.STDOUT,
                     )
             except subprocess.CalledProcessError as e:
-                print(f"Error occurred while running command: {e}")
+                logging.error(f"Error occurred while running command: {e}")
             local_refined_mtzs.append(prefix_local + "_sigmaa.mtz")
         else:
             local_refined_mtzs.append(prefix_local + ".mtz")
@@ -809,7 +859,7 @@ def calc_scale_real(df, column="FP", b=0, dmax=0.0, dmin=0.0):
         return nomin / denomin
     else:
         if b and dmax and dmin:
-            warnings.warn(
+            logging.warning(
                 f"Scale denominator for bin {b + 1} is zero"
                 f" ({dmax} - {dmin} A),"
                 " setting scale for this bin to 1."
@@ -847,7 +897,7 @@ def calc_scale_complex(df, column="F_est", column_denom="", b=0, dmax=0.0, dmin=
     if not numpy.isclose(scale_complex_denomin, 0):
         return scale_complex_numer / scale_complex_denomin
     else:
-        warnings.warn(
+        logging.warning(
             f"Scale denominator for bin {b + 1} is zero"
             f" ({dmax} - {dmin} A),"
             " setting scale for this bin to 1."
@@ -866,11 +916,19 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
         column_label_dropna = i_col  # or F?
         mtz1 = gemmi.read_mtz_file(mtz_fi1)
         mtz2 = gemmi.read_mtz_file(mtz_fi2)
-        print("")
-        print(f"{str(mtz1.cell)} in file {mtz_fi1}")
-        print(f"{str(mtz2.cell)} in file {mtz_fi2}")
+        logging.info("")
+        logging.info(
+            f"Unit cell {str(mtz1.cell.a)} {str(mtz1.cell.b)} {str(mtz1.cell.c)}"
+            f" {str(mtz1.cell.alpha)} {str(mtz1.cell.beta)} {str(mtz1.cell.gamma)}"
+            f" in file {mtz_fi1}"
+        )
+        logging.info(
+            f"Unit cell {str(mtz2.cell.a)} {str(mtz2.cell.b)} {str(mtz2.cell.c)}"
+            f" {str(mtz2.cell.alpha)} {str(mtz2.cell.beta)} {str(mtz2.cell.gamma)}"
+            f" in file {mtz_fi2}"
+        )
         if mtz1.cell != mtz2.cell:
-            print("WARNING: Unit cell parameters are different.")
+            logging.warning("Unit cell parameters are different.")
         mtz_df1 = pandas.DataFrame(data=mtz1.array, columns=mtz1.column_labels())
         mtz_df2 = pandas.DataFrame(data=mtz2.array, columns=mtz2.column_labels())
         mtz_df1 = mtz_df1.astype({name: "int32" for name in ["H", "K", "L"]})
@@ -894,18 +952,18 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
         # print("")
         # print(mtz_df1.head(10))
         n_refl1 = len(mtz_df1)
-        print(f"No. unique reflections: {n_refl1} in file {mtz_fi1}")
+        logging.info(f"No. unique reflections: {n_refl1} in file {mtz_fi1}")
 
         # mtz_df2 = mtz_df2[['H', 'K', 'L'] + columns]
         mtz_df2 = mtz_df2.dropna(subset=[column_label_dropna])
         mtz_df2 = mtz_df2.rename(columns=column_labels_dict2)
         n_refl2 = len(mtz_df2)
-        print(f"No. unique reflections: {n_refl2} in file {mtz_fi2}")
+        logging.info(f"No. unique reflections: {n_refl2} in file {mtz_fi2}")
 
         # Extract common Miller indices (H, K, L)
         df = pandas.merge(mtz_df1, mtz_df2, on=["H", "K", "L"])
         n_refl = len(df)
-        print(
+        logging.info(
             f"No. unique reflections: {n_refl} in common;"
             f" ratios to the originals: {n_refl / n_refl1:.4f}   {n_refl / n_refl2:.4f}"
         )
@@ -935,7 +993,7 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
         bins_tmp = binner.get_bins(hkl_common_array)
         min_n_bins = min(Counter(bins_tmp).values())
         if min_n_bins < 100:
-            warnings.warn(
+            logging.warning(
                 "Less than 100 reflections per bin"
                 " - it is recommended to set up a lower number of bins."
             )
@@ -1140,20 +1198,21 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
             # ccF_iso_matrix[j, i] = cc_iso_avg_list[0]
             ccI_iso_matrix[i, j] = ccI_iso_avg
             ccI_iso_matrix[j, i] = ccI_iso_avg
-    print("No. unique reflections:")
-    print(n_refl_matrix)
+    logging.info("\nNo. unique reflections:")
+    logging.info(n_refl_matrix)
     if n_expected and len(n_expected) == len(mtzs_fi):
         completeness_matrix = n_refl_matrix / max(n_expected)
-        print("Completeness:")
-        print(completeness_matrix)
-    print(
-        "Ratio of No. unique reflections in common and No. reflections in a data set:"
+        logging.info("\nCompleteness:")
+        logging.info(completeness_matrix)
+    logging.info(
+        "\nRatio of No. unique reflections in common and No. reflections in a data set:"
     )
-    print(ratio_refl_matrix)
+    logging.info(ratio_refl_matrix)
     # print("Average CCFiso:")
     # print(ccF_iso_matrix)
-    print("Average CCIiso:")
-    print(ccI_iso_matrix)
+    logging.info("\nAverage CCIiso:")
+    logging.info(ccI_iso_matrix)
+    logging.info("")
     # TODO: multiplicity
     return bin_stats_matrix, n_refl_matrix, ratio_refl_matrix
 
@@ -1184,7 +1243,7 @@ def write_mtz_from_df(df, mtz_ref, columns, filename):
     )
     mtz.set_data(data)
     mtz.write_to_file(filename)
-    print(f"Saved {len(df)} reflections to {filename}.")
+    logging.info(f"Saved {len(df)} reflections to {filename}.")
     return
 
 
@@ -1208,7 +1267,7 @@ def adp_analysis_histograms(modelPaths, prefix=""):
                 - q3 (float): Third quartile of ADP values.
                 - iqr (float): Interquartile range of ADP values.
         """
-        print(f"Running ADP analysis for {modelPath}")
+        logging.info(f"Running ADP analysis for {modelPath}")
         adp_dict = {}
         adp_per_resi = {}
         adp_dict["All"] = []
@@ -1261,7 +1320,7 @@ def adp_analysis_histograms(modelPaths, prefix=""):
                         else:
                             adp_per_resi[chain.name]["adp_sidechain"].append(None)
                     except (KeyError, AttributeError) as e:
-                        warnings.warn(
+                        logging.warning(
                             f"Error processing residue {residue.seqid}"
                             f" in chain {chain.name}: {e}"
                         )
@@ -1352,7 +1411,6 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
         columns = ["F_est"]  # Do we need SIGFP?
     else:
         raise ValueError("No column with amplitudes found.")
-        raise ValueError("No column with amplitudes found.")
     columns += ["FWT", "PHWT", "FC", "PHFC"]
     # afterwards, rename to FP1, SIGFP1, ..., FP2, SIGFP2, ...
     # columns1 = [col + "1" for col in columns]
@@ -1364,19 +1422,18 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
     mtz_df1 = mtz_df1.dropna(subset=[f_col])  # Select only reflections with F
     mtz_df1 = mtz_df1.rename(columns=columns1_dict)  # Rename
     n_refl1 = len(mtz_df1)
-    print("")
-    print(f"No. unique reflections: {n_refl1} in file {mtz_file_1}")
+    logging.info(f"No. unique reflections: {n_refl1} in file {mtz_file_1}")
 
     mtz_df2 = mtz_df2[["H", "K", "L"] + columns]
     mtz_df2 = mtz_df2.dropna(subset=[f_col])
     mtz_df2 = mtz_df2.rename(columns=columns2_dict)
     n_refl2 = len(mtz_df2)
-    print(f"No. unique reflections: {n_refl2} in file {mtz_file_2}")
+    logging.info(f"No. unique reflections: {n_refl2} in file {mtz_file_2}")
 
     # Extract common Miller indices (H, K, L)
     df = pandas.merge(mtz_df1, mtz_df2, on=["H", "K", "L"])
     n_refl = len(df)
-    print(
+    logging.info(
         f"No. unique reflections: {n_refl} in common;"
         f" ratios to the originals: {n_refl / n_refl1:.4f}   {n_refl / n_refl2:.4f}"
     )
@@ -1412,7 +1469,7 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
             for b in range(binner.size)
         ]
     if len(bin_stats_list) != binner.size:
-        warnings.warn(
+        logging.warning(
             f"bin_stats_list has {len(bin_stats_list)} bins,"
             f" but binner has {binner.size} bins.",
         )
@@ -1440,7 +1497,7 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
         )
 
         if len(df_bin) < 100:
-            warnings.warn(
+            logging.warning(
                 f"Less than 100 reflections in bin {b + 1}"
                 f" ({bin_stats_list[b]['dmax']:.4f} -"
                 f" {bin_stats_list[b]['dmin']:.4f} A)."
@@ -1612,7 +1669,7 @@ def compute_difference_maps(refined_mtzs, binner, bin_stats_matrix=[]):
                         bin_stats_matrix[i][j][b].update(bin_stats_diff[b])
                         bin_stats_matrix[j][i][b].update(bin_stats_diff[b])
                     except IndexError:
-                        warnings.warn(
+                        logging.warning(
                             f"IndexError: bin_stats_matrix[{i}][{j}] or"
                             f" bin_stats_matrix[{j}][{i}] does not have"
                             f" enough bins."
@@ -1681,7 +1738,7 @@ def compute_structure_differences_pair(
     st1Cras = list(st1[0].all())
     st2Cras = list(st2[0].all())
     if len(st1Cras) != len(st2Cras):
-        warnings.warn(
+        logging.warning(
             f"Number of atoms in {structure1} does not match the number"
             f" of atoms in {structure2}."
         )
@@ -1722,7 +1779,7 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
         )
         return df_weight.rename(column_name)
 
-    print("\nBootstrapping dataset", mtz_file)
+    logging.info(f"\nBootstrapping dataset {mtz_file}")
     mtzs_out = []
     mtz = gemmi.read_mtz_file(mtz_file)
     df = pandas.DataFrame(data=mtz.array, columns=mtz.column_labels())
@@ -1754,7 +1811,7 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
         )
         weight_sum = df_bootstrap1_weight.sum()
         if weight_sum != len(df):
-            warnings.warn(
+            logging.warning(
                 f"Sum of weight coefficients {weight_sum} does not match the"
                 f" number of reflections {len(df)}."
             )
@@ -1829,7 +1886,7 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
 
     completeness_mean = numpy.mean(completeness_list)
     completeness_std = numpy.std(completeness_list)
-    print(
+    logging.info(
         f"Completeness of bootstrap datasets:"
         f" {completeness_mean:.2%} ± {completeness_std:.2%}"
     )
@@ -1860,7 +1917,7 @@ def bootstrap_analyse_structures(refined_mmcifs, idx=0, prefix="", skip_hydrogen
     st_master_cras = list(st_master[0].all())
     if skip_hydrogen:
         st_master_cras = [cra for cra in st_master_cras if not cra.atom.is_hydrogen()]
-    print(len(st_master_cras), "atoms in the master structure")
+    logging.info(f"{len(st_master_cras)} atoms in the master structure")
 
     atom_addresses = [makeAddressStr(cra) for cra in st_master_cras]
     coords = numpy.zeros(
@@ -1870,7 +1927,7 @@ def bootstrap_analyse_structures(refined_mmcifs, idx=0, prefix="", skip_hydrogen
         (len(st_master_cras), len(refined_mmcifs)), dtype=numpy.float32
     )
 
-    print(f"Loading {len(refined_mmcifs)} structure models...")
+    logging.info(f"Loading {len(refined_mmcifs)} structure models...")
     # Collect coordinates and B-values
     for s, mmcif in enumerate(refined_mmcifs):
         st = gemmi.read_structure(mmcif)
@@ -1928,7 +1985,7 @@ def bootstrap_analyse_structures(refined_mmcifs, idx=0, prefix="", skip_hydrogen
     df_csv = pandas.DataFrame(csv_data)
     csv_filename = f"{prefix}group{idx}_mean_stats.csv" if idx else "mean_stats.csv"
     df_csv.to_csv(csv_filename, index=False)
-    print(f"Mean structure statistics written to {csv_filename}.")
+    logging.info(f"Mean structure statistics written to {csv_filename}.")
 
     # Write mean structure as mmCIF
     for i, cra in enumerate(st_master_cras):
@@ -1940,7 +1997,7 @@ def bootstrap_analyse_structures(refined_mmcifs, idx=0, prefix="", skip_hydrogen
         f"{prefix}group{idx}_mean_structure.mmcif" if idx else "mean_structure.mmcif"
     )
     st_master.make_mmcif_document().write_file(mmcif_filename)
-    print(f"Mean structure written to {mmcif_filename}.")
+    logging.info(f"Mean structure written to {mmcif_filename}.")
     return
 
 
@@ -2154,7 +2211,7 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
 
         return df_mean
 
-    print(f"Loading {len(refined_mtzs)} density maps...")
+    logging.info(f"Loading {len(refined_mtzs)} density maps...")
     columns_selected = ["H", "K", "L", "FWT", "PHWT", "DELFWT", "PHDELWT", "llweight"]
     for i, mtz_file in enumerate(refined_mtzs):
         mtz = gemmi.read_mtz_file(mtz_file)
@@ -2170,7 +2227,9 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
             else:
                 df_master = pandas.concat([df_master, df], ignore_index=True)
         else:
-            warnings.warn(f"No reflections in {mtz_file} for FWT/PHWT/DELFWT/PHDELWT.")
+            logging.warning(
+                f"No reflections in {mtz_file} for FWT/PHWT/DELFWT/PHDELWT."
+            )
 
     # Convert FWT & PHWT and DELFWT & PHDELWT to complex numbers and calculate mean
     df_master["F_complex"] = df_master["FWT"] * numpy.exp(
@@ -2198,25 +2257,21 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
 
 
 def main():
-    print("Command line:", " ".join(sys.argv))
-    print("Running multixem version:", __version__)
-
     parser = create_parser()
     args = parser.parse_args()
-    print("Arguments parsed:", args)
+    if hasattr(args, "func"):
+        args.func(args)
 
-    pprint.pprint(vars(args))
     if args.prefix:
         prefix = args.prefix
         if args.prefix[-1] != "_":
             prefix += "_"
     else:
         prefix = "multixem_"
-    print("Prefix for the output files:", prefix)
 
     # subcommand mean
     if args.command == "mean":
-        # args.func(args)
+        setup_logging()
         import glob
 
         refined_mmcifs = glob.glob(f"{args.file_name_template}*_refine.mmcif")
@@ -2225,16 +2280,16 @@ def main():
         if refined_mmcifs:
             bootstrap_analyse_structures(refined_mmcifs, 1, prefix)
         else:
-            print(
-                "No refined mmCIF files found with a filename template"
+            logging.warning(
+                f"No refined mmCIF files found with a filename template"
                 f"{args.file_name_template}*_refine.mmcif"
             )
         refined_mtzs = glob.glob(f"{args.file_name_template}*_refine.mtz")
         if refined_mtzs:
             bootstrap_mean_map(refined_mtzs, 1, prefix)
         else:
-            print(
-                "No refined MTZ files found with a filename template"
+            logging.warning(
+                f"No refined MTZ files found with a filename template"
                 f"{args.file_name_template}*_refine.mtz"
             )
         return
@@ -2243,35 +2298,47 @@ def main():
         parser.print_help()
         return
 
+    # subcommand pipeline
     # elif args.command == 'pipeline' or args.command is None:
-    # Run main pipeline
-    if hasattr(args, "func"):
-        args.func(args)
 
     working_dir_name = f"multixem_{prefix[:-1]}"
     os.mkdir(working_dir_name)
     os.chdir(working_dir_name)
-    print("Current working directory:", os.getcwd())
+
+    setup_logging()
+
+    logging.info(f"Command line: {' '.join(sys.argv)}")
+    logging.info(f"Running multixem version: {__version__}")
+    args_dict = vars(args)
+    logging.info("Parsed arguments:")
+    for key, value in args_dict.items():
+        logging.info(f"  {key}: {value}")
+    logging.info(f"Current working directory: {os.getcwd()}")
+    logging.info(f"Prefix for the output files: {prefix}")
+
     n_proc = min(os.cpu_count(), args.n_proc)
     servalcat_args = args.servalcat_args.split() if args.servalcat_args else []
+
     mtzs_i = []
     bin_stats_lists = []
     n_expected_list = []
     binner_master = None
 
     if args.hklin_unmerged:
-        print("Unmerged diffraction data:", args.hklin_unmerged)
+        logging.info(f"Unmerged diffraction data files: {args.hklin_unmerged}")
         n_groups = 0
         mtz_groups_i = []
         bin_stats_lists = []
         mtzs_fi = []
         for i, hklin_unmerged in enumerate(args.hklin_unmerged):
-            print("")
-            print("Unmerged diffraction data file:", hklin_unmerged)
+            logging.info("")
+            logging.info(f"Unmerged diffraction data file: {hklin_unmerged}")
             # TODO: select automatically the number of batches in group (now default 60)
             if len(args.n_batches) == 1:
                 n_batches_per_group = args.n_batches[0]
-                print("Number of batches in merging group:", n_batches_per_group)
+                logging.info(
+                    f"Number of batches in merging group: {n_batches_per_group}"
+                )
                 _mtz_groups_i, _bin_stats_lists, _n_expected_list, _binner_master = (
                     merge_in_groups(
                         hklin_unmerged,
@@ -2306,10 +2373,10 @@ def main():
         mtzs_i = mtz_groups_i
 
     if args.hklin:
-        print("Merged diffraction data:", args.hklin)
+        logging.info(f"Merged diffraction data files: {args.hklin}")
         for i, mtz_i in enumerate(args.hklin):
-            print("")
-            print("Merged diffraction data file:", mtz_i)
+            logging.info("")
+            logging.info(f"Merged diffraction data file: {mtz_i}")
             if mtz_i.lower().endswith(".cif") or mtz_i.lower().endswith(".ent"):
                 doc = gemmi.cif.read(mtz_i)
                 rblocks = gemmi.as_refln_blocks(doc)
@@ -2320,12 +2387,14 @@ def main():
                         break
             else:
                 mtz = gemmi.read_mtz_file(mtz_i)
-            print(
+            logging.info(
                 f"Resolution limits: {mtz.resolution_low():.3f}"
                 f" - {mtz.resolution_high():.3f} A"
             )
-            print(f"Space group: {mtz.spacegroup.hm} (No. {mtz.spacegroup.number})")
-            print(
+            logging.info(
+                f"Space group: {mtz.spacegroup.hm} (No. {mtz.spacegroup.number})"
+            )
+            logging.info(
                 f"Unit cell: {mtz.cell.a:.3f} {mtz.cell.b:.3f} {mtz.cell.c:.3f}"
                 f" {mtz.cell.alpha:.3f} {mtz.cell.beta:.3f} {mtz.cell.gamma:.3f}"
             )
@@ -2337,7 +2406,7 @@ def main():
                     f"Neither intensities nor amplitudes present in {mtz_i}."
                 )
             elif f_present and not i_present:
-                warnings.warn(
+                logging.warning(
                     "The file contain only amplitudes but not intensities, however,"
                     " providing intensities is recommended."
                 )
@@ -2352,11 +2421,10 @@ def main():
             if not binner_master or mtz.resolution_high() < 1 / numpy.sqrt(
                 binner_master.max_1_d2
             ):
-                print(
-                    "Setting up resolution bins according to the file",
-                    mtz_i,
-                    f"with resolution limits {mtz.resolution_low():.3f}"
-                    f" - {mtz.resolution_high():.3f} A",
+                logging.info(
+                    "Setting up resolution bins according to the file"
+                    f" {mtz_i} with resolution limits {mtz.resolution_low():.3f}"
+                    f" - {mtz.resolution_high():.3f} A"
                 )
                 binner_master = gemmi.Binner()
                 binner_master.setup_from_1_d2(
@@ -2385,7 +2453,9 @@ def main():
         if args.molrep:
             models_molrep = []
             for model, mtz_i in zip(args.model, mtzs_i):
-                print("Running MolRep to generate a model from the input structure.")
+                logging.info(
+                    "Running MolRep to generate a model from the input structure."
+                )
                 model_molrep = run_molrep(model, mtz_i)
                 models_molrep.append(model_molrep)
             models = models_molrep
