@@ -814,7 +814,7 @@ def run_servalcat_refine(
     if len(mtzs_fi) == len(models) >= 2:
         models_list = models
     else:
-        models_list = [models[0]] * len(mtzs_fi)
+        models_list = [models[0]] * max(len(mtzs_fi), len(mtzs_free))
 
     if mtzs_free and len(mtzs_free) >= 2 and len(mtzs_fi) == 1:
         # refinement after bootstrapping
@@ -2480,13 +2480,13 @@ def main():
                 mtzs_in = mtzs_fi
             else:
                 mtzs_in = mtzs_i
-            for i_mtz, mtz_in in enumerate(mtzs_in):
+            for i_mtz, (mtz_in, model) in enumerate(zip(mtzs_in, models)):
                 mtzs_bootstrap = bootstrap_dataset(
                     mtz_in, binner_master, seeds=range(1001, 1001 + args.bootstrap)
                 )
                 refined_mmcifs_bootstrap, refined_mtzs_bootstrap = run_servalcat_refine(
                     [mtz_in],
-                    models,
+                    [model],
                     mtzs_free=mtzs_bootstrap,
                     arguments=servalcat_args + ["--labin_llweight", "llweight"],
                     sigmaa=False,
