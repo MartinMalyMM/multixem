@@ -210,7 +210,7 @@ def create_parser():
         type=positive_int,
         default=0,
         help="No. of bootstrapped sub data sets to be created and used for refinement."
-        + " Must be a positive integer.",
+        + " Must be a positive integer higher than 1.",
     )
     main_parser.add_argument(
         "--quick",
@@ -251,6 +251,8 @@ def create_parser():
                     " or the number of input structure models must match the number"
                     " of provided data sets."
                 )
+        if args.bootstrap and args.bootstrap < 2:
+            parser.error("--bootstrap must be at least 2.")
 
     main_parser.set_defaults(func=validate_args)
 
@@ -1885,7 +1887,7 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
     )"""
 
     completeness_mean = numpy.mean(completeness_list)
-    completeness_std = numpy.std(completeness_list)
+    completeness_std = numpy.std(completeness_list, ddof=1)
     logging.info(
         f"Completeness of bootstrap datasets:"
         f" {completeness_mean:.2%} ± {completeness_std:.2%}"
@@ -1949,7 +1951,7 @@ def bootstrap_analyse_structures(refined_mmcifs, idx=0, prefix="", skip_hydrogen
 
     # Compute mean and standard deviation per atom
     mean_coords = numpy.mean(coords, axis=2)  # shape: (n_atoms, 3)
-    std_coords = numpy.std(coords, axis=2)  # shape: (n_atoms, 3)
+    std_coords = numpy.std(coords, ddof=1, axis=2)  # shape: (n_atoms, 3)
     # std_coords_norm = sqrt(σ_x² + σ_y² + σ_z²)
     #  (when assuming no correlation which is not the case)
     # std_coords_norm = numpy.linalg.norm(std_coords, axis=1)  # shape: (n_atoms,)
@@ -1963,7 +1965,7 @@ def bootstrap_analyse_structures(refined_mmcifs, idx=0, prefix="", skip_hydrogen
             numpy.trace(cov) + 2 * (cov[0, 1] + cov[0, 2] + cov[1, 2])
         )
     mean_b_values = numpy.mean(b_values, axis=1)  # shape: (n_atoms,)
-    std_b_values = numpy.std(b_values, axis=1)  # shape: (n_atoms,)
+    std_b_values = numpy.std(b_values, ddof=1, axis=1)  # shape: (n_atoms,)
 
     # Write calculated data as a CSV file
     csv_data = []
