@@ -9,6 +9,7 @@ import gemmi
 import matplotlib.pyplot as plt
 import matplotlib
 import logging
+import warnings
 import json
 from collections import Counter
 import concurrent.futures
@@ -63,10 +64,11 @@ def setup_logging():
             # Allow KeyboardInterrupt to be handled normally
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
             return
-        # Log uncaught exceptions
-        logger.error(
-            "Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback)
-        )
+        # Log uncaught exceptions with full traceback
+        import traceback
+
+        tb_str = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+        logger.error(f"Uncaught exception:\n{tb_str}")
 
     sys.excepthook = handle_exception
 
@@ -168,6 +170,11 @@ def create_parser():
         + " Must be a positive integer or space-separated list of positive integers.",
     )
     main_parser.add_argument(
+        "--merge_whole_file",
+        action="store_true",
+        help="Merge all the batches in the input unmerged file(s).",
+    )
+    main_parser.add_argument(
         "--n_bins",
         type=positive_int,
         default=20,
@@ -240,7 +247,9 @@ def create_parser():
     def validate_args(args):
         if args.n_batches and not args.hklin_unmerged:
             parser.error("--n_batches requires --hklin_unmerged to be provided.")
-        if args.hklin_unmerged and not args.n_batches:
+        if args.merge_whole_file and not args.hklin_unmerged:
+            parser.error("--merge_whole_file requires --hklin_unmerged to be provided.")
+        if args.hklin_unmerged and not args.n_batches and not args.merge_whole_file:
             args.n_batches = [60]  # Default to 60 batches if not specified
         if args.model and len(args.model) > 1:
             if len(args.model or []) < (
@@ -391,7 +400,13 @@ def copy_cell_mtz(mtz_input, mtz_reference):
 
 
 def merge_in_groups(
-    unmerged, n_bins, prefix, n_batches_per_group=60, batches_edges=[], i_group_prefix=0
+    unmerged,
+    n_bins,
+    prefix,
+    n_batches_per_group=60,
+    batches_edges=[],
+    merge_whole_file=False,
+    i_group_prefix=0,
 ):
 
     def merge_group(
@@ -573,8 +588,7 @@ def merge_in_groups(
     n_expected = gemmi.count_reflections(m.cell, m.spacegroup, dmin, dmax)
     logging.info(
         f"Expected number of reflections for resolution range ({dmax:.3f} - {dmin:.3f}"
-        f" A), cell and symmetry from the input file {unmerged}:",
-        n_expected,
+        f" A), cell and symmetry from the input file {unmerged}: {str(n_expected)}"
     )
 
     logging.info(f"No. batches: {len(m.batches)}")
@@ -611,7 +625,9 @@ def merge_in_groups(
     # TODO: a function that converts any selection criteria in lists of batches.
     # Note that batch numberring is 1, 2, ..., 2000
     # but Python numberring is 0, 1, ..., 1999
-    if batches_edges:
+    if merge_whole_file:
+        batches_split = [0, len(m.batches)]
+    elif batches_edges:
         batches_split = [0]
         for i in range(len(batches_edges)):
             batches_split.append(batches_split[-1] + batches_edges[i])
@@ -1887,7 +1903,7 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
     )"""
 
     completeness_mean = numpy.mean(completeness_list)
-    completeness_std = numpy.std(completeness_list, ddof=1)
+    completeness_std = numpy.std(completeness_list, ddof=1, mean=completeness_mean)
     logging.info(
         f"Completeness of bootstrap datasets:"
         f" {completeness_mean:.2%} ± {completeness_std:.2%}"
@@ -2037,24 +2053,74 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
             pandas.DataFrame: DataFrame with mean maps.
         """
 
-        # noqa: E741
+        """# noqa: E741
         def is_centric_vectorized(h, k, l):  # noqa: E741
             return mtz_ref.spacegroup.operations().is_reflection_centric(
                 (int(h), int(k), int(l))  # noqa: E741
+            )"""
+
+        def calculate_mean_std_count(df):
+            """Calculate mean and standard deviation and number of structure factors."""
+
+            def stats_func(x):
+                if len(x) <= 1:
+                    return pandas.Series([numpy.mean(x), 0.0, len(x)])
+
+                mean_val = numpy.mean(x)
+                real_mean = numpy.real(mean_val)
+                imag_mean = numpy.imag(mean_val)
+                real_part = numpy.real(x)
+                imag_part = numpy.imag(x)
+                real_var = numpy.var(real_part, ddof=1, mean=real_mean)
+                imag_var = numpy.var(imag_part, ddof=1, mean=imag_mean)
+                std_val = numpy.sqrt(real_var + imag_var)
+
+                return pandas.Series([mean_val, std_val, len(x)])
+
+            # F_complex
+            df_mean_f = df.groupby(["H", "K", "L"])["F_complex"].apply(stats_func)
+            df_mean_f = df_mean_f.unstack(level=-1)  # This converts Series to DataFrame
+            df_mean_f.columns = ["F_complex_mean", "SIGFWT", "FWTcount"]
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", numpy.exceptions.ComplexWarning)
+                df_mean_f["SIGFWT"] = df_mean_f["SIGFWT"].astype(numpy.float32)
+                df_mean_f["FWTcount"] = df_mean_f["FWTcount"].astype(numpy.int32)
+            df_mean_f = df_mean_f.reset_index()
+
+            df_mean_delf = df.groupby(["H", "K", "L"])["DEL_F_complex"].apply(
+                stats_func
             )
+            df_mean_delf = df_mean_delf.unstack(
+                level=-1
+            )  # This converts Series to DataFrame
+            df_mean_delf.columns = ["DEL_F_complex_mean", "SIGDELFWT", "DELFWTcount"]
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", numpy.exceptions.ComplexWarning)
+                df_mean_delf["SIGDELFWT"] = df_mean_delf["SIGDELFWT"].astype(
+                    numpy.float32
+                )
+                df_mean_delf["DELFWTcount"] = df_mean_delf["DELFWTcount"].astype(
+                    numpy.int32
+                )
+            df_mean_delf = df_mean_delf.reset_index()
 
-        def calculate_mean_var(df, is_centric=False):
-            """Calculate variance of structure factors;
-            separately for a/centric reflections."""
+            df_mean_d_delf = df_mean_f.merge(
+                df_mean_delf, on=["H", "K", "L"], how="outer"
+            )
+            return df_mean_d_delf
 
+            """
+            # old code which treated centric and acentric reflections differently
+            # and variance of acentric reflections was divided by two
             if is_centric:
-                var_func = lambda x: (  # noqa: E731
-                    numpy.sqrt(numpy.var(numpy.abs(x))) if len(x) > 1 else 0
+                sigma_func = lambda x: (  # noqa: E731
+                    numpy.sqrt(numpy.var(numpy.abs(x), ddof=1)) if len(x) > 1 else 0
                 )
             else:
-                var_func = lambda x: (  # noqa: E731
+                sigma_func = lambda x: (  # noqa: E731
                     numpy.sqrt(
-                        (numpy.var(numpy.real(x)) + numpy.var(numpy.imag(x))) / 2
+                        (numpy.var(numpy.real(x), ddof=1)
+                        + numpy.var(numpy.imag(x), ddof=1)) / 2
                     )
                     if len(x) > 1
                     else 0
@@ -2065,7 +2131,7 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
                 .agg(
                     [
                         ("F_complex_mean", lambda x: numpy.mean(x)),
-                        ("SIGFWT", var_func),
+                        ("SIGFWT", sigma_func),
                         ("FWTcount", "count"),
                     ]
                 )
@@ -2076,25 +2142,26 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
                 .agg(
                     [
                         ("DEL_F_complex_mean", lambda x: numpy.mean(x)),
-                        ("SIGDELFWT", var_func),
+                        ("SIGDELFWT", sigma_func),
                         ("DELFWTcount", "count"),
                     ]
                 )
                 .reset_index()
             )
 
-            return df_mean_f.merge(df_mean_delf, on=["H", "K", "L"], how="outer")
+            return df_mean_f.merge(df_mean_delf, on=["H", "K", "L"], how="outer")"""
 
-        df_master = df_master.astype({col: "int32" for col in ["H", "K", "L"]})
+        """
         is_centric_vec = numpy.vectorize(is_centric_vectorized)
         centric_mask = is_centric_vec(df_master["H"], df_master["K"], df_master["L"])
-
-        # Calculate mean and variance for a/centric reflections separately
         acentric = df_master[~centric_mask]
         centric = df_master[centric_mask]
-        stats_acentric = calculate_mean_var(acentric, is_centric=False)
-        stats_centric = calculate_mean_var(centric, is_centric=True)
-        df_mean = pandas.concat([stats_acentric, stats_centric], ignore_index=True)
+        stats_acentric = calculate_mean_std_count(acentric, is_centric=False)
+        stats_centric = calculate_mean_std_count(centric, is_centric=True)
+        df_mean = pandas.concat([stats_acentric, stats_centric], ignore_index=True)"""
+
+        df_master = df_master.astype({col: "int32" for col in ["H", "K", "L"]})
+        df_mean = calculate_mean_std_count(df_master)
 
         # Convert to amplitude and phase
         df_mean["FWT"] = numpy.abs(df_mean["F_complex_mean"])
@@ -2335,8 +2402,22 @@ def main():
         for i, hklin_unmerged in enumerate(args.hklin_unmerged):
             logging.info("")
             logging.info(f"Unmerged diffraction data file: {hklin_unmerged}")
+            if args.merge_whole_file:
+                logging.info(
+                    "All the reflections in all the batches"
+                    " in this file will be merged."
+                )
+                _mtz_groups_i, _bin_stats_lists, _n_expected_list, _binner_master = (
+                    merge_in_groups(
+                        hklin_unmerged,
+                        args.n_bins,
+                        prefix,
+                        merge_whole_file=args.merge_whole_file,
+                        i_group_prefix=n_groups,
+                    )
+                )
             # TODO: select automatically the number of batches in group (now default 60)
-            if len(args.n_batches) == 1:
+            elif len(args.n_batches) == 1:
                 n_batches_per_group = args.n_batches[0]
                 logging.info(
                     f"Number of batches in merging group: {n_batches_per_group}"
@@ -2347,6 +2428,7 @@ def main():
                         args.n_bins,
                         prefix,
                         n_batches_per_group=n_batches_per_group,
+                        merge_whole_file=False,
                         i_group_prefix=n_groups,
                     )
                 )
@@ -2357,6 +2439,7 @@ def main():
                         args.n_bins,
                         prefix,
                         batches_edges=args.n_batches,
+                        merge_whole_file=False,
                         i_group_prefix=n_groups,
                     )
                 )
