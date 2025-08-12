@@ -810,8 +810,8 @@ def run_servalcat_refine(
             ]
             if mtz_free:
                 cmd_sigmaa.extend(["--hklin_free", mtz_free])
-            if arguments:
-                cmd_sigmaa.extend(arguments)
+            # if arguments:
+            #     cmd_sigmaa.extend(arguments)
             logging.info("Running command: " + " ".join(cmd_sigmaa))
             try:
                 with open(log_filename_sigmaa, "w") as log_file_sigmaa:
