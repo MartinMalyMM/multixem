@@ -2459,23 +2459,55 @@ def main():
 
     if args.hklin:
         logging.info(f"Merged diffraction data files: {args.hklin}")
-        for i, mtz_i in enumerate(args.hklin):
+        for i, hklin_i in enumerate(args.hklin):
             logging.info("")
-            logging.info(f"Merged diffraction data file: {mtz_i}")
-            if mtz_i.lower().endswith(".cif") or mtz_i.lower().endswith(".ent"):
-                doc = gemmi.cif.read(mtz_i)
+            logging.info(f"Merged diffraction data file: {hklin_i}")
+            if hklin_i.lower().endswith(".cif") or hklin_i.lower().endswith(".ent"):
+                mtz = None
+                doc = gemmi.cif.read(hklin_i)
                 rblocks = gemmi.as_refln_blocks(doc)
                 for rblock in rblocks:
                     if rblock.is_merged():
                         Convert = gemmi.CifToMtz()
                         mtz = Convert.convert_block_to_mtz(rblock)
                         break
+                if mtz:
+                    mtzs_i.append(hklin_i)
+                else:
+                    try:
+                        from servalcat import utils as servalcat_utils
+
+                        mtz, _, _ = servalcat_utils.fileio.read_smcif_shelx(hklin_i)
+                    except RuntimeError:
+                        pass
+                if mtz:
+                    mtz_filename = (
+                        f"{os.path.splitext(os.path.basename(hklin_i))[0]}.mtz"
+                    )
+                    mtz.write_to_file(mtz_filename)
+                    mtzs_i.append(mtz_filename)
+                else:
+                    raise RuntimeError(
+                        f"Could not recognise format of diffraction data file {hklin_i}"
+                    )
+            elif hklin_i.lower().endswith(".hkl") or hklin_i.lower().endswith(".ent"):
+                from servalcat import utils as servalcat_utils
+
+                mtz = servalcat_utils.fileio.read_smcif_hkl(hklin_i)
+                mtz_filename = f"{os.path.splitext(os.path.basename(hklin_i))[0]}.mtz"
+                mtz.write_to_file(mtz_filename)
+                mtzs_i.append(mtz_filename)
             else:
-                mtz = gemmi.read_mtz_file(mtz_i)
-            logging.info(
-                f"Resolution limits: {mtz.resolution_low():.3f}"
-                f" - {mtz.resolution_high():.3f} A"
-            )
+                mtz = gemmi.read_mtz_file(hklin_i)
+                mtzs_i.append(hklin_i)
+            dmax = mtz.resolution_high()
+            dmin = mtz.resolution_low()
+            # Check for None or nan values and recalculate if necessary
+            if dmax is None or dmin is None or numpy.isnan(dmax) or numpy.isnan(dmin):
+                d_array = mtz.cell.calculate_d_array(mtz.make_miller_array())
+                dmax = max(d_array)
+                dmin = min(d_array)
+            logging.info(f"Resolution limits: {dmax:.3f}" f" - {dmin:.3f} A")
             logging.info(
                 f"Space group: {mtz.spacegroup.hm} (No. {mtz.spacegroup.number})"
             )
@@ -2488,7 +2520,7 @@ def main():
             )
             if not i_present and not f_present:
                 raise RuntimeError(
-                    f"Neither intensities nor amplitudes present in {mtz_i}."
+                    f"Neither intensities nor amplitudes present in {hklin_i}."
                 )
             elif f_present and not i_present:
                 logging.warning(
@@ -2496,7 +2528,6 @@ def main():
                     " providing intensities is recommended."
                 )
             # elif i_present and not f_present: TODO FW
-            mtzs_i.append(mtz_i)
             bin_stats_lists.append([])
             # TODO: check and fix n_expected
             n_expected = gemmi.count_reflections(
@@ -2508,7 +2539,7 @@ def main():
             ):
                 logging.info(
                     "Setting up resolution bins according to the file"
-                    f" {mtz_i} with resolution limits {mtz.resolution_low():.3f}"
+                    f" {hklin_i} with resolution limits {mtz.resolution_low():.3f}"
                     f" - {mtz.resolution_high():.3f} A"
                 )
                 binner_master = gemmi.Binner()
