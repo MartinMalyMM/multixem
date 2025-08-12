@@ -2530,17 +2530,13 @@ def main():
             # elif i_present and not f_present: TODO FW
             bin_stats_lists.append([])
             # TODO: check and fix n_expected
-            n_expected = gemmi.count_reflections(
-                mtz.cell, mtz.spacegroup, mtz.resolution_high(), mtz.resolution_low()
-            )
+            n_expected = gemmi.count_reflections(mtz.cell, mtz.spacegroup, dmin, dmax)
             n_expected_list.append(n_expected)
-            if not binner_master or mtz.resolution_high() < 1 / numpy.sqrt(
-                binner_master.max_1_d2
-            ):
+            if not binner_master or dmin < 1 / numpy.sqrt(binner_master.max_1_d2):
                 logging.info(
                     "Setting up resolution bins according to the file"
-                    f" {hklin_i} with resolution limits {mtz.resolution_low():.3f}"
-                    f" - {mtz.resolution_high():.3f} A"
+                    f" {hklin_i} with resolution limits {dmax:.3f}"
+                    f" - {dmin:.3f} A"
                 )
                 binner_master = gemmi.Binner()
                 binner_master.setup_from_1_d2(
