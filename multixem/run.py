@@ -1912,7 +1912,7 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
     return mtzs_out
 
 
-def bootstrap_analyse_structures(refined_mmcifs, idx=0, prefix="", skip_hydrogen=True):
+def bootstrap_analyse_structures(refined_mmcifs, idx=0, prefix="", skip_hydrogen=False):
     """
     Analyse structure models (mmCIF files) to compute mean coordinates and B-factors.
     The structure models are expected to be after refinement against a bootstrapped
@@ -1925,17 +1925,18 @@ def bootstrap_analyse_structures(refined_mmcifs, idx=0, prefix="", skip_hydrogen
         skip_hydrogen (bool): If True, skip hydrogen atoms in the analysis.
 
     Returns:
-        None: Writes the statistics in 'bootstrap_stats.csv' and
-              the mean structure to 'bootstrap_mean_structure.mmcif' with
-              where 1000 * sigma_coordinate is saved as B-values.
+        None: Writes the statistics in '{prefix}group{idx}_mean_stats.csv' and
+              the mean structure to '{prefix}group{idx}_mean_structure.mmcif'
+              where 1000 * sigma_coordinate is saved as B-value.
     """
 
     # numpy.set_printoptions(threshold=numpy.inf)
     st_master = gemmi.read_structure(refined_mmcifs[0])
     st_master_cras = list(st_master[0].all())
+    logging.info(f"{len(st_master_cras)} atoms in the master structure")
     if skip_hydrogen:
         st_master_cras = [cra for cra in st_master_cras if not cra.atom.is_hydrogen()]
-    logging.info(f"{len(st_master_cras)} atoms in the master structure")
+        logging.info(f"{len(st_master_cras)} non-hydrogen atoms will be analysed.")
 
     atom_addresses = [makeAddressStr(cra) for cra in st_master_cras]
     coords = numpy.zeros(
