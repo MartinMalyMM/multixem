@@ -220,11 +220,6 @@ def create_parser():
         + " Must be a positive integer higher than 1.",
     )
     main_parser.add_argument(
-        "--bonds_file",
-        type=existing_file,
-        help="Path to a file with atom pairs to compute bond distances.",
-    )
-    main_parser.add_argument(
         "--quick",
         action="store_true",
         help="Quick run (only for development).",
@@ -249,9 +244,9 @@ def create_parser():
         "--prefix", type=str, help="Prefix for the output filename"
     )
     mean_parser.add_argument(
-        "--bonds_file",
+        "--cif",
         type=existing_file,
-        help="Path to a file with atom pairs to compute bond distances.",
+        help="Path to a small molecule CIF file.",
     )
 
     def validate_args(args):
@@ -272,8 +267,6 @@ def create_parser():
                 )
         if args.bootstrap and args.bootstrap < 2:
             parser.error("--bootstrap must be at least 2.")
-        if args.bonds_file and args.bootstrap < 2:
-            parser.error("--bonds_file requires --bootstrap.")
 
     main_parser.set_defaults(func=validate_args)
 
@@ -1925,7 +1918,7 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
 
 
 def bootstrap_analyse_structures(
-    refined_mmcifs, idx=0, prefix="", skip_hydrogen=False, bonds_file=""
+    refined_mmcifs, idx=0, prefix="", skip_hydrogen=False, smcif=""
 ):
     """
     Analyse structure models (mmCIF files) to compute mean coordinates and B-factors.
@@ -1937,13 +1930,148 @@ def bootstrap_analyse_structures(
         idx (int): Index for naming the output files (applies if not set to 0).
         prefix (str): Prefix for the output filenames.
         skip_hydrogen (bool): If True, skip hydrogen atoms in the analysis.
-        bonds_file (str): Path to a file with atom pairs to compute bond distances.
+        smcif (str): Path to a corresponding small molecule CIF file.
 
     Returns:
         None: Writes the statistics in '{prefix}group{idx}_mean_stats.csv' and
               the mean structure to '{prefix}group{idx}_mean_structure.mmcif'
               where 1000 * sigma_coordinate is saved as B-value.
     """
+
+    def get_smcif_tables(smcif_block):
+        """Extract relevant tables from a small molecule CIF block and their columns."""
+
+        def get_table_and_columns(table_names, col_names):
+            table = smcif_block.find(table_names)
+            return table, [table.find_column(col) for col in col_names]
+
+        bond_cols = [
+            "_geom_bond_atom_site_label_1",
+            "_geom_bond_atom_site_label_2",
+            "_geom_bond_site_symmetry_2",
+        ]
+        angle_cols = [
+            "_geom_angle_atom_site_label_1",
+            "_geom_angle_atom_site_label_2",
+            "_geom_angle_atom_site_label_3",
+            "_geom_angle_site_symmetry_1",
+            "_geom_angle_site_symmetry_3",
+        ]
+        torsion_cols = [
+            "_geom_torsion_atom_site_label_1",
+            "_geom_torsion_atom_site_label_2",
+            "_geom_torsion_atom_site_label_3",
+            "_geom_torsion_atom_site_label_4",
+            "_geom_torsion_site_symmetry_1",
+            "_geom_torsion_site_symmetry_2",
+            "_geom_torsion_site_symmetry_3",
+            "_geom_torsion_site_symmetry_4",
+        ]
+
+        bond_table, bond_columns = get_table_and_columns(bond_cols, bond_cols)
+        angle_table, angle_columns = get_table_and_columns(angle_cols, angle_cols)
+        torsion_table, torsion_columns = get_table_and_columns(
+            torsion_cols, torsion_cols
+        )
+
+        return (
+            (bond_table, bond_columns),
+            (angle_table, angle_columns),
+            (torsion_table, torsion_columns),
+        )
+
+    def collect_geometry_lists(table, atom_cols, symmetry_cols):
+        """Collect atom lists (for bonds, angles, torsions).
+        Do not include atoms from symmetry-related molecules."""
+        return [
+            {f"atom{i + 1}": atom_cols[i][j] for i in range(len(atom_cols))}
+            for j in range(len(table))
+            if [col[j] == "." for col in symmetry_cols]
+        ]
+
+    def calculate_angle(atom1_pos, atom2_pos, atom3_pos, degrees=True):
+        """
+        Calculate the angle ABC (at atom2) from gemmi.Position objects.
+        """
+        A = numpy.array(atom1_pos.tolist())
+        B = numpy.array(atom2_pos.tolist())
+        C = numpy.array(atom3_pos.tolist())
+        BA = A - B
+        BC = C - B
+        BA_norm = numpy.linalg.norm(BA)
+        BC_norm = numpy.linalg.norm(BC)
+
+        if BA_norm == 0 or BC_norm == 0:
+            raise ValueError("One of the vectors has zero length.")
+
+        cos_theta = numpy.dot(BA, BC) / (BA_norm * BC_norm)
+        cos_theta = numpy.clip(cos_theta, -1.0, 1.0)  # Numerical stability
+        theta_rad = numpy.arccos(cos_theta)
+
+        return numpy.degrees(theta_rad) if degrees else theta_rad
+
+    def calculate_torsion_angle(
+        atom1_pos, atom2_pos, atom3_pos, atom4_pos, degrees=True
+    ):
+        """
+        Calculates the torsion (dihedral) angle between four gemmi.Position objects.
+        Angle is defined by A–B–C–D.
+        """
+        A = numpy.array(atom1_pos.tolist())
+        B = numpy.array(atom2_pos.tolist())
+        C = numpy.array(atom3_pos.tolist())
+        D = numpy.array(atom4_pos.tolist())
+        b1 = B - A
+        b2 = C - B
+        b3 = D - C
+
+        # Normalize b2 to avoid length effects
+        b2_norm = numpy.linalg.norm(b2)
+        if b2_norm == 0:
+            raise ValueError("Vector B–C has zero length.")
+        b2_unit = b2 / b2_norm
+
+        # Normal vectors to the planes
+        n1 = numpy.cross(b1, b2)  # normal to plane A–B–C
+        n2 = numpy.cross(b2, b3)  # normal to plane B–C–D
+        n1_norm = numpy.linalg.norm(n1)
+        n2_norm = numpy.linalg.norm(n2)
+
+        if n1_norm == 0 or n2_norm == 0:
+            raise ValueError("Colinear atoms - torsion angle undefined.")
+
+        n1_unit = n1 / n1_norm
+        n2_unit = n2 / n2_norm
+
+        m1 = numpy.cross(n1_unit, b2_unit)
+        x = numpy.dot(n1_unit, n2_unit)
+        y = numpy.dot(m1, n2_unit)
+
+        angle_rad = numpy.arctan2(y, x)
+        angle_rad = -angle_rad  # why?
+        return numpy.degrees(angle_rad) if degrees else angle_rad
+
+    def circular_mean_deg(angles_deg):
+        angles_rad = numpy.deg2rad(angles_deg)
+        mean_angle_rad = numpy.arctan2(
+            numpy.mean(numpy.sin(angles_rad)), numpy.mean(numpy.cos(angles_rad))
+        )
+        mean_angle_deg = numpy.rad2deg(mean_angle_rad)
+        # Ensure result is in [0, 360)
+        if mean_angle_deg >= 180:
+            mean_angle_deg -= 360
+        elif mean_angle_deg < -180:
+            mean_angle_deg += 360
+        return mean_angle_deg
+
+    def circular_std_deg(angles_deg):
+        angles_rad = numpy.deg2rad(angles_deg)
+        R = numpy.sqrt(
+            numpy.mean(numpy.sin(angles_rad)) ** 2
+            + numpy.mean(numpy.cos(angles_rad)) ** 2
+        )
+        # Circular standard deviation in degrees
+        return numpy.rad2deg(numpy.sqrt(-2 * numpy.log(R)))
 
     # numpy.set_printoptions(threshold=numpy.inf)
     st_master = gemmi.read_structure(refined_mmcifs[0])
@@ -1966,16 +2094,106 @@ def bootstrap_analyse_structures(
         (len(st_master_cras), len(refined_mmcifs)), dtype=numpy.float32
     )
 
-    if bonds_file:
-        bonds_list = []
-        with open(bonds_file, "r") as f:
-            for line in f:
-                if line.startswith("#") or not line.strip():
-                    continue
-                bonds_list.append({"atom1": line.split()[0], "atom2": line.split()[1]})
-        bonds = numpy.full(
-            (len(bonds_list), len(refined_mmcifs)), numpy.nan, dtype=numpy.float32
-        )
+    if smcif:
+        smcif_block = gemmi.cif.read(smcif).sole_block()
+        res_str = smcif_block.find_value("_shelx_res_file")
+        bonds_list = angles_list = torsions_list = []
+        if res_str:
+            (
+                (table_bond, bond_columns),
+                (table_angle, angle_columns),
+                (table_torsion, torsion_columns),
+            ) = get_smcif_tables(smcif_block)
+
+            atom1_col, atom2_col, symmetry2_col = bond_columns
+            bonds_list = collect_geometry_lists(
+                table_bond, [atom1_col, atom2_col], [symmetry2_col]
+            )
+            bonds = numpy.full(
+                (len(bonds_list), len(refined_mmcifs)), numpy.nan, dtype=numpy.float32
+            )
+
+            atom1_col, atom2_col, atom3_col, symmetry1_col, symmetry3_col = (
+                angle_columns
+            )
+            angles_list = collect_geometry_lists(
+                table_angle,
+                [atom1_col, atom2_col, atom3_col],
+                [symmetry1_col, symmetry3_col],
+            )
+            angles = numpy.full(
+                (len(angles_list), len(refined_mmcifs)), numpy.nan, dtype=numpy.float32
+            )
+
+            (
+                atom1_col,
+                atom2_col,
+                atom3_col,
+                atom4_col,
+                symmetry1_col,
+                symmetry2_col,
+                symmetry3_col,
+                symmetry4_col,
+            ) = torsion_columns
+            torsions_list = collect_geometry_lists(
+                table_torsion,
+                [atom1_col, atom2_col, atom3_col, atom4_col],
+                [symmetry1_col, symmetry2_col, symmetry3_col, symmetry4_col],
+            )
+            torsions = numpy.full(
+                (len(torsions_list), len(refined_mmcifs)),
+                numpy.nan,
+                dtype=numpy.float32,
+            )
+
+            """
+            table_bond = smcif_block.find([
+                '_geom_bond_atom_site_label_1',
+                '_geom_bond_atom_site_label_2',
+                '_geom_bond_distance',
+                '_geom_bond_site_symmetry_2',
+            ])
+            atom1_col = table_bond.find_column('_geom_bond_atom_site_label_1')
+            atom2_col = table_bond.find_column('_geom_bond_atom_site_label_2')
+            # distance_col = table_bond.find_column('_geom_bond_distance')
+            symmetry_col = table_bond.find_column('_geom_bond_site_symmetry_2')
+
+            table_angle = smcif_block.find([
+                '_geom_angle_atom_site_label_1',
+                '_geom_angle_atom_site_label_2',
+                '_geom_angle_atom_site_label_3',
+                '_geom_angle',
+                '_geom_angle_site_symmetry_1',
+                '_geom_angle_site_symmetry_3',
+            ])
+            atom1_col = table_angle.find_column('_geom_angle_atom_site_label_1')
+            atom2_col = table_angle.find_column('_geom_angle_atom_site_label_2')
+            atom3_col = table_angle.find_column('_geom_angle_atom_site_label_3')
+            # angle_col = table_angle.find_column('_geom_angle')
+            symmetry1_col = table_angle.find_column('_geom_angle_site_symmetry_1')
+            symmetry3_col = table_angle.find_column('_geom_angle_site_symmetry_3')
+
+            table_torsion = smcif_block.find([
+                '_geom_torsion_atom_site_label_1',
+                '_geom_torsion_atom_site_label_2',
+                '_geom_torsion_atom_site_label_3',
+                '_geom_torsion_atom_site_label_4',
+                '_geom_torsion',
+                '_geom_torsion_site_symmetry_1',
+                '_geom_torsion_site_symmetry_2',
+                '_geom_torsion_site_symmetry_3',
+                '_geom_torsion_site_symmetry_4',
+            ])
+            atom1_col = table_torsion.find_column('_geom_torsion_atom_site_label_1')
+            atom2_col = table_torsion.find_column('_geom_torsion_atom_site_label_2')
+            atom3_col = table_torsion.find_column('_geom_torsion_atom_site_label_3')
+            atom4_col = table_torsion.find_column('_geom_torsion_atom_site_label_4')
+            # torsion_col = table_torsion.find_column('_geom_torsion')
+            symmetry1_col = table_torsion.find_column('_geom_torsion_site_symmetry_1')
+            symmetry2_col = table_torsion.find_column('_geom_torsion_site_symmetry_2')
+            symmetry3_col = table_torsion.find_column('_geom_torsion_site_symmetry_3')
+            symmetry4_col = table_torsion.find_column('_geom_torsion_site_symmetry_4')
+            """
 
     logging.info(f"Loading {len(refined_mmcifs)} structure models...")
     # Collect coordinates and B-values
@@ -1999,41 +2217,86 @@ def bootstrap_analyse_structures(
             coords[a, :, s] = [cra.atom.pos.x, cra.atom.pos.y, cra.atom.pos.z]
             b_values[a, s] = cra.atom.b_iso
 
-        if bonds_file:
-            # Collect bond distances
-            st_cras_atom_names = {cra.atom.name: cra for cra in st_cras}
-            for b, atom_pair in enumerate(bonds_list):
-                cra1 = st_cras_atom_names.get(atom_pair["atom1"])
-                cra2 = st_cras_atom_names.get(atom_pair["atom2"])
-                if cra1 and cra2:
-                    bonds[b, s] = cra1.atom.pos.dist(cra2.atom.pos)
+        if smcif:
+            # Calculate geometry
+            if bonds_list:
+                st_cras_atom_names = {cra.atom.name: cra for cra in st_cras}
+                for b, bond in enumerate(bonds_list):
+                    cra1 = st_cras_atom_names.get(bond["atom1"])
+                    cra2 = st_cras_atom_names.get(bond["atom2"])
+                    if cra1 and cra2:
+                        bonds[b, s] = cra1.atom.pos.dist(cra2.atom.pos)
+            if angles_list:
+                for a, angle in enumerate(angles_list):
+                    cra1 = st_cras_atom_names.get(angle["atom1"])
+                    cra2 = st_cras_atom_names.get(angle["atom2"])
+                    cra3 = st_cras_atom_names.get(angle["atom3"])
+                    if cra1 and cra2 and cra3:
+                        angles[a, s] = calculate_angle(
+                            cra1.atom.pos, cra2.atom.pos, cra3.atom.pos
+                        )
+            if torsions_list:
+                for t, torsion in enumerate(torsions_list):
+                    cra1 = st_cras_atom_names.get(torsion["atom1"])
+                    cra2 = st_cras_atom_names.get(torsion["atom2"])
+                    cra3 = st_cras_atom_names.get(torsion["atom3"])
+                    cra4 = st_cras_atom_names.get(torsion["atom4"])
+                    if cra1 and cra2 and cra3 and cra4:
+                        torsions[t, s] = calculate_torsion_angle(
+                            cra1.atom.pos, cra2.atom.pos, cra3.atom.pos, cra4.atom.pos
+                        )
 
-    if bonds_file:
-        # Compute mean and standard deviation bond distances
-        mean_bonds = numpy.nanmean(bonds, axis=1)
-        std_bonds = numpy.nanstd(bonds, axis=1, ddof=1)
-        for b, atom_pair in enumerate(bonds_list):
-            # atom_pair["bond"] = bonds[b, :]
-            atom_pair["mean_bond"] = mean_bonds[b]
-            atom_pair["std_bond"] = std_bonds[b]
-
-        # Write calculated statistics for bond distances as a CSV file
-        csv_data_bonds = []
-        for i, atom_pair in enumerate(bonds_list):
-            csv_data_bonds.append(
-                {
-                    "atom1": atom_pair["atom1"],
-                    "atom2": atom_pair["atom2"],
-                    "mean_bond": atom_pair["mean_bond"],
-                    "std_bond": atom_pair["std_bond"],
-                }
+    if smcif:
+        if bonds_list:
+            mean_bonds = numpy.mean(bonds, axis=1)
+            std_bonds = numpy.std(bonds, axis=1, ddof=1)
+            for b, bond in enumerate(bonds_list):
+                bond["mean_bond"] = mean_bonds[b]
+                bond["std_bond"] = std_bonds[b]
+            df_bonds = pandas.DataFrame(bonds_list)
+            csv_filename_bonds = (
+                f"{prefix}group{idx}_mean_bonds_stats.csv"
+                if idx
+                else "mean_bonds_stats.csv"
             )
-        df_csv_bonds = pandas.DataFrame(csv_data_bonds)
-        csv_filename_bonds = (
-            f"{prefix}group{idx}_bonds_stats.csv" if idx else "bonds_stats.csv"
-        )
-        df_csv_bonds.to_csv(csv_filename_bonds, index=False)
-        logging.info(f"Mean bond statistics written to {csv_filename_bonds}.")
+            df_bonds.to_csv(csv_filename_bonds, index=False)
+            logging.info(f"Mean bond statistics written to {csv_filename_bonds}.")
+
+        if angles_list:
+            # mean_angles = numpy.nanmean(angles, axis=1)
+            # std_angles = numpy.nanstd(angles, axis=1, ddof=1)
+            mean_angles = numpy.array([circular_mean_deg(row) for row in angles])
+            std_angles = numpy.array([circular_std_deg(row) for row in angles])
+            for a, angle in enumerate(angles_list):
+                angle["mean_angle"] = mean_angles[a]
+                angle["std_angle"] = std_angles[a]
+            df_angles = pandas.DataFrame(angles_list)
+            csv_filename_angles = (
+                f"{prefix}group{idx}_mean_angles_stats.csv"
+                if idx
+                else "mean_angles_stats.csv"
+            )
+            df_angles.to_csv(csv_filename_angles, index=False)
+            logging.info(f"Mean angle statistics written to {csv_filename_angles}.")
+
+        if torsions_list:
+            # mean_torsions = numpy.nanmean(torsions, axis=1)
+            # std_torsions = numpy.nanstd(torsions, axis=1, ddof=1)
+            mean_torsions = numpy.array([circular_mean_deg(row) for row in torsions])
+            std_torsions = numpy.array([circular_std_deg(row) for row in torsions])
+            for t, torsion in enumerate(torsions_list):
+                torsion["mean_torsion"] = mean_torsions[t]
+                torsion["std_torsion"] = std_torsions[t]
+            df_torsions = pandas.DataFrame(torsions_list)
+            csv_filename_torsions = (
+                f"{prefix}group{idx}_mean_torsions_stats.csv"
+                if idx
+                else "mean_torsions_stats.csv"
+            )
+            df_torsions.to_csv(csv_filename_torsions, index=False)
+            logging.info(
+                f"Mean torsion angle statistics written to {csv_filename_torsions}."
+            )
 
     # Compute mean and standard deviation per atom
     mean_coords = numpy.mean(coords, axis=2)  # shape: (n_atoms, 3)
@@ -2417,9 +2680,7 @@ def main():
         refined_mmcifs2 = glob.glob(f"{args.file_name_template}*_refine.cif")
         refined_mmcifs = refined_mmcifs + refined_mmcifs2
         if refined_mmcifs:
-            bootstrap_analyse_structures(
-                refined_mmcifs, 1, prefix, False, args.bonds_file
-            )
+            bootstrap_analyse_structures(refined_mmcifs, 1, prefix, False, args.cif)
         else:
             logging.warning(
                 f"No refined mmCIF files found with a filename template"
@@ -2677,9 +2938,14 @@ def main():
                     quick=args.quick,
                     n_proc=n_proc,
                 )
-                bootstrap_analyse_structures(
-                    refined_mmcifs_bootstrap, i_mtz + 1, prefix, False, args.bonds_file
-                )
+                if os.path.splitext(model)[1] == ".cif":
+                    bootstrap_analyse_structures(
+                        refined_mmcifs_bootstrap, i_mtz + 1, prefix, False, model
+                    )
+                else:
+                    bootstrap_analyse_structures(
+                        refined_mmcifs_bootstrap, i_mtz + 1, prefix, False, ""
+                    )
                 bootstrap_mean_map(
                     refined_mtzs_bootstrap, i_mtz + 1, prefix, binner_master
                 )
