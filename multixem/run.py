@@ -248,6 +248,11 @@ def create_parser():
     mean_parser.add_argument(
         "--prefix", type=str, help="Prefix for the output filename"
     )
+    mean_parser.add_argument(
+        "--bonds_file",
+        type=existing_file,
+        help="Path to a file with atom pairs to compute bond distances.",
+    )
 
     def validate_args(args):
         if args.n_batches and not args.hklin_unmerged:
