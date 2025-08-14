@@ -48,7 +48,7 @@ def setup_logging():
     logger.addHandler(console_handler)
 
     # File handler - capture everything including DEBUG
-    file_handler = logging.FileHandler("multixem.log", mode="w")
+    file_handler = logging.FileHandler("multixem.log", mode="a")
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
