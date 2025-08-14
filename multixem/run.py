@@ -2093,6 +2093,9 @@ def bootstrap_analyse_structures(
     b_values = numpy.zeros(
         (len(st_master_cras), len(refined_mmcifs)), dtype=numpy.float32
     )
+    u_aniso = numpy.zeros(
+        (len(st_master_cras), 6, len(refined_mmcifs)), dtype=numpy.float32
+    )
 
     if smcif:
         smcif_block = gemmi.cif.read(smcif).sole_block()
@@ -2216,6 +2219,14 @@ def bootstrap_analyse_structures(
             ), f"Inconsistent structure models after bootstrapping: {mmcif}."
             coords[a, :, s] = [cra.atom.pos.x, cra.atom.pos.y, cra.atom.pos.z]
             b_values[a, s] = cra.atom.b_iso
+            u_aniso[a, :, s] = [
+                cra.atom.aniso.u11,
+                cra.atom.aniso.u22,
+                cra.atom.aniso.u33,
+                cra.atom.aniso.u12,
+                cra.atom.aniso.u13,
+                cra.atom.aniso.u23,
+            ]
 
         if smcif:
             # Calculate geometry
@@ -2315,6 +2326,8 @@ def bootstrap_analyse_structures(
         )
     mean_b_values = numpy.mean(b_values, axis=1)  # shape: (n_atoms,)
     std_b_values = numpy.std(b_values, ddof=1, axis=1)  # shape: (n_atoms,)
+    mean_u_aniso = numpy.mean(u_aniso, axis=2)  # shape: (n_atoms, 6)
+    std_u_aniso = numpy.std(u_aniso, ddof=1, axis=2)  # shape: (n_atoms, 6)
 
     # Write calculated data as a CSV file
     csv_data = []
@@ -2331,6 +2344,18 @@ def bootstrap_analyse_structures(
                 "sigma_coord": std_coords_norm[i],
                 "mean_b": mean_b_values[i],
                 "sigma_b": std_b_values[i],
+                "mean_u_aniso_u11": mean_u_aniso[i][0],
+                "mean_u_aniso_u22": mean_u_aniso[i][1],
+                "mean_u_aniso_u33": mean_u_aniso[i][2],
+                "mean_u_aniso_u12": mean_u_aniso[i][3],
+                "mean_u_aniso_u13": mean_u_aniso[i][4],
+                "mean_u_aniso_u23": mean_u_aniso[i][5],
+                "sigma_u_aniso_u11": std_u_aniso[i][0],
+                "sigma_u_aniso_u22": std_u_aniso[i][1],
+                "sigma_u_aniso_u33": std_u_aniso[i][2],
+                "sigma_u_aniso_u12": std_u_aniso[i][3],
+                "sigma_u_aniso_u13": std_u_aniso[i][4],
+                "sigma_u_aniso_u23": std_u_aniso[i][5],
             }
         )
     df_csv = pandas.DataFrame(csv_data)
