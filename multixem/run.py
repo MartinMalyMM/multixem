@@ -220,6 +220,11 @@ def create_parser():
         + " Must be a positive integer higher than 1.",
     )
     main_parser.add_argument(
+        "--bonds_file",
+        type=existing_file,
+        help="Path to a file with atom pairs to compute bond distances.",
+    )
+    main_parser.add_argument(
         "--quick",
         action="store_true",
         help="Quick run (only for development).",
@@ -262,6 +267,8 @@ def create_parser():
                 )
         if args.bootstrap and args.bootstrap < 2:
             parser.error("--bootstrap must be at least 2.")
+        if args.bonds_file and args.bootstrap < 2:
+            parser.error("--bonds_file requires --bootstrap.")
 
     main_parser.set_defaults(func=validate_args)
 
@@ -1912,7 +1919,9 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
     return mtzs_out
 
 
-def bootstrap_analyse_structures(refined_mmcifs, idx=0, prefix="", skip_hydrogen=False):
+def bootstrap_analyse_structures(
+    refined_mmcifs, idx=0, prefix="", skip_hydrogen=False, bonds_file=""
+):
     """
     Analyse structure models (mmCIF files) to compute mean coordinates and B-factors.
     The structure models are expected to be after refinement against a bootstrapped
@@ -1923,6 +1932,7 @@ def bootstrap_analyse_structures(refined_mmcifs, idx=0, prefix="", skip_hydrogen
         idx (int): Index for naming the output files (applies if not set to 0).
         prefix (str): Prefix for the output filenames.
         skip_hydrogen (bool): If True, skip hydrogen atoms in the analysis.
+        bonds_file (str): Path to a file with atom pairs to compute bond distances.
 
     Returns:
         None: Writes the statistics in '{prefix}group{idx}_mean_stats.csv' and
@@ -1932,11 +1942,16 @@ def bootstrap_analyse_structures(refined_mmcifs, idx=0, prefix="", skip_hydrogen
 
     # numpy.set_printoptions(threshold=numpy.inf)
     st_master = gemmi.read_structure(refined_mmcifs[0])
-    st_master_cras = list(st_master[0].all())
-    logging.info(f"{len(st_master_cras)} atoms in the master structure")
+    st_master_cras = [
+        cra
+        for cra in st_master[0].all()
+        if not skip_hydrogen or not cra.atom.is_hydrogen()
+    ]
+    logging.info(
+        f"{len(st_master_cras)} atoms in the master structure will be analysed."
+    )
     if skip_hydrogen:
-        st_master_cras = [cra for cra in st_master_cras if not cra.atom.is_hydrogen()]
-        logging.info(f"{len(st_master_cras)} non-hydrogen atoms will be analysed.")
+        logging.info("(Not taking into account hydrogen atoms)")
 
     atom_addresses = [makeAddressStr(cra) for cra in st_master_cras]
     coords = numpy.zeros(
@@ -1946,13 +1961,26 @@ def bootstrap_analyse_structures(refined_mmcifs, idx=0, prefix="", skip_hydrogen
         (len(st_master_cras), len(refined_mmcifs)), dtype=numpy.float32
     )
 
+    if bonds_file:
+        bonds_list = []
+        with open(bonds_file, "r") as f:
+            for line in f:
+                if line.startswith("#") or not line.strip():
+                    continue
+                bonds_list.append({"atom1": line.split()[0], "atom2": line.split()[1]})
+        bonds = numpy.full(
+            (len(bonds_list), len(refined_mmcifs)), numpy.nan, dtype=numpy.float32
+        )
+
     logging.info(f"Loading {len(refined_mmcifs)} structure models...")
     # Collect coordinates and B-values
     for s, mmcif in enumerate(refined_mmcifs):
         st = gemmi.read_structure(mmcif)
-        st_cras = list(st[0].all())
-        if skip_hydrogen:
-            st_cras = [cra for cra in st_cras if not cra.atom.is_hydrogen()]
+        st_cras = [
+            cra
+            for cra in st[0].all()
+            if not skip_hydrogen or not cra.atom.is_hydrogen()
+        ]
         assert len(st_master_cras) == len(st_cras), "Different number of atoms in"
         f" structure models after bootstrapping: {mmcif}."
         for a, (cra_master, cra) in enumerate(zip(st_master_cras, st_cras)):
@@ -1965,6 +1993,42 @@ def bootstrap_analyse_structures(refined_mmcifs, idx=0, prefix="", skip_hydrogen
             ), f"Inconsistent structure models after bootstrapping: {mmcif}."
             coords[a, :, s] = [cra.atom.pos.x, cra.atom.pos.y, cra.atom.pos.z]
             b_values[a, s] = cra.atom.b_iso
+
+        if bonds_file:
+            # Collect bond distances
+            st_cras_atom_names = {cra.atom.name: cra for cra in st_cras}
+            for b, atom_pair in enumerate(bonds_list):
+                cra1 = st_cras_atom_names.get(atom_pair["atom1"])
+                cra2 = st_cras_atom_names.get(atom_pair["atom2"])
+                if cra1 and cra2:
+                    bonds[b, s] = cra1.atom.pos.dist(cra2.atom.pos)
+
+    if bonds_file:
+        # Compute mean and standard deviation bond distances
+        mean_bonds = numpy.nanmean(bonds, axis=1)
+        std_bonds = numpy.nanstd(bonds, axis=1, ddof=1)
+        for b, atom_pair in enumerate(bonds_list):
+            # atom_pair["bond"] = bonds[b, :]
+            atom_pair["mean_bond"] = mean_bonds[b]
+            atom_pair["std_bond"] = std_bonds[b]
+
+        # Write calculated statistics for bond distances as a CSV file
+        csv_data_bonds = []
+        for i, atom_pair in enumerate(bonds_list):
+            csv_data_bonds.append(
+                {
+                    "atom1": atom_pair["atom1"],
+                    "atom2": atom_pair["atom2"],
+                    "mean_bond": atom_pair["mean_bond"],
+                    "std_bond": atom_pair["std_bond"],
+                }
+            )
+        df_csv_bonds = pandas.DataFrame(csv_data_bonds)
+        csv_filename_bonds = (
+            f"{prefix}group{idx}_bonds_stats.csv" if idx else "bonds_stats.csv"
+        )
+        df_csv_bonds.to_csv(csv_filename_bonds, index=False)
+        logging.info(f"Mean bond statistics written to {csv_filename_bonds}.")
 
     # Compute mean and standard deviation per atom
     mean_coords = numpy.mean(coords, axis=2)  # shape: (n_atoms, 3)
@@ -2348,7 +2412,9 @@ def main():
         refined_mmcifs2 = glob.glob(f"{args.file_name_template}*_refine.cif")
         refined_mmcifs = refined_mmcifs + refined_mmcifs2
         if refined_mmcifs:
-            bootstrap_analyse_structures(refined_mmcifs, 1, prefix)
+            bootstrap_analyse_structures(
+                refined_mmcifs, 1, prefix, False, args.bonds_file
+            )
         else:
             logging.warning(
                 f"No refined mmCIF files found with a filename template"
@@ -2607,7 +2673,7 @@ def main():
                     n_proc=n_proc,
                 )
                 bootstrap_analyse_structures(
-                    refined_mmcifs_bootstrap, i_mtz + 1, prefix
+                    refined_mmcifs_bootstrap, i_mtz + 1, prefix, False, args.bonds_file
                 )
                 bootstrap_mean_map(
                     refined_mtzs_bootstrap, i_mtz + 1, prefix, binner_master
