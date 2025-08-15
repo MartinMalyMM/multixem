@@ -2260,6 +2260,7 @@ def bootstrap_analyse_structures(
                 if idx
                 else "mean_bonds_stats.csv"
             )
+            df_bonds = df_bonds.round(6)
             df_bonds.to_csv(csv_filename_bonds, index=False)
             logging.info(f"Mean bond statistics written to {csv_filename_bonds}.")
 
@@ -2277,6 +2278,7 @@ def bootstrap_analyse_structures(
                 if idx
                 else "mean_angles_stats.csv"
             )
+            df_angles = df_angles.round(6)
             df_angles.to_csv(csv_filename_angles, index=False)
             logging.info(f"Mean angle statistics written to {csv_filename_angles}.")
 
@@ -2294,6 +2296,7 @@ def bootstrap_analyse_structures(
                 if idx
                 else "mean_torsions_stats.csv"
             )
+            df_torsions = df_torsions.round(6)
             df_torsions.to_csv(csv_filename_torsions, index=False)
             logging.info(
                 f"Mean torsion angle statistics written to {csv_filename_torsions}."
@@ -2349,6 +2352,7 @@ def bootstrap_analyse_structures(
             }
         )
     df_csv = pandas.DataFrame(csv_data)
+    df_csv = df_csv.round(6)
     csv_filename = f"{prefix}group{idx}_mean_stats.csv" if idx else "mean_stats.csv"
     df_csv.to_csv(csv_filename, index=False)
     logging.info(f"Mean structure statistics written to {csv_filename}.")
