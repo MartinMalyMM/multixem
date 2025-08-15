@@ -182,10 +182,28 @@ def bootstrap_analyse_structures(
     def get_smcif_tables(smcif_block):
         """Extract relevant tables from a small molecule CIF block and their columns."""
 
-        def get_table_and_columns(table_names, col_names):
-            table = smcif_block.find(table_names)
+        def get_table_and_columns(col_names):
+            table = smcif_block.find(col_names)
             return table, [table.find_column(col) for col in col_names]
 
+        coords_cols = [
+            "_atom_site_label",
+            # "_atom_site_type_symbol",
+            "_atom_site_fract_x",
+            "_atom_site_fract_y",
+            "_atom_site_fract_z",
+            # "_atom_site_occupancy",
+            "_atom_site_U_iso_or_equiv",
+        ]
+        u_aniso_cols = [
+            "_atom_site_aniso_label",
+            "_atom_site_aniso_U_11",
+            "_atom_site_aniso_U_22",
+            "_atom_site_aniso_U_33",
+            "_atom_site_aniso_U_12",
+            "_atom_site_aniso_U_13",
+            "_atom_site_aniso_U_23",
+        ]
         bond_cols = [
             "_geom_bond_atom_site_label_1",
             "_geom_bond_atom_site_label_2",
@@ -212,13 +230,15 @@ def bootstrap_analyse_structures(
             "_geom_torsion_site_symmetry_4",
         ]
 
-        bond_table, bond_columns = get_table_and_columns(bond_cols, bond_cols)
-        angle_table, angle_columns = get_table_and_columns(angle_cols, angle_cols)
-        torsion_table, torsion_columns = get_table_and_columns(
-            torsion_cols, torsion_cols
-        )
+        coords_table, coords_columns = get_table_and_columns(coords_cols)
+        u_aniso_table, u_aniso_columns = get_table_and_columns(u_aniso_cols)
+        bond_table, bond_columns = get_table_and_columns(bond_cols)
+        angle_table, angle_columns = get_table_and_columns(angle_cols)
+        torsion_table, torsion_columns = get_table_and_columns(torsion_cols)
 
         return (
+            (coords_table, coords_columns),
+            (u_aniso_table, u_aniso_columns),
             (bond_table, bond_columns),
             (angle_table, angle_columns),
             (torsion_table, torsion_columns),
@@ -243,20 +263,27 @@ def bootstrap_analyse_structures(
         else:
             return float(re.sub(r"\(.*\)", "", value)), None
 
-    def collect_geometry_lists(table, atom_cols, symmetry_cols, value_sigma_col=[]):
+    def collect_geometry_lists(
+        table,
+        atom_cols,
+        symmetry_cols=[],
+        value_sigma_cols=[],
+        value_sigma_cols_names=[],
+    ):
         """Collect atom lists (for bonds, angles, torsions).
         Do not include atoms from symmetry-related molecules."""
         geom_list = [
             {f"atom{i + 1}": atom_cols[i][j] for i in range(len(atom_cols))}
             for j in range(len(table))
-            if [col[j] == "." for col in symmetry_cols]
+            if not symmetry_cols or [col[j] == "." for col in symmetry_cols]
         ]
 
-        if value_sigma_col:
+        if value_sigma_cols:
             for j in range(len(table)):
-                value, sigma = extract_value_and_stdev(value_sigma_col[j])
-                geom_list[j]["value_deposit"] = value
-                geom_list[j]["sigma_deposit"] = sigma
+                for i in range(len(value_sigma_cols)):
+                    value, sigma = extract_value_and_stdev(value_sigma_cols[i][j])
+                    geom_list[j][f"{value_sigma_cols_names[i]}_deposit"] = value
+                    geom_list[j][f"sigma_{value_sigma_cols_names[i]}_deposit"] = sigma
 
         return geom_list
 
@@ -373,15 +400,44 @@ def bootstrap_analyse_structures(
         res_str = smcif_block.find_value("_shelx_res_file")
         bonds_list = angles_list = torsions_list = []
         if res_str:
+            st = gemmi.read_small_structure(smcif)
             (
+                (table_coords, coords_cols),
+                (table_u_aniso, u_aniso_cols),
                 (table_bond, bond_columns),
                 (table_angle, angle_columns),
                 (table_torsion, torsion_columns),
             ) = get_smcif_tables(smcif_block)
 
+            atom_col, x_fract_col, y_fract_col, z_fract_col, u_iso_col = coords_cols
+            atoms_list = collect_geometry_lists(
+                table_coords,
+                [atom_col],
+                [],
+                [x_fract_col, y_fract_col, z_fract_col, u_iso_col],
+                ["x_frac", "y_frac", "z_frac", "u_iso"],
+            )
+
+            u_aniso_atom_col, u11_col, u22_col, u33_col, u12_col, u13_col, u23_col = (
+                u_aniso_cols
+            )
+            u_aniso_list = collect_geometry_lists(
+                table_u_aniso,
+                [u_aniso_atom_col],
+                [],
+                [u11_col, u22_col, u33_col, u12_col, u13_col, u23_col],
+                ["u11", "u22", "u33", "u12", "u13", "u23"],
+            )
+            for i in range(len(u_aniso_list)):
+                u_aniso_list[i]["u_aniso_atom"] = u_aniso_atom_col[i]
+
             atom1_col, atom2_col, value_sigma_col, symmetry2_col = bond_columns
             bonds_list = collect_geometry_lists(
-                table_bond, [atom1_col, atom2_col], [symmetry2_col], value_sigma_col
+                table_bond,
+                [atom1_col, atom2_col],
+                [symmetry2_col],
+                [value_sigma_col],
+                ["bond"],
             )
             bonds = numpy.full(
                 (len(bonds_list), len(refined_mmcifs)), numpy.nan, dtype=numpy.float32
@@ -399,7 +455,8 @@ def bootstrap_analyse_structures(
                 table_angle,
                 [atom1_col, atom2_col, atom3_col],
                 [symmetry1_col, symmetry3_col],
-                value_sigma_col,
+                [value_sigma_col],
+                ["angle"],
             )
             angles = numpy.full(
                 (len(angles_list), len(refined_mmcifs)), numpy.nan, dtype=numpy.float32
@@ -420,7 +477,8 @@ def bootstrap_analyse_structures(
                 table_torsion,
                 [atom1_col, atom2_col, atom3_col, atom4_col],
                 [symmetry1_col, symmetry2_col, symmetry3_col, symmetry4_col],
-                value_sigma_col,
+                [value_sigma_col],
+                ["torsion"],
             )
             torsions = numpy.full(
                 (len(torsions_list), len(refined_mmcifs)),
@@ -459,6 +517,43 @@ def bootstrap_analyse_structures(
             ]
 
         if smcif:
+            for i in range(len(atoms_list)):
+                # Convert x y z to Cartesian coordinates
+                frac = gemmi.Fractional(
+                    atoms_list[i]["x_frac_deposit"],
+                    atoms_list[i]["y_frac_deposit"],
+                    atoms_list[i]["z_frac_deposit"],
+                )
+                cart = st.cell.orthogonalize(frac)
+                atoms_list[i]["x_deposit"] = cart.x
+                atoms_list[i]["y_deposit"] = cart.y
+                atoms_list[i]["z_deposit"] = cart.z
+                atoms_list[i]["sigma_x_deposit"] = (
+                    st.cell.a * atoms_list[i]["sigma_x_frac_deposit"]
+                    if atoms_list[i]["sigma_x_frac_deposit"] is not None
+                    else None
+                )
+                atoms_list[i]["sigma_y_deposit"] = (
+                    st.cell.b * atoms_list[i]["sigma_y_frac_deposit"]
+                    if atoms_list[i]["sigma_y_frac_deposit"] is not None
+                    else None
+                )
+                atoms_list[i]["sigma_z_deposit"] = (
+                    st.cell.c * atoms_list[i]["sigma_z_frac_deposit"]
+                    if atoms_list[i]["sigma_z_frac_deposit"] is not None
+                    else None
+                )
+
+                # Compute B_iso and sigma_B_iso:  B = 8 pi^2 U
+                atoms_list[i]["b_iso_deposit"] = (
+                    8 * numpy.pi**2 * atoms_list[i]["u_iso_deposit"]
+                )
+                atoms_list[i]["sigma_b_iso_deposit"] = (
+                    8 * numpy.pi**2 * atoms_list[i]["sigma_u_iso_deposit"]
+                    if atoms_list[i]["sigma_u_iso_deposit"] is not None
+                    else None
+                )
+
             # Calculate geometry
             if bonds_list:
                 st_cras_atom_names = {cra.atom.name: cra for cra in st_cras}
@@ -564,6 +659,7 @@ def bootstrap_analyse_structures(
 
     # Write calculated data as a CSV file
     csv_data = []
+    i_aniso = 0
     for i, atom_address in enumerate(atom_addresses):
         csv_data.append(
             {
@@ -577,20 +673,56 @@ def bootstrap_analyse_structures(
                 "sigma_coord": std_coords_norm[i],
                 "mean_b": mean_b_values[i],
                 "sigma_b": std_b_values[i],
-                "mean_u_aniso_u11": mean_u_aniso[i][0],
-                "mean_u_aniso_u22": mean_u_aniso[i][1],
-                "mean_u_aniso_u33": mean_u_aniso[i][2],
-                "mean_u_aniso_u12": mean_u_aniso[i][3],
-                "mean_u_aniso_u13": mean_u_aniso[i][4],
-                "mean_u_aniso_u23": mean_u_aniso[i][5],
-                "sigma_u_aniso_u11": std_u_aniso[i][0],
-                "sigma_u_aniso_u22": std_u_aniso[i][1],
-                "sigma_u_aniso_u33": std_u_aniso[i][2],
-                "sigma_u_aniso_u12": std_u_aniso[i][3],
-                "sigma_u_aniso_u13": std_u_aniso[i][4],
-                "sigma_u_aniso_u23": std_u_aniso[i][5],
+                "mean_u11": mean_u_aniso[i][0],
+                "mean_u22": mean_u_aniso[i][1],
+                "mean_u33": mean_u_aniso[i][2],
+                "mean_u12": mean_u_aniso[i][3],
+                "mean_u13": mean_u_aniso[i][4],
+                "mean_u23": mean_u_aniso[i][5],
+                "sigma_u11": std_u_aniso[i][0],
+                "sigma_u22": std_u_aniso[i][1],
+                "sigma_u33": std_u_aniso[i][2],
+                "sigma_u12": std_u_aniso[i][3],
+                "sigma_u13": std_u_aniso[i][4],
+                "sigma_u23": std_u_aniso[i][5],
             }
         )
+        if smcif:
+            for key in [
+                "x",
+                "sigma_x",
+                "y",
+                "sigma_y",
+                "z",
+                "sigma_z",
+                "b_iso",
+                "sigma_b_iso",
+            ]:
+                csv_data[i][f"{key}_deposit"] = atoms_list[i][f"{key}_deposit"]
+            if (
+                i_aniso < len(u_aniso_list)
+                and u_aniso_list[i_aniso]["u_aniso_atom"] == st_master_cras[i].atom.name
+            ):
+                for key in [
+                    "u11",
+                    "sigma_u11",
+                    "u22",
+                    "sigma_u22",
+                    "u33",
+                    "sigma_u33",
+                    "u12",
+                    "sigma_u12",
+                    "u13",
+                    "sigma_u13",
+                    "u23",
+                    "sigma_u23",
+                ]:
+                    csv_data[i][f"{key}_deposit"] = u_aniso_list[i_aniso][
+                        f"{key}_deposit"
+                    ]
+                i_aniso += 1
+            else:
+                csv_data[i][f"{key}_deposit"] = None
     df_csv = pandas.DataFrame(csv_data)
     df_csv = df_csv.round(6)
     csv_filename = f"{prefix}group{idx}_mean_stats.csv" if idx else "mean_stats.csv"
