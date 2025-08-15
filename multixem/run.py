@@ -11,6 +11,7 @@ import matplotlib
 import logging
 import warnings
 import json
+import re
 from collections import Counter
 import concurrent.futures
 from . import __version__
@@ -1948,12 +1949,14 @@ def bootstrap_analyse_structures(
         bond_cols = [
             "_geom_bond_atom_site_label_1",
             "_geom_bond_atom_site_label_2",
+            "_geom_bond_distance",
             "_geom_bond_site_symmetry_2",
         ]
         angle_cols = [
             "_geom_angle_atom_site_label_1",
             "_geom_angle_atom_site_label_2",
             "_geom_angle_atom_site_label_3",
+            "_geom_angle",
             "_geom_angle_site_symmetry_1",
             "_geom_angle_site_symmetry_3",
         ]
@@ -1962,6 +1965,7 @@ def bootstrap_analyse_structures(
             "_geom_torsion_atom_site_label_2",
             "_geom_torsion_atom_site_label_3",
             "_geom_torsion_atom_site_label_4",
+            "_geom_torsion",
             "_geom_torsion_site_symmetry_1",
             "_geom_torsion_site_symmetry_2",
             "_geom_torsion_site_symmetry_3",
@@ -1980,14 +1984,41 @@ def bootstrap_analyse_structures(
             (torsion_table, torsion_columns),
         )
 
-    def collect_geometry_lists(table, atom_cols, symmetry_cols):
+    def extract_value_and_stdev(value):
+        """
+        Extract base value and standard deviation from
+        e.g. '0.1234(5)' -> (0.1234, 0.0005)
+        """
+        match = re.match(r"([0-9.]+)\((\d+)\)", value)
+        if match:
+            base, sigma_digits = match.groups()
+            base_value = float(base)
+
+            # Calculate decimal places for scaling of sigma
+            base_parts = base.split(".")
+            decimal_places = len(base_parts[1]) if len(base_parts) > 1 else 0
+            stdev = float(sigma_digits) * (10**-decimal_places)
+
+            return base_value, stdev
+        else:
+            return float(re.sub(r"\(.*\)", "", value)), None
+
+    def collect_geometry_lists(table, atom_cols, symmetry_cols, value_sigma_col=[]):
         """Collect atom lists (for bonds, angles, torsions).
         Do not include atoms from symmetry-related molecules."""
-        return [
+        geom_list = [
             {f"atom{i + 1}": atom_cols[i][j] for i in range(len(atom_cols))}
             for j in range(len(table))
             if [col[j] == "." for col in symmetry_cols]
         ]
+
+        if value_sigma_col:
+            for j in range(len(table)):
+                value, sigma = extract_value_and_stdev(value_sigma_col[j])
+                geom_list[j]["value_deposit"] = value
+                geom_list[j]["sigma_deposit"] = sigma
+
+        return geom_list
 
     def calculate_angle(atom1_pos, atom2_pos, atom3_pos, degrees=True):
         """
@@ -2108,21 +2139,27 @@ def bootstrap_analyse_structures(
                 (table_torsion, torsion_columns),
             ) = get_smcif_tables(smcif_block)
 
-            atom1_col, atom2_col, symmetry2_col = bond_columns
+            atom1_col, atom2_col, value_sigma_col, symmetry2_col = bond_columns
             bonds_list = collect_geometry_lists(
-                table_bond, [atom1_col, atom2_col], [symmetry2_col]
+                table_bond, [atom1_col, atom2_col], [symmetry2_col], value_sigma_col
             )
             bonds = numpy.full(
                 (len(bonds_list), len(refined_mmcifs)), numpy.nan, dtype=numpy.float32
             )
 
-            atom1_col, atom2_col, atom3_col, symmetry1_col, symmetry3_col = (
-                angle_columns
-            )
+            (
+                atom1_col,
+                atom2_col,
+                atom3_col,
+                value_sigma_col,
+                symmetry1_col,
+                symmetry3_col,
+            ) = angle_columns
             angles_list = collect_geometry_lists(
                 table_angle,
                 [atom1_col, atom2_col, atom3_col],
                 [symmetry1_col, symmetry3_col],
+                value_sigma_col,
             )
             angles = numpy.full(
                 (len(angles_list), len(refined_mmcifs)), numpy.nan, dtype=numpy.float32
@@ -2133,6 +2170,7 @@ def bootstrap_analyse_structures(
                 atom2_col,
                 atom3_col,
                 atom4_col,
+                value_sigma_col,
                 symmetry1_col,
                 symmetry2_col,
                 symmetry3_col,
@@ -2142,6 +2180,7 @@ def bootstrap_analyse_structures(
                 table_torsion,
                 [atom1_col, atom2_col, atom3_col, atom4_col],
                 [symmetry1_col, symmetry2_col, symmetry3_col, symmetry4_col],
+                value_sigma_col,
             )
             torsions = numpy.full(
                 (len(torsions_list), len(refined_mmcifs)),
@@ -2263,7 +2302,7 @@ def bootstrap_analyse_structures(
             std_bonds = numpy.std(bonds, axis=1, ddof=1)
             for b, bond in enumerate(bonds_list):
                 bond["mean_bond"] = mean_bonds[b]
-                bond["std_bond"] = std_bonds[b]
+                bond["sigma_bond"] = std_bonds[b]
             df_bonds = pandas.DataFrame(bonds_list)
             csv_filename_bonds = (
                 f"{prefix}group{idx}_mean_bonds_stats.csv"
@@ -2280,7 +2319,7 @@ def bootstrap_analyse_structures(
             std_angles = numpy.array([circular_std_deg(row) for row in angles])
             for a, angle in enumerate(angles_list):
                 angle["mean_angle"] = mean_angles[a]
-                angle["std_angle"] = std_angles[a]
+                angle["sigma_angle"] = std_angles[a]
             df_angles = pandas.DataFrame(angles_list)
             csv_filename_angles = (
                 f"{prefix}group{idx}_mean_angles_stats.csv"
@@ -2297,7 +2336,7 @@ def bootstrap_analyse_structures(
             std_torsions = numpy.array([circular_std_deg(row) for row in torsions])
             for t, torsion in enumerate(torsions_list):
                 torsion["mean_torsion"] = mean_torsions[t]
-                torsion["std_torsion"] = std_torsions[t]
+                torsion["sigma_torsion"] = std_torsions[t]
             df_torsions = pandas.DataFrame(torsions_list)
             csv_filename_torsions = (
                 f"{prefix}group{idx}_mean_torsions_stats.csv"
