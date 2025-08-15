@@ -2188,55 +2188,6 @@ def bootstrap_analyse_structures(
                 dtype=numpy.float32,
             )
 
-            """
-            table_bond = smcif_block.find([
-                '_geom_bond_atom_site_label_1',
-                '_geom_bond_atom_site_label_2',
-                '_geom_bond_distance',
-                '_geom_bond_site_symmetry_2',
-            ])
-            atom1_col = table_bond.find_column('_geom_bond_atom_site_label_1')
-            atom2_col = table_bond.find_column('_geom_bond_atom_site_label_2')
-            # distance_col = table_bond.find_column('_geom_bond_distance')
-            symmetry_col = table_bond.find_column('_geom_bond_site_symmetry_2')
-
-            table_angle = smcif_block.find([
-                '_geom_angle_atom_site_label_1',
-                '_geom_angle_atom_site_label_2',
-                '_geom_angle_atom_site_label_3',
-                '_geom_angle',
-                '_geom_angle_site_symmetry_1',
-                '_geom_angle_site_symmetry_3',
-            ])
-            atom1_col = table_angle.find_column('_geom_angle_atom_site_label_1')
-            atom2_col = table_angle.find_column('_geom_angle_atom_site_label_2')
-            atom3_col = table_angle.find_column('_geom_angle_atom_site_label_3')
-            # angle_col = table_angle.find_column('_geom_angle')
-            symmetry1_col = table_angle.find_column('_geom_angle_site_symmetry_1')
-            symmetry3_col = table_angle.find_column('_geom_angle_site_symmetry_3')
-
-            table_torsion = smcif_block.find([
-                '_geom_torsion_atom_site_label_1',
-                '_geom_torsion_atom_site_label_2',
-                '_geom_torsion_atom_site_label_3',
-                '_geom_torsion_atom_site_label_4',
-                '_geom_torsion',
-                '_geom_torsion_site_symmetry_1',
-                '_geom_torsion_site_symmetry_2',
-                '_geom_torsion_site_symmetry_3',
-                '_geom_torsion_site_symmetry_4',
-            ])
-            atom1_col = table_torsion.find_column('_geom_torsion_atom_site_label_1')
-            atom2_col = table_torsion.find_column('_geom_torsion_atom_site_label_2')
-            atom3_col = table_torsion.find_column('_geom_torsion_atom_site_label_3')
-            atom4_col = table_torsion.find_column('_geom_torsion_atom_site_label_4')
-            # torsion_col = table_torsion.find_column('_geom_torsion')
-            symmetry1_col = table_torsion.find_column('_geom_torsion_site_symmetry_1')
-            symmetry2_col = table_torsion.find_column('_geom_torsion_site_symmetry_2')
-            symmetry3_col = table_torsion.find_column('_geom_torsion_site_symmetry_3')
-            symmetry4_col = table_torsion.find_column('_geom_torsion_site_symmetry_4')
-            """
-
     logging.info(f"Loading {len(refined_mmcifs)} structure models...")
     # Collect coordinates and B-values
     for s, mmcif in enumerate(refined_mmcifs):
