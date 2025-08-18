@@ -245,27 +245,27 @@ def bootstrap_analyse_structures(
     def get_smcif_tables(smcif_block):
         """Extract relevant tables from a small molecule CIF block and their columns."""
 
-        def get_table_and_columns(col_names):
-            try:
-                table = smcif_block.find(col_names)
-                columns = []
-                for col in col_names:
-                    col = col.strip("?")  # Remove '?' prefix if present
+        def get_table_and_columns(smcif_block, col_names):
+            table = smcif_block.find(col_names)
+            if not table:
+                logging.warning(
+                    f"Table not found in small molecule CIF block. {col_names}"
+                )
+                return None, []
+            columns = []
+            for col in col_names:
+                col = col.strip("?")  # Remove '?' prefix if present
+                try:
                     column = table.find_column(col)
-                    if column:
-                        columns.append(column)
-                    elif "symmetry" in col:
+                    columns.append(column)
+                except (RuntimeError, IndexError):
+                    if "symmetry" in col:
                         columns.append([None] * len(table))
                     else:
                         logging.warning(
                             f"Column not found in small" f" molecule CIF block: {col}"
                         )
-                return table, columns
-            except RuntimeError as e:
-                logging.warning(
-                    f"Table does not found in small molecule CIF block: {e}"
-                )
-                return None, []
+            return table, columns
 
         coords_cols = [
             "_atom_site_label",
@@ -311,11 +311,15 @@ def bootstrap_analyse_structures(
             "?_geom_torsion_site_symmetry_4",
         ]
 
-        coords_table, coords_columns = get_table_and_columns(coords_cols)
-        u_aniso_table, u_aniso_columns = get_table_and_columns(u_aniso_cols)
-        bond_table, bond_columns = get_table_and_columns(bond_cols)
-        angle_table, angle_columns = get_table_and_columns(angle_cols)
-        torsion_table, torsion_columns = get_table_and_columns(torsion_cols)
+        coords_table, coords_columns = get_table_and_columns(smcif_block, coords_cols)
+        u_aniso_table, u_aniso_columns = get_table_and_columns(
+            smcif_block, u_aniso_cols
+        )
+        bond_table, bond_columns = get_table_and_columns(smcif_block, bond_cols)
+        angle_table, angle_columns = get_table_and_columns(smcif_block, angle_cols)
+        torsion_table, torsion_columns = get_table_and_columns(
+            smcif_block, torsion_cols
+        )
 
         return (
             (coords_table, coords_columns),
