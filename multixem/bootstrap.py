@@ -402,9 +402,15 @@ def bootstrap_analyse_structures(
 
     if smcif:
         smcif_block = gemmi.cif.read(smcif).sole_block()
-        res_str = smcif_block.find_value("_shelx_res_file")
+        value_shelx_res_file = smcif_block.find_value("_shelx_res_file")
+        value_computing_structure_refinement = smcif_block.find_value(
+            "_computing_structure_refinement"
+        )
         bonds_list = angles_list = torsions_list = []
-        if res_str:
+        if (
+            value_shelx_res_file
+            or "shelx" in value_computing_structure_refinement.lower()
+        ):
             st = gemmi.read_small_structure(smcif)
             (
                 (table_coords, coords_cols),
@@ -500,6 +506,8 @@ def bootstrap_analyse_structures(
                 numpy.nan,
                 dtype=numpy.float32,
             )
+        else:
+            atoms_list = []
 
     logging.info(f"Loading {len(refined_mmcifs)} structure models...")
     # Collect coordinates and B-values
@@ -702,7 +710,7 @@ def bootstrap_analyse_structures(
                 "sigma_u23": std_u_aniso[i][5],
             }
         )
-        if smcif:
+        if smcif and atoms_list:
             for key in [
                 "x",
                 "sigma_x",
