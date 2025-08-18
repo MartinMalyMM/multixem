@@ -840,6 +840,11 @@ def bootstrap_analyse_structures(
     df_csv.to_csv(csv_filename, index=False)
     logging.info(f"Mean structure statistics written to {csv_filename}.")
     # df_csv_noH = df_csv[~df_csv["atom_id"].str.contains("/H")]
+    png_filename = (
+        f"{prefix}group{idx}_mean_stats_plot_xyzb.png"
+        if idx
+        else "mean_stats_plot_xyzb.png"
+    )
     df_scatter_plot(
         df_csv,
         [
@@ -849,7 +854,7 @@ def bootstrap_analyse_structures(
             "sigma_b_iso_deposit",
         ],
         [["sigma_x"], ["sigma_y"], ["sigma_z"], ["sigma_b"]],
-        filename="scatter_plot_sigma_x.png",
+        filename=png_filename,
     )
 
     # Write mean structure as mmCIF
