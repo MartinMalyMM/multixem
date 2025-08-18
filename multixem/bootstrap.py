@@ -248,7 +248,17 @@ def bootstrap_analyse_structures(
         def get_table_and_columns(col_names):
             try:
                 table = smcif_block.find(col_names)
-                columns = [table.find_column(col) for col in col_names]
+                columns = []
+                for col in col_names:
+                    column = table.find_column(col)
+                    if column:
+                        columns.append(column)
+                    elif "symmetry" in col:
+                        columns.append([None] * len(table))
+                    else:
+                        logging.warning(
+                            f"Column not found in small" f" molecule CIF block: {col}"
+                        )
                 return table, columns
             except RuntimeError as e:
                 logging.warning(
