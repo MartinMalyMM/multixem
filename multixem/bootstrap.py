@@ -183,8 +183,13 @@ def bootstrap_analyse_structures(
         """Extract relevant tables from a small molecule CIF block and their columns."""
 
         def get_table_and_columns(col_names):
-            table = smcif_block.find(col_names)
-            return table, [table.find_column(col) for col in col_names]
+            try:
+                table = smcif_block.find(col_names)
+                columns = [table.find_column(col) for col in col_names]
+                return table, columns
+            except RuntimeError as e:
+                logging.warning(f"Table does not found in mmcif: {e}")
+                return None, []
 
         coords_cols = [
             "_atom_site_label",
@@ -418,18 +423,28 @@ def bootstrap_analyse_structures(
                 ["x_frac", "y_frac", "z_frac", "u_iso"],
             )
 
-            u_aniso_atom_col, u11_col, u22_col, u33_col, u12_col, u13_col, u23_col = (
-                u_aniso_cols
-            )
-            u_aniso_list = collect_geometry_lists(
-                table_u_aniso,
-                [u_aniso_atom_col],
-                [],
-                [u11_col, u22_col, u33_col, u12_col, u13_col, u23_col],
-                ["u11", "u22", "u33", "u12", "u13", "u23"],
-            )
-            for i in range(len(u_aniso_list)):
-                u_aniso_list[i]["u_aniso_atom"] = u_aniso_atom_col[i]
+            if u_aniso_cols:
+                u_aniso_available = True
+                (
+                    u_aniso_atom_col,
+                    u11_col,
+                    u22_col,
+                    u33_col,
+                    u12_col,
+                    u13_col,
+                    u23_col,
+                ) = u_aniso_cols
+                u_aniso_list = collect_geometry_lists(
+                    table_u_aniso,
+                    [u_aniso_atom_col],
+                    [],
+                    [u11_col, u22_col, u33_col, u12_col, u13_col, u23_col],
+                    ["u11", "u22", "u33", "u12", "u13", "u23"],
+                )
+                for i in range(len(u_aniso_list)):
+                    u_aniso_list[i]["u_aniso_atom"] = u_aniso_atom_col[i]
+            else:
+                u_aniso_available = False
 
             atom1_col, atom2_col, value_sigma_col, symmetry2_col = bond_columns
             bonds_list = collect_geometry_lists(
@@ -700,7 +715,8 @@ def bootstrap_analyse_structures(
             ]:
                 csv_data[i][f"{key}_deposit"] = atoms_list[i][f"{key}_deposit"]
             if (
-                i_aniso < len(u_aniso_list)
+                u_aniso_available
+                and i_aniso < len(u_aniso_list)
                 and u_aniso_list[i_aniso]["u_aniso_atom"] == st_master_cras[i].atom.name
             ):
                 for key in [
