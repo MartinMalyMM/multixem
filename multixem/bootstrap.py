@@ -288,15 +288,15 @@ def bootstrap_analyse_structures(
             "_geom_bond_atom_site_label_1",
             "_geom_bond_atom_site_label_2",
             "_geom_bond_distance",
-            "_geom_bond_site_symmetry_2",
+            "?_geom_bond_site_symmetry_2",
         ]
         angle_cols = [
             "_geom_angle_atom_site_label_1",
             "_geom_angle_atom_site_label_2",
             "_geom_angle_atom_site_label_3",
             "_geom_angle",
-            "_geom_angle_site_symmetry_1",
-            "_geom_angle_site_symmetry_3",
+            "?_geom_angle_site_symmetry_1",
+            "?_geom_angle_site_symmetry_3",
         ]
         torsion_cols = [
             "_geom_torsion_atom_site_label_1",
@@ -304,10 +304,10 @@ def bootstrap_analyse_structures(
             "_geom_torsion_atom_site_label_3",
             "_geom_torsion_atom_site_label_4",
             "_geom_torsion",
-            "_geom_torsion_site_symmetry_1",
-            "_geom_torsion_site_symmetry_2",
-            "_geom_torsion_site_symmetry_3",
-            "_geom_torsion_site_symmetry_4",
+            "?_geom_torsion_site_symmetry_1",
+            "?_geom_torsion_site_symmetry_2",
+            "?_geom_torsion_site_symmetry_3",
+            "?_geom_torsion_site_symmetry_4",
         ]
 
         coords_table, coords_columns = get_table_and_columns(coords_cols)
@@ -381,7 +381,6 @@ def bootstrap_analyse_structures(
             value_shelx_res_file
             or "shelx" in value_computing_structure_refinement.lower()
         ):
-            st = gemmi.read_small_structure(smcif)
             (
                 (table_coords, coords_cols),
                 (table_u_aniso, u_aniso_cols),
@@ -399,6 +398,7 @@ def bootstrap_analyse_structures(
                 ["x_frac", "y_frac", "z_frac", "u_iso"],
             )
 
+            st = gemmi.read_small_structure(smcif)
             for i in range(len(atoms_list)):
                 # Convert x y z to Cartesian coordinates
                 frac = gemmi.Fractional(
