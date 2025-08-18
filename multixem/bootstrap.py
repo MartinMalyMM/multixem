@@ -6,7 +6,70 @@ import gemmi
 import logging
 import warnings
 import re
+import matplotlib.pyplot as plt
+import matplotlib
 from .tools import write_bin_stats, write_mtz_from_df, makeAddressStr
+
+
+matplotlib.use("Agg")
+
+
+def df_scatter_plot(df, x_cols, y_cols_groups, filename="scatter_plot.png"):
+    """
+    Create multiple scatter subplots from a DataFrame and save as PNG.
+
+    Args:
+        df (pandas.DataFrame or str or file stream): DataFrame or a CSV file.
+        x_cols (list of str): Column names for x-axis for each subplot.
+        y_cols_groups (list of list of str): Each sublist is a group of
+                                             y columns for one subplot.
+        filename (str): Output PNG filename.
+    """
+    assert len(x_cols) == len(y_cols_groups), "x and y_groups must have the same length"
+    if isinstance(df, str):
+        df = pandas.read_csv(df)
+
+    # Create a combined mask: True only where all x columns are not null
+    # for finding x_max and y_max
+    combined_mask = numpy.logical_and.reduce([df[col].notnull() for col in x_cols])
+    df_filt = df[combined_mask]
+
+    n_subplots = len(y_cols_groups)
+    ncols = min(n_subplots, 2)
+    nrows = int(numpy.ceil(n_subplots / ncols))
+    fig, axes = plt.subplots(
+        nrows=nrows, ncols=ncols, figsize=(6 * ncols, 5 * nrows), squeeze=False
+    )
+    axes = axes.flatten()
+    max_x = 0
+    max_y = 0
+    for data in x_cols:
+        max_x = max(max_x, df_filt[data].max())
+    for i, data in enumerate(y_cols_groups):
+        for group in data:
+            max_y = max(max_y, df_filt[group].max())
+
+    for i, y_group in enumerate(y_cols_groups):
+        ax = axes[i]
+        for y_col in y_group:
+            ax.scatter(df[x_cols[i]], df[y_col], label=y_col, alpha=0.7)
+        ax.set_xlabel(x_cols[i])
+        if len(y_group) == 1:
+            ax.set_ylabel(y_group[0])
+        ax.legend()
+        ax.legend(loc="upper left")
+        ax.grid()
+        ax.set_xlim(0, max_x * 1.05)
+        ax.set_ylim(0, max_y * 1.05)
+        ax.set_title(x_cols[i] + " vs " + ", ".join(y_group))
+
+    # Hide unused axes if any
+    for j in range(i + 1, len(axes)):
+        fig.delaxes(axes[j])
+
+    plt.tight_layout()
+    plt.savefig(filename)
+    plt.close()
 
 
 def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
@@ -188,7 +251,9 @@ def bootstrap_analyse_structures(
                 columns = [table.find_column(col) for col in col_names]
                 return table, columns
             except RuntimeError as e:
-                logging.warning(f"Table does not found in mmcif: {e}")
+                logging.warning(
+                    f"Table does not found in small molecule CIF block: {e}"
+                )
                 return None, []
 
         coords_cols = [
@@ -759,6 +824,18 @@ def bootstrap_analyse_structures(
     csv_filename = f"{prefix}group{idx}_mean_stats.csv" if idx else "mean_stats.csv"
     df_csv.to_csv(csv_filename, index=False)
     logging.info(f"Mean structure statistics written to {csv_filename}.")
+    # df_csv_noH = df_csv[~df_csv["atom_id"].str.contains("/H")]
+    df_scatter_plot(
+        df_csv,
+        [
+            "sigma_x_deposit",
+            "sigma_y_deposit",
+            "sigma_z_deposit",
+            "sigma_b_iso_deposit",
+        ],
+        [["sigma_x"], ["sigma_y"], ["sigma_z"], ["sigma_b"]],
+        filename="scatter_plot_sigma_x.png",
+    )
 
     # Write mean structure as mmCIF
     for i, cra in enumerate(st_master_cras):
