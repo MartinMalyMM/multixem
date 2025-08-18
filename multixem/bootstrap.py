@@ -250,6 +250,7 @@ def bootstrap_analyse_structures(
                 table = smcif_block.find(col_names)
                 columns = []
                 for col in col_names:
+                    col = col.strip("?")  # Remove '?' prefix if present
                     column = table.find_column(col)
                     if column:
                         columns.append(column)
