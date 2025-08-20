@@ -14,25 +14,38 @@ from .tools import write_bin_stats, write_mtz_from_df, makeAddressStr
 matplotlib.use("Agg")
 
 
-def df_scatter_plot(df, x_cols, y_cols_groups, filename="scatter_plot.png"):
+def df_scatter_plot(
+    df, x_cols, y_cols_groups, filename="scatter_plot.png", per_element=False
+):
     """
     Create multiple scatter subplots from a DataFrame and save as PNG.
 
     Args:
         df (pandas.DataFrame or str or file stream): DataFrame or a CSV file.
         x_cols (list of str): Column names for x-axis for each subplot.
+                              If per_element=True,
+                              x_cols should be 'atomic_number' or 'atom_id'.
         y_cols_groups (list of list of str): Each sublist is a group of
                                              y columns for one subplot.
         filename (str): Output PNG filename.
+        per_element (bool): If True, create separate plots for each atom.
+                            Hydrogens will be excluded.
     """
-    assert len(x_cols) == len(y_cols_groups), "x and y_groups must have the same length"
+
+    def extract_atomic_numbers(df, atom_id_col):
+        # atom_id can look like "A/00 1/H19A", I want to extract "H"
+        atom_labels = df[atom_id_col]
+        proton_numbers = []
+        for atom_id in atom_labels:
+            atom_id_part = atom_id.split("/")[-1]
+            match = re.match(r"^([A-Z][a-z]?)", atom_id_part)
+            element = match.group(1)
+            proton_number = gemmi.Element(element).atomic_number
+            proton_numbers.append(proton_number)
+        return numpy.array(proton_numbers)
+
     if isinstance(df, str):
         df = pandas.read_csv(df)
-
-    # Create a combined mask: True only where all x columns are not null
-    # for finding x_max and y_max
-    combined_mask = numpy.logical_and.reduce([df[col].notnull() for col in x_cols])
-    df_filt = df[combined_mask]
 
     n_subplots = len(y_cols_groups)
     ncols = min(n_subplots, 2)
@@ -41,27 +54,78 @@ def df_scatter_plot(df, x_cols, y_cols_groups, filename="scatter_plot.png"):
         nrows=nrows, ncols=ncols, figsize=(6 * ncols, 5 * nrows), squeeze=False
     )
     axes = axes.flatten()
-    max_x = 0
     max_y = 0
-    for data in x_cols:
-        max_x = max(max_x, df_filt[data].max())
-    for i, data in enumerate(y_cols_groups):
-        for group in data:
-            max_y = max(max_y, df_filt[group].max())
+    max_y_b = 0
+    if not per_element:
+        assert len(x_cols) == len(
+            y_cols_groups
+        ), "x and y_groups must have the same length"
+
+        # Create a combined mask: True only where all x columns are not null
+        # for finding x_max and y_max
+        combined_mask = numpy.logical_and.reduce([df[col].notnull() for col in x_cols])
+        df_filt = df[combined_mask]
+
+        max_x = 0
+        max_x_b = 0
+        for data in x_cols:
+            if "sigma_b" not in data:
+                max_x = max(max_x, df_filt[data].max())
+        for i, group in enumerate(y_cols_groups):
+            for data in group:
+                if "sigma_b" not in data:
+                    max_y = max(max_y, df_filt[data].max())
+    else:  # per_element
+        if x_cols[0] != "atomic_number":  # typically x_cols[0] == "atom_id":
+            # get atomic numbers from atom_id and save it as a new column
+            df["atomic_number"] = extract_atomic_numbers(df, x_cols[0])
+        df = df[df["atomic_number"] > 1]  # exclude hydrogens
+        for i, group in enumerate(y_cols_groups):
+            for data in group:
+                if "sigma_b" not in data:
+                    max_y = max(max_y, df[data].max())
 
     for i, y_group in enumerate(y_cols_groups):
         ax = axes[i]
-        for y_col in y_group:
-            ax.scatter(df[x_cols[i]], df[y_col], label=y_col, alpha=0.7)
-        ax.set_xlabel(x_cols[i])
+        ax.set_axisbelow(True)
+        for j, y_col in enumerate(y_group):
+            if not per_element:
+                ax.scatter(df[x_cols[i]], df[y_col], marker=".", label=y_col, alpha=0.5)
+                ax.set_xlabel(x_cols[i])
+                ax.set_title(x_cols[i] + " vs " + ", ".join(y_group))
+                ax.legend(loc="upper left")
+            else:  # per_element
+                ax.scatter(
+                    df["atomic_number"] + j * 0.2,
+                    df[y_col],
+                    marker=".",
+                    label=y_col,
+                    alpha=0.5,
+                )
+                ax.set_title(", ".join(y_group) + " per element")
+                ax.legend()
+            if not per_element:
+                if "sigma_b" not in y_col:
+                    ax.set_xlim(0, max_x * 1.05)
+                    ax.set_ylim(0, max_y * 1.05)
+                else:  # not per_element, "sigma_b"
+                    if "sigma_b" in x_cols[i]:
+                        max_x_b_candidate = df_filt[x_cols[i]].max()
+                        max_x_b = max(max_x_b, max_x_b_candidate)
+                        ax.set_xlim(0, max_x_b * 1.05)
+                    max_y_b_candidate = df_filt[y_col].max()
+                    max_y_b = max(max_y_b, max_y_b_candidate)
+                    ax.set_ylim(0, max_y_b * 1.05)
+            else:  # per_element  # do not touch xlim
+                if "sigma_b" not in y_col:
+                    ax.set_ylim(0, max_y * 1.05)
+                else:  # per_element, "sigma_b"
+                    max_y_b_candidate = df[y_col].max()
+                    max_y_b = max(max_y_b, max_y_b_candidate)
+                    ax.set_ylim(0, max_y_b * 1.05)
         if len(y_group) == 1:
             ax.set_ylabel(y_group[0])
-        ax.legend()
-        ax.legend(loc="upper left")
         ax.grid()
-        ax.set_xlim(0, max_x * 1.05)
-        ax.set_ylim(0, max_y * 1.05)
-        ax.set_title(x_cols[i] + " vs " + ", ".join(y_group))
 
     # Hide unused axes if any
     for j in range(i + 1, len(axes)):
@@ -609,6 +673,7 @@ def bootstrap_analyse_structures(
         logging.info("(Not taking into account hydrogen atoms)")
 
     atom_addresses = [makeAddressStr(cra) for cra in st_master_cras]
+    atomic_numbers = [cra.atom.element.atomic_number for cra in st_master_cras]
     coords = numpy.zeros(
         (len(st_master_cras), 3, len(refined_mmcifs)), dtype=numpy.float32
     )
@@ -774,6 +839,7 @@ def bootstrap_analyse_structures(
         csv_data.append(
             {
                 "atom_id": atom_address,
+                "atomic_number": atomic_numbers[i],
                 "mean_x": mean_coords[i][0],
                 "mean_y": mean_coords[i][1],
                 "mean_z": mean_coords[i][2],
@@ -855,6 +921,23 @@ def bootstrap_analyse_structures(
         ],
         [["sigma_x"], ["sigma_y"], ["sigma_z"], ["sigma_b"]],
         filename=png_filename,
+    )
+    png_filename_per_element = (
+        f"{prefix}group{idx}_mean_stats_plot_xyzb_per_element.png"
+        if idx
+        else "mean_stats_plot_xyzb_per_element.png"
+    )
+    df_scatter_plot(
+        df_csv,
+        ["atom_id"],
+        [
+            ["sigma_x", "sigma_x_deposit"],
+            ["sigma_y", "sigma_y_deposit"],
+            ["sigma_z", "sigma_z_deposit"],
+            ["sigma_b", "sigma_b_iso_deposit"],
+        ],
+        filename=png_filename_per_element,
+        per_element=True,
     )
 
     # Write mean structure as mmCIF
