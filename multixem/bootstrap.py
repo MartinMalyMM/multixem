@@ -396,9 +396,9 @@ def bootstrap_analyse_structures(
     def extract_value_and_stdev(value):
         """
         Extract base value and standard deviation from
-        e.g. '0.1234(5)' -> (0.1234, 0.0005)
+        e.g. '-0.1234(5)' -> (-0.1234, 0.0005)
         """
-        match = re.match(r"([0-9.]+)\((\d+)\)", value)
+        match = re.match(r"(-?[0-9.]+)\((\d+)\)", value)
         if match:
             base, sigma_digits = match.groups()
             base_value = float(base)
@@ -832,9 +832,22 @@ def bootstrap_analyse_structures(
     mean_u_aniso = numpy.mean(u_aniso, axis=2)  # shape: (n_atoms, 6)
     std_u_aniso = numpy.std(u_aniso, ddof=1, axis=2)  # shape: (n_atoms, 6)
 
+    keys_u_aniso = [
+        "u11",
+        "sigma_u11",
+        "u22",
+        "sigma_u22",
+        "u33",
+        "sigma_u33",
+        "u12",
+        "sigma_u12",
+        "u13",
+        "sigma_u13",
+        "u23",
+        "sigma_u23",
+    ]
     # Write calculated data as a CSV file
     csv_data = []
-    i_aniso = 0
     for i, atom_address in enumerate(atom_addresses):
         csv_data.append(
             {
@@ -864,6 +877,7 @@ def bootstrap_analyse_structures(
             }
         )
         if smcif and atoms_list:
+            # Add the deposited values
             for key in [
                 "x",
                 "sigma_x",
@@ -875,31 +889,15 @@ def bootstrap_analyse_structures(
                 "sigma_b_iso",
             ]:
                 csv_data[i][f"{key}_deposit"] = atoms_list[i][f"{key}_deposit"]
-            if (
-                u_aniso_list
-                and i_aniso < len(u_aniso_list)
-                and u_aniso_list[i_aniso]["u_aniso_atom"] == st_master_cras[i].atom.name
-            ):
-                for key in [
-                    "u11",
-                    "sigma_u11",
-                    "u22",
-                    "sigma_u22",
-                    "u33",
-                    "sigma_u33",
-                    "u12",
-                    "sigma_u12",
-                    "u13",
-                    "sigma_u13",
-                    "u23",
-                    "sigma_u23",
-                ]:
-                    csv_data[i][f"{key}_deposit"] = u_aniso_list[i_aniso][
-                        f"{key}_deposit"
-                    ]
-                i_aniso += 1
-            else:
+            for key in keys_u_aniso:
                 csv_data[i][f"{key}_deposit"] = None
+            for i_aniso in range(len(u_aniso_list)):
+                if u_aniso_list[i_aniso]["u_aniso_atom"] == st_master_cras[i].atom.name:
+                    for key in keys_u_aniso:
+                        csv_data[i][f"{key}_deposit"] = u_aniso_list[i_aniso][
+                            f"{key}_deposit"
+                        ]
+                    break
     df_csv = pandas.DataFrame(csv_data)
     df_csv = df_csv.round(6)
     csv_filename = f"{prefix}group{idx}_mean_stats.csv" if idx else "mean_stats.csv"
