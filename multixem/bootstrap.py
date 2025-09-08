@@ -421,18 +421,22 @@ def bootstrap_analyse_structures(
     ):
         """Collect atom lists (for bonds, angles, torsions).
         Do not include atoms from symmetry-related molecules."""
-        geom_list = [
-            {f"atom{i + 1}": atom_cols[i][j] for i in range(len(atom_cols))}
+        j_idx_filtered = [
+            j
             for j in range(len(table))
-            if not symmetry_cols or [col[j] == "." for col in symmetry_cols]
+            if not symmetry_cols or all(col[j] == "." for col in symmetry_cols)
+        ]
+        geom_list = [
+            {f"atom{i + 1}": atom_cols[i][j_idx] for i in range(len(atom_cols))}
+            for j_idx in j_idx_filtered
         ]
 
         if value_sigma_cols:
-            for j in range(len(table)):
+            for entry, j_idx in zip(geom_list, j_idx_filtered):
                 for i in range(len(value_sigma_cols)):
-                    value, sigma = extract_value_and_stdev(value_sigma_cols[i][j])
-                    geom_list[j][f"{value_sigma_cols_names[i]}_deposit"] = value
-                    geom_list[j][f"sigma_{value_sigma_cols_names[i]}_deposit"] = sigma
+                    value, sigma = extract_value_and_stdev(value_sigma_cols[i][j_idx])
+                    entry[f"{value_sigma_cols_names[i]}_deposit"] = value
+                    entry[f"sigma_{value_sigma_cols_names[i]}_deposit"] = sigma
 
         return geom_list
 
