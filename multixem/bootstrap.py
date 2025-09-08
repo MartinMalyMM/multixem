@@ -449,7 +449,8 @@ def bootstrap_analyse_structures(
         value_computing_structure_refinement = smcif_block.find_value(
             "_computing_structure_refinement"
         )
-        bonds_list = angles_list = torsions_list = []
+        atoms_list = bonds_list = u_aniso_list = angles_list = torsions_list = []
+
         if (
             value_shelx_res_file
             or "shelx" in value_computing_structure_refinement.lower()
@@ -540,42 +541,42 @@ def bootstrap_analyse_structures(
                 ["bond"],
             )
 
-            (
-                atom1_col,
-                atom2_col,
-                atom3_col,
-                value_sigma_col,
-                symmetry1_col,
-                symmetry3_col,
-            ) = angle_columns
-            angles_list = collect_geometry_lists(
-                table_angle,
-                [atom1_col, atom2_col, atom3_col],
-                [symmetry1_col, symmetry3_col],
-                [value_sigma_col],
-                ["angle"],
-            )
+            if angle_columns:
+                (
+                    atom1_col,
+                    atom2_col,
+                    atom3_col,
+                    value_sigma_col,
+                    symmetry1_col,
+                    symmetry3_col,
+                ) = angle_columns
+                angles_list = collect_geometry_lists(
+                    table_angle,
+                    [atom1_col, atom2_col, atom3_col],
+                    [symmetry1_col, symmetry3_col],
+                    [value_sigma_col],
+                    ["angle"],
+                )
 
-            (
-                atom1_col,
-                atom2_col,
-                atom3_col,
-                atom4_col,
-                value_sigma_col,
-                symmetry1_col,
-                symmetry2_col,
-                symmetry3_col,
-                symmetry4_col,
-            ) = torsion_columns
-            torsions_list = collect_geometry_lists(
-                table_torsion,
-                [atom1_col, atom2_col, atom3_col, atom4_col],
-                [symmetry1_col, symmetry2_col, symmetry3_col, symmetry4_col],
-                [value_sigma_col],
-                ["torsion"],
-            )
-        else:
-            atoms_list = []
+            if torsion_columns:
+                (
+                    atom1_col,
+                    atom2_col,
+                    atom3_col,
+                    atom4_col,
+                    value_sigma_col,
+                    symmetry1_col,
+                    symmetry2_col,
+                    symmetry3_col,
+                    symmetry4_col,
+                ) = torsion_columns
+                torsions_list = collect_geometry_lists(
+                    table_torsion,
+                    [atom1_col, atom2_col, atom3_col, atom4_col],
+                    [symmetry1_col, symmetry2_col, symmetry3_col, symmetry4_col],
+                    [value_sigma_col],
+                    ["torsion"],
+                )
 
         return atoms_list, u_aniso_list, bonds_list, angles_list, torsions_list
 
