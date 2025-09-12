@@ -908,40 +908,42 @@ def bootstrap_analyse_structures(
     csv_filename = f"{prefix}group{idx}_mean_stats.csv" if idx else "mean_stats.csv"
     df_csv.to_csv(csv_filename, index=False)
     logging.info(f"Mean structure statistics written to {csv_filename}.")
-    # df_csv_noH = df_csv[~df_csv["atom_id"].str.contains("/H")]
-    png_filename = (
-        f"{prefix}group{idx}_mean_stats_plot_xyzb.png"
-        if idx
-        else "mean_stats_plot_xyzb.png"
-    )
-    df_scatter_plot(
-        df_csv,
-        [
-            "sigma_x_deposit",
-            "sigma_y_deposit",
-            "sigma_z_deposit",
-            "sigma_b_iso_deposit",
-        ],
-        [["sigma_x"], ["sigma_y"], ["sigma_z"], ["sigma_b"]],
-        filename=png_filename,
-    )
-    png_filename_per_element = (
-        f"{prefix}group{idx}_mean_stats_plot_xyzb_per_element.png"
-        if idx
-        else "mean_stats_plot_xyzb_per_element.png"
-    )
-    df_scatter_plot(
-        df_csv,
-        ["atom_id"],
-        [
-            ["sigma_x", "sigma_x_deposit"],
-            ["sigma_y", "sigma_y_deposit"],
-            ["sigma_z", "sigma_z_deposit"],
-            ["sigma_b", "sigma_b_iso_deposit"],
-        ],
-        filename=png_filename_per_element,
-        per_element=True,
-    )
+
+    if smcif and atoms_list:
+        # df_csv_noH = df_csv[~df_csv["atom_id"].str.contains("/H")]
+        png_filename = (
+            f"{prefix}group{idx}_mean_stats_plot_xyzb.png"
+            if idx
+            else "mean_stats_plot_xyzb.png"
+        )
+        df_scatter_plot(
+            df_csv,
+            [
+                "sigma_x_deposit",
+                "sigma_y_deposit",
+                "sigma_z_deposit",
+                "sigma_b_iso_deposit",
+            ],
+            [["sigma_x"], ["sigma_y"], ["sigma_z"], ["sigma_b"]],
+            filename=png_filename,
+        )
+        png_filename_per_element = (
+            f"{prefix}group{idx}_mean_stats_plot_xyzb_per_element.png"
+            if idx
+            else "mean_stats_plot_xyzb_per_element.png"
+        )
+        df_scatter_plot(
+            df_csv,
+            ["atom_id"],
+            [
+                ["sigma_x", "sigma_x_deposit"],
+                ["sigma_y", "sigma_y_deposit"],
+                ["sigma_z", "sigma_z_deposit"],
+                ["sigma_b", "sigma_b_iso_deposit"],
+            ],
+            filename=png_filename_per_element,
+            per_element=True,
+        )
 
     # Write mean structure as mmCIF
     for i, cra in enumerate(st_master_cras):
