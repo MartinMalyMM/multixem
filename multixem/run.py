@@ -195,7 +195,15 @@ def create_parser():
         type=str,
         default=[],
         help="Command line arguments for Servalcat, recommend to put them"
-        + " between apostrophes.",
+        + " between apostrophes. Do not use options -s, --source and --hout here.",
+    )
+    main_parser.add_argument(
+        "-s",
+        "--source",
+        type=str,
+        default="xray",
+        choices=["xray", "electron", "neutron"],
+        help="Radiation source, xray or electron or neutron.",
     )
     main_parser.add_argument(
         "--n_proc",
@@ -1437,6 +1445,7 @@ def main():
             mtzs_i,
             models,
             mtzs_free=[args.hklin_free],
+            source=args.source,
             arguments=servalcat_args,
             quick=args.quick,
             n_proc=n_proc,
@@ -1460,6 +1469,7 @@ def main():
                     [mtz_in],
                     [model],
                     mtzs_free=mtzs_bootstrap,
+                    source=args.source,
                     arguments=servalcat_args + ["--labin_llweight", "llweight"],
                     sigmaa=False,
                     quick=args.quick,
