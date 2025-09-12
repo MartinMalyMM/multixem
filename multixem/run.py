@@ -13,7 +13,7 @@ import json
 from collections import Counter
 import concurrent.futures
 from . import __version__
-from .tools import write_bin_stats, calc_scale_real
+from .tools import write_bin_stats, calc_scale_real, write_mtz_from_df
 from .analyse_refinement import (
     adp_analysis_histograms,
     compute_difference_maps,
@@ -849,7 +849,7 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
     ):
         # f_col = "F"
         i_col = "IMEAN"  # can be just "I" after servalcat fw
-        column_label_dropna = i_col  # or F?
+        column_labels_dropna = [i_col, f"SIG{i_col}"]  # or F?
         mtz1 = gemmi.read_mtz_file(mtz_fi1)
         mtz2 = gemmi.read_mtz_file(mtz_fi2)
         logging.info("")
@@ -882,7 +882,7 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
 
         # mtz_df1 = mtz_df1[['H', 'K', 'L'] + columns]  # Select only relevant columns
         mtz_df1 = mtz_df1.dropna(
-            subset=[column_label_dropna]
+            subset=column_labels_dropna
         )  # Select only reflections with F
         mtz_df1 = mtz_df1.rename(columns=column_labels_dict1)  # Rename
         # print("")
@@ -891,7 +891,7 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
         logging.info(f"No. unique reflections: {n_refl1} in file {mtz_fi1}")
 
         # mtz_df2 = mtz_df2[['H', 'K', 'L'] + columns]
-        mtz_df2 = mtz_df2.dropna(subset=[column_label_dropna])
+        mtz_df2 = mtz_df2.dropna(subset=column_labels_dropna)
         mtz_df2 = mtz_df2.rename(columns=column_labels_dict2)
         n_refl2 = len(mtz_df2)
         logging.info(f"No. unique reflections: {n_refl2} in file {mtz_fi2}")
@@ -937,6 +937,8 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
         # print("Binner min_n_bins:", min_n_bins)
         n_bins = len(set(bins_tmp))  # TODO how to use args.n_bins?
         bins_stats = []
+        df2_scaled = pandas.DataFrame()
+        # mtz_df2_scaled = mtz_df2[["H", "K", "L"]].copy()
         for b in range(n_bins):
             df_bin = df[df["BIN"] == b]
             # scale_delfofo = sum_hkl F1 * F2 / sum_hkl F2**2
@@ -975,8 +977,18 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
             scale_delioio = calc_scale_real(
                 df_bin, i_col, b, binner.dmax_of_bin(b), binner.dmin_of_bin(b)
             )
+            df_bin_scaled = df_bin.copy()
+            df_bin_scaled[f"{i_col}2_scaled"] = (
+                scale_delioio * df_bin_scaled[f"{i_col}2"]
+            )
+            df_bin_scaled[f"SIG{i_col}2_scaled"] = (
+                scale_delioio * df_bin_scaled[f"SIG{i_col}2"]
+            )
+            df2_scaled = pandas.concat(
+                [df2_scaled, df_bin_scaled]
+            )  # , ignore_index=True)
             ccI_iso = numpy.corrcoef(
-                df_bin[i_col + "1"], scale_delioio * df_bin[i_col + "2"]
+                df_bin[i_col + "1"], df_bin_scaled[i_col + "2_scaled"]
             )[0, 1]
             """
             rI_iso_numer = \
@@ -1026,6 +1038,26 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
         # cc_iso_avg_list = [ccF_iso_avg, ccI_iso_avg]
         mtz_fi1_base = os.path.splitext(os.path.basename(mtz_fi1))[0]
         mtz_fi2_base = os.path.splitext(os.path.basename(mtz_fi2))[0]
+
+        mtz_df2 = mtz_df2.drop(columns=[f"{i_col}2", f"SIG{i_col}2"])
+        df2_scaled = df2_scaled.reset_index()
+        mtz_df2 = mtz_df2.merge(
+            df2_scaled[["H", "K", "L", f"{i_col}2_scaled", f"SIG{i_col}2_scaled"]],
+            on=["H", "K", "L"],
+            how="left",
+        )
+        mtz_df2 = mtz_df2.rename(
+            columns={
+                f"{i_col}2_scaled": f"{i_col}",
+                f"SIG{i_col}2_scaled": f"SIG{i_col}",
+            }
+        )
+        write_mtz_from_df(
+            mtz_df2,
+            mtz2,
+            columns={f"{i_col}": "J", f"SIG{i_col}": "Q"},
+            filename=f"{mtz_fi2_base}_scaled_to_{mtz_fi1_base}.mtz",
+        )
 
         # Make a plot
         """def star2(x):
