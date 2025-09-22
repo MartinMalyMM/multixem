@@ -21,6 +21,7 @@ from .analyse_refinement import (
 )
 from .bootstrap import (
     bootstrap_dataset,
+    bootstrap_analyse_stats,
     bootstrap_analyse_structures,
     bootstrap_mean_map,
 )
@@ -739,11 +740,13 @@ def run_servalcat_refine(
     # TODO: --keyword_file, --config
     refined_mmcifs = []
     refined_mtzs = []
+    refined_jsons = []
 
     def refine_one(params):
         i_mtz, (mtz_fi, mtz_free, model) = params
         local_refined_mmcifs = []
         local_refined_mtzs = []
+        local_refined_jsons = []
         if mtzs_free and "--labin_llweight" in arguments:
             prefix_local = (
                 f"{os.path.splitext(os.path.basename(mtz_fi))[0]}_"
@@ -820,7 +823,8 @@ def run_servalcat_refine(
         else:
             local_refined_mtzs.append(prefix_local + ".mtz")
         local_refined_mmcifs.append(prefix_local + ".mmcif")
-        return local_refined_mmcifs[0], local_refined_mtzs[0]
+        local_refined_jsons.append(prefix_local + "_stats.json")
+        return local_refined_mmcifs[0], local_refined_mtzs[0], local_refined_jsons[0]
 
     if len(mtzs_fi) == len(models) >= 2:
         models_list = models
@@ -843,10 +847,11 @@ def run_servalcat_refine(
         )
     with concurrent.futures.ThreadPoolExecutor(max_workers=n_proc) as executor:
         results = list(executor.map(refine_one, enumerate(params)))
-    for mmcif, mtz in results:
+    for mmcif, mtz, stats in results:
         refined_mmcifs.append(mmcif)
         refined_mtzs.append(mtz)
-    return refined_mmcifs, refined_mtzs
+        refined_jsons.append(stats)
+    return refined_mmcifs, refined_mtzs, refined_jsons
 
 
 def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
@@ -1211,6 +1216,9 @@ def main():
         setup_logging()
         import glob
 
+        refined_jsons = glob.glob(f"{args.file_name_template}*_refine_stats.json")
+        if refined_jsons:
+            bootstrap_analyse_stats(refined_jsons, 1, prefix)
         refined_mmcifs = glob.glob(f"{args.file_name_template}*_refine.mmcif")
         refined_mmcifs2 = glob.glob(f"{args.file_name_template}*_refine.cif")
         refined_mmcifs = refined_mmcifs + refined_mmcifs2
@@ -1441,7 +1449,7 @@ def main():
             models = models_molrep
         else:
             models = args.model
-        refined_mmcifs, refined_mtzs = run_servalcat_refine(
+        refined_mmcifs, refined_mtzs, refined_jsons = run_servalcat_refine(
             mtzs_i,
             models,
             mtzs_free=[args.hklin_free],
@@ -1465,7 +1473,11 @@ def main():
                 mtzs_bootstrap = bootstrap_dataset(
                     mtz_in, binner_master, seeds=range(1001, 1001 + args.bootstrap)
                 )
-                refined_mmcifs_bootstrap, refined_mtzs_bootstrap = run_servalcat_refine(
+                (
+                    refined_mmcifs_bootstrap,
+                    refined_mtzs_bootstrap,
+                    refined_jsons_bootstrap,
+                ) = run_servalcat_refine(
                     [mtz_in],
                     [model],
                     mtzs_free=mtzs_bootstrap,
@@ -1475,6 +1487,7 @@ def main():
                     quick=args.quick,
                     n_proc=n_proc,
                 )
+                bootstrap_analyse_stats(refined_jsons_bootstrap, 1, prefix)
                 if os.path.splitext(model)[1] == ".cif":
                     bootstrap_analyse_structures(
                         refined_mmcifs_bootstrap, i_mtz + 1, prefix, False, model

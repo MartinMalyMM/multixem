@@ -6,8 +6,10 @@ import gemmi
 import logging
 import warnings
 import re
+import json
 import matplotlib.pyplot as plt
 import matplotlib
+import matplotlib.ticker as ticker
 from .tools import write_bin_stats, write_mtz_from_df, makeAddressStr
 
 
@@ -283,6 +285,74 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
     )
 
     return mtzs_out
+
+
+def plot_histogram(values, xlabel, idx=0, prefix=""):
+    """
+    Plot a histogram of the data and save as PNG.
+
+    Args:
+        data (list or numpy array): Data to plot.
+        xlabel (str): Label for the x-axis.
+        prefix (str): Prefix for the output filename.
+        idx (int): Index for naming the output file (applies if not set to 0).
+    """
+    counts, bins = numpy.histogram(values)
+    mean = numpy.mean(values)
+    stdev = numpy.std(values, ddof=1)
+    median = numpy.median(values)
+    mad = numpy.median(numpy.abs(values - median))
+
+    plt.figure(figsize=(8, 6))
+    plt.bar(
+        bins[:-1], counts.astype(int), width=numpy.diff(bins), align="edge", alpha=0.7
+    )
+    plt.xlabel(xlabel)
+    plt.ylabel("Frequency")
+    plt.gca().yaxis.set_major_locator(
+        ticker.MaxNLocator(integer=True)
+    )  # Ensure integer y-axis labels
+    plt.axvline(
+        mean,
+        color="blue",
+        linestyle="--",
+        label=f"Mean ± St.Dev. = {mean:.2f} ± {stdev:.2f}",
+    )
+    plt.axvline(
+        median,
+        color="green",
+        linestyle="--",
+        label=f"Median ± MAD = {median:.2f} ± {mad:.2f}",
+    )
+    plt.grid(axis="y", alpha=0.75)
+    plt.tight_layout()
+    plt.legend()
+    png_filename = (
+        f"{prefix}group{idx}_bootstrap_histogram_{xlabel.replace(' ', '_')}.png"
+        if idx
+        else f"histogram_{xlabel.replace(' ', '_')}.png"
+    )
+    plt.savefig(png_filename)
+    plt.close()
+    logging.info(f"Saved histogram to {png_filename}")
+
+
+def bootstrap_analyse_stats(jsons, idx=0, prefix=""):
+    with open(jsons[0]) as f:
+        data_ref = json.load(f)
+    stats_avail = data_ref[-1]["data"]["summary"].keys()
+    data_dict = {key: [] for key in stats_avail}
+
+    for json_file in jsons:
+        with open(json_file) as f:
+            data_loaded = json.load(f)
+        for key in stats_avail:
+            data_dict[key].append(data_loaded[-1]["data"]["summary"].get(key, 0))
+
+    for stat in stats_avail:
+        plot_histogram(data_dict[stat], stat, idx, prefix)
+
+    return data_dict
 
 
 def bootstrap_analyse_structures(
@@ -836,6 +906,9 @@ def bootstrap_analyse_structures(
     std_b_values = numpy.std(b_values, ddof=1, axis=1)  # shape: (n_atoms,)
     mean_u_aniso = numpy.mean(u_aniso, axis=2)  # shape: (n_atoms, 6)
     std_u_aniso = numpy.std(u_aniso, ddof=1, axis=2)  # shape: (n_atoms, 6)
+
+    mean_b_values_per_structure = numpy.mean(b_values, axis=0)  # shape: (n_structures,)
+    plot_histogram(mean_b_values_per_structure, "Average B-value", idx, prefix)
 
     keys_u_aniso = [
         "u11",
