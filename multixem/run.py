@@ -292,18 +292,20 @@ def create_parser():
     return parser
 
 
-def check_reflection_file_columns(hklin, unmerged=False):
+def check_reflection_file_columns(hklin, unmerged=False, prefer_amplitude=False):
     """
     Check the input reflection file for the presence of intensities,
-    amplitudes and Friedel pairs.
+    amplitudes and Friedel pairs. Find the column labels and decide which to use.
 
     Args:
         hklin (str): gemmi.Mtz object or path to the input reflection file.
+        unmerged (bool): Whether the input file is unmerged data.
+        prefer_amplitude (bool): If both intensities and amplitudes are found,
+            prefer amplitudes over intensities.
 
     Returns:
         tuple: A tuple containing three boolean values:
-            - intensities_found: True if intensity columns are found.
-            - amplitudes_found: True if amplitude columns are found.
+            - labin (str): Column labels for --labin option in Servalcat.
             - anom: True if Friedel pairs are present.
     """
     if not isinstance(hklin, gemmi.Mtz):
@@ -318,38 +320,47 @@ def check_reflection_file_columns(hklin, unmerged=False):
     )
 
     anom = False
-    intensities_found = False
-    amplitudes_found = False
+
+    col_iplusminus = []
+    col_sigiplusminus = []
+    col_imean = []
+    col_fplusminus = []
+    col_sigfplusminus = []
+    col_fmean = []
+    col_sigxmean = []
+
     for column in m.columns:
-        if column.type == "J":
-            logging.info(
-                f"Column with intensity (type J, no Friedel pairs)"
-                f" found: {column.label}"
-            )
-            intensities_found = True
-        elif column.type == "Q":
-            logging.info(
-                f"Column with standard deviation associated to intensity/amplitude"
-                f" column (type Q, no Friedel pairs) found: {column.label}"
-            )
-        elif column.type == "K":
+        if column.type == "K":
             logging.info(
                 f"Column with intensity (type K, Friedel pairs) found: {column.label}"
             )
             logging.info("Friedel pairs will be kept separately.")
             anom = True
-            intensities_found = True
+            col_iplusminus.append(column.label)
         elif column.type == "M":
             logging.info(
                 f"Column with standard deviation associated to intensity column"
                 f" (type M, Friedel pairs) found: {column.label}"
             )
+            col_sigiplusminus.append(column.label)
+        elif column.type == "J":
+            logging.info(
+                f"Column with intensity (type J, no Friedel pairs)"
+                f" found: {column.label}"
+            )
+            col_imean.append(column.label)
+        elif column.type == "Q":
+            logging.info(
+                f"Column with standard deviation associated to intensity/amplitude"
+                f" column (type Q, no Friedel pairs) found: {column.label}"
+            )
+            col_sigxmean.append(column.label)
         elif column.type == "G":
             logging.info(
                 f"Column with amplitude (type G, Friedel pairs) found: {column.label}"
             )
             anom = True
-            amplitudes_found = True
+            col_fplusminus.append(column.label)
             if unmerged:
                 logging.warning(unexpected_column_warning)
         elif column.type == "L":
@@ -357,15 +368,50 @@ def check_reflection_file_columns(hklin, unmerged=False):
                 f"Column with standard deviation associated to amplitude"
                 f" (type L, Friedel pairs) found: {column.label}"
             )
+            col_sigfplusminus.append(column.label)
         elif column.type == "F":
             logging.info(
                 f"Column with amplitude (type F, no Friedel pairs)"
                 f" found: {column.label}"
             )
-            amplitudes_found = True
+            col_fmean.append(column.label)
             if unmerged:
                 logging.warning(unexpected_column_warning)
-    return intensities_found, amplitudes_found, anom
+
+    labin = None
+    if not prefer_amplitude:
+        if len(col_iplusminus) >= 2 and len(col_sigiplusminus) >= 2:
+            labin = (
+                f"{col_iplusminus[0]},{col_sigiplusminus[0]},"
+                f"{col_iplusminus[1]},{col_sigiplusminus[1]}"
+            )
+        elif col_imean and col_sigxmean:
+            labin = f"{col_imean[0]},{col_sigxmean[0]}"
+    if not labin:
+        if len(col_fplusminus) >= 2 and len(col_sigfplusminus) >= 2:
+            labin = (
+                f"{col_fplusminus[0]},{col_sigfplusminus[0]},"
+                f"{col_fplusminus[1]},{col_sigfplusminus[1]}"
+            )
+        elif col_fmean and col_sigxmean:
+            labin = f"{col_fmean[0]},{col_sigxmean[0]}"
+
+    if not labin:
+        raise RuntimeError(f"Neither intensities nor amplitudes found in {hklin}.")
+    elif (
+        (len(col_fplusminus) >= 2 and len(col_sigfplusminus) >= 2)
+        or (col_fmean and col_sigxmean)
+    ) and not (
+        (len(col_iplusminus) >= 2 and len(col_sigiplusminus) >= 2)
+        or (col_imean and col_sigxmean)
+    ):
+        logging.warning(
+            "The file contain only amplitudes but not intensities, however,"
+            " providing intensities is recommended."
+        )
+    logging.info(f"Using these columns for refinement: {labin}")
+
+    return labin, anom
 
 
 def copy_cell_mtz(mtz_input, mtz_reference):
@@ -558,9 +604,7 @@ def merge_in_groups(
     # Scan the columns of the input unmerged MTZ file
     # and check if Friedel pairs are present or not
     anom = False
-    intensities_found, amplitudes_found, anom = check_reflection_file_columns(
-        m, unmerged=True
-    )
+    labin, anom = check_reflection_file_columns(m, unmerged=True)
     # print(m.dataset(0).wavelength) == 0.0
     # print(m.dataset(1).wavelength) OK
     # print(m.datasets[0].wavelength) == 0.0
@@ -728,6 +772,7 @@ def run_servalcat_fwt(mtz_groups_i, prefix="", n_proc=1):
 
 def run_servalcat_refine(
     mtzs_fi,
+    labins,
     models,
     mtzs_free=[],
     source="xray",
@@ -736,14 +781,13 @@ def run_servalcat_refine(
     quick=False,
     n_proc=1,
 ):  # , prefix=""):
-    # TODO: source -s
     # TODO: --keyword_file, --config
     refined_mmcifs = []
     refined_mtzs = []
     refined_jsons = []
 
     def refine_one(params):
-        i_mtz, (mtz_fi, mtz_free, model) = params
+        i_mtz, (mtz_fi, labin, mtz_free, model) = params
         local_refined_mmcifs = []
         local_refined_mtzs = []
         local_refined_jsons = []
@@ -764,6 +808,8 @@ def run_servalcat_refine(
             model,
             "-s",
             source,
+            "--labin",
+            labin,
             "--hout",
             "-o",
             prefix_local,
@@ -833,13 +879,15 @@ def run_servalcat_refine(
 
     if mtzs_free and len(mtzs_free) >= 2 and len(mtzs_fi) == 1:
         # refinement after bootstrapping
-        params = zip(mtzs_fi * len(mtzs_free), mtzs_free, models_list)
+        params = zip(
+            mtzs_fi * len(mtzs_free), labins * len(mtzs_free), mtzs_free, models_list
+        )
     elif not mtzs_free:
         # refinement after merging, no free set provided
-        params = zip(mtzs_fi, [None] * len(mtzs_fi), models_list)
+        params = zip(mtzs_fi, labins, [None] * len(mtzs_fi), models_list)
     elif len(mtzs_free) == 1:
         # refinement after merging, single free set provided
-        params = zip(mtzs_fi, mtzs_free * len(mtzs_fi), models_list)
+        params = zip(mtzs_fi, labins, mtzs_free * len(mtzs_fi), models_list)
     else:
         # unexpected case, should not happen
         raise ValueError(
@@ -1265,6 +1313,7 @@ def main():
     servalcat_args = args.servalcat_args.split() if args.servalcat_args else []
 
     mtzs_i = []
+    labins = []
     bin_stats_lists = []
     n_expected_list = []
     binner_master = None
@@ -1328,6 +1377,9 @@ def main():
             if args.amplitude:
                 _mtzs_fi = run_servalcat_fwt(_mtz_groups_i, prefix, n_proc)
                 mtzs_fi.extend(_mtzs_fi)
+                labins.extend(["FMEAN,SIGFMEAN"] * n_groups)
+            else:
+                labins.extend(["IMEAN,SIGIMEAN"] * n_groups)
             # TODO: free reflections if not given
             # TODO: check that input files have FI(R?)
             # TODO: mmCIF
@@ -1391,19 +1443,11 @@ def main():
                 f"Unit cell: {mtz.cell.a:.3f} {mtz.cell.b:.3f} {mtz.cell.c:.3f}"
                 f" {mtz.cell.alpha:.3f} {mtz.cell.beta:.3f} {mtz.cell.gamma:.3f}"
             )
-            i_present, f_present, anom_present = check_reflection_file_columns(
-                mtz, unmerged=False
+            labin, anom_present = check_reflection_file_columns(
+                mtz, unmerged=False, prefer_amplitude=args.amplitude
             )
-            if not i_present and not f_present:
-                raise RuntimeError(
-                    f"Neither intensities nor amplitudes present in {hklin_i}."
-                )
-            elif f_present and not i_present:
-                logging.warning(
-                    "The file contain only amplitudes but not intensities, however,"
-                    " providing intensities is recommended."
-                )
             # elif i_present and not f_present: TODO FW
+            labins.append(labin)
             bin_stats_lists.append([])
             # TODO: check and fix n_expected
             n_expected = gemmi.count_reflections(mtz.cell, mtz.spacegroup, dmin, dmax)
@@ -1421,6 +1465,7 @@ def main():
                     mtz.make_1_d2_array(),
                     mtz.get_cell(),
                 )
+    assert len(mtzs_i) == len(labins)
 
     bin_stats_matrix = len(mtzs_i) * [len(mtzs_i) * [None]]
     for i in range(len(mtzs_i)):
@@ -1451,6 +1496,7 @@ def main():
             models = args.model
         refined_mmcifs, refined_mtzs, refined_jsons = run_servalcat_refine(
             mtzs_i,
+            labins,
             models,
             mtzs_free=[args.hklin_free],
             source=args.source,
@@ -1465,11 +1511,10 @@ def main():
                 refined_mtzs, binner_master, bin_stats_matrix
             )
         if args.bootstrap:
-            if args.amplitude:
-                mtzs_in = mtzs_fi
-            else:
-                mtzs_in = mtzs_i
-            for i_mtz, (mtz_in, model) in enumerate(zip(mtzs_in, models)):
+            mtzs_in = mtzs_i
+            for i_mtz, (mtz_in, labin, model) in enumerate(
+                zip(mtzs_in, labins, models)
+            ):
                 mtzs_bootstrap = bootstrap_dataset(
                     mtz_in, binner_master, seeds=range(1001, 1001 + args.bootstrap)
                 )
@@ -1479,6 +1524,7 @@ def main():
                     refined_jsons_bootstrap,
                 ) = run_servalcat_refine(
                     [mtz_in],
+                    [labin],
                     [model],
                     mtzs_free=mtzs_bootstrap,
                     source=args.source,
