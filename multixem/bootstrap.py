@@ -521,9 +521,9 @@ def bootstrap_analyse_structures(
         )
         atoms_list = bonds_list = u_aniso_list = angles_list = torsions_list = []
 
-        if (
-            value_shelx_res_file
-            or "shelx" in value_computing_structure_refinement.lower()
+        if value_shelx_res_file or (
+            value_computing_structure_refinement
+            and "shelx" in value_computing_structure_refinement.lower()
         ):
             (
                 (table_coords, coords_cols),
