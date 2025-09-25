@@ -239,6 +239,14 @@ def create_parser():
         + " Must be a positive integer higher than 1.",
     )
     main_parser.add_argument(
+        "--geometry_cids",
+        type=existing_file,
+        help=(
+            "Input file with atomic CIDs defining bonds, angles or torsions to be"
+            " analysed while performing bootstrap."
+        ),
+    )
+    main_parser.add_argument(
         "--quick",
         action="store_true",
         help="Quick run (only for development).",
@@ -267,6 +275,14 @@ def create_parser():
         type=existing_file,
         help="Path to a small molecule CIF file.",
     )
+    mean_parser.add_argument(
+        "--geometry_cids",
+        type=existing_file,
+        help=(
+            "Input file with atomic CIDs defining bonds, angles or torsions to be"
+            " analysed while performing bootstrap."
+        ),
+    )
 
     def validate_args(args):
         if args.n_batches and not args.hklin_unmerged:
@@ -286,6 +302,8 @@ def create_parser():
                 )
         if args.bootstrap and args.bootstrap < 2:
             parser.error("--bootstrap must be at least 2.")
+        if args.geometry_cids and not args.bootstrap:
+            parser.error("--geometry_cids requires --bootstrap to be provided.")
 
     main_parser.set_defaults(func=validate_args)
 
@@ -1271,7 +1289,9 @@ def main():
         refined_mmcifs2 = glob.glob(f"{args.file_name_template}*_refine.cif")
         refined_mmcifs = refined_mmcifs + refined_mmcifs2
         if refined_mmcifs:
-            bootstrap_analyse_structures(refined_mmcifs, 1, prefix, False, args.cif)
+            bootstrap_analyse_structures(
+                refined_mmcifs, 1, prefix, False, args.cif, args.geometry_cids
+            )
         else:
             logging.warning(
                 f"No refined mmCIF files found with a filename template"
@@ -1536,11 +1556,21 @@ def main():
                 bootstrap_analyse_stats(refined_jsons_bootstrap, 1, prefix)
                 if os.path.splitext(model)[1] == ".cif":
                     bootstrap_analyse_structures(
-                        refined_mmcifs_bootstrap, i_mtz + 1, prefix, False, model
+                        refined_mmcifs_bootstrap,
+                        i_mtz + 1,
+                        prefix,
+                        False,
+                        model,
+                        args.geometry_cids,
                     )
                 else:
                     bootstrap_analyse_structures(
-                        refined_mmcifs_bootstrap, i_mtz + 1, prefix, False, ""
+                        refined_mmcifs_bootstrap,
+                        i_mtz + 1,
+                        prefix,
+                        False,
+                        "",
+                        args.geometry_cids,
                     )
                 bootstrap_mean_map(
                     refined_mtzs_bootstrap, i_mtz + 1, prefix, binner_master

@@ -356,7 +356,12 @@ def bootstrap_analyse_stats(jsons, idx=0, prefix=""):
 
 
 def bootstrap_analyse_structures(
-    refined_mmcifs, idx=0, prefix="", skip_hydrogen=False, smcif=""
+    refined_mmcifs,
+    idx=0,
+    prefix="",
+    skip_hydrogen=False,
+    smcif="",
+    geometry_cids_file="",
 ):
     """
     Analyse structure models (mmCIF files) to compute mean coordinates and B-factors.
@@ -369,6 +374,7 @@ def bootstrap_analyse_structures(
         prefix (str): Prefix for the output filenames.
         skip_hydrogen (bool): If True, skip hydrogen atoms in the analysis.
         smcif (str): Path to a corresponding small molecule CIF file.
+        geometry_atoms (str): Path to a corresponding file with list of atoms.
 
     Returns:
         None: Writes the statistics in '{prefix}group{idx}_mean_stats.csv' and
@@ -734,6 +740,105 @@ def bootstrap_analyse_structures(
         # Circular standard deviation in degrees
         return numpy.rad2deg(numpy.sqrt(-2 * numpy.log(R)))
 
+    # TODO: symmetry-related atoms
+    def select_cids_for_geometry_analysis(geometry_cids_file):
+        """
+        Read a file with atom CIDs for geometry analysis.
+
+        Example file content:
+        //AAA/401/O3 //AAA/228/NE2
+        //AAA/401/N2 //AAA/228/OE1
+        //AAA/401/O1 //AAA/401/O2 //AAA/254/ND2
+        //AAA/176/NE //AAA/176/CZ //AAA/176/NH2 //AAA/401/O4
+
+        Each line has 2, 3, or 4 atom CIDs for bond, angle, or torsion analysis.
+
+        Returns:
+            list of dict: Each dict has keys: atom1, atom2, atom3, atom4, type, values
+        """
+        objects_geom = []
+        if geometry_cids_file and os.path.isfile(geometry_cids_file):
+            with open(geometry_cids_file) as f:
+                for line in f:
+                    cids = line.split()
+                    assert len(cids) in [
+                        2,
+                        3,
+                        4,
+                    ], f"Invalid line in {geometry_cids_file}: {line}"
+                    object_geom = {}
+                    object_geom["atom1"] = cids[0]
+                    object_geom["atom2"] = cids[1]
+                    object_geom["values"] = []
+                    if len(cids) == 2:
+                        object_geom["atom3"] = ""
+                        object_geom["atom4"] = ""
+                        object_geom["type"] = "bond"
+                    elif len(cids) == 3:
+                        object_geom["atom3"] = cids[2]
+                        object_geom["atom4"] = ""
+                        object_geom["type"] = "angle"
+                    elif len(cids) == 4:
+                        object_geom["atom3"] = cids[2]
+                        object_geom["atom4"] = cids[3]
+                        object_geom["type"] = "torsion"
+                    objects_geom.append(object_geom)
+        return objects_geom
+
+    def geometry_analysis_load(st, objects_cids):
+        """
+        For a given structure, calculate bond lengths, angles, and torsions
+        for the specified atom CIDs.
+        `objects_cids` is a list of dicts with keys:
+        atom1, atom2, atom3, atom4, type, values
+        The results are appended to the 'values' list in each dict.
+        """
+
+        for object_geom in objects_cids:
+            sel0 = gemmi.Selection(f"{object_geom['atom1']}")
+            sel0_model = sel0.copy_model_selection(st[0])
+            assert (
+                sel0_model.count_atom_sites() == 1
+            ), f"{object_geom['atom1']} does not select exactly one atom."
+            pos0 = sel0.first(st)[1].atom.pos
+
+            sel1 = gemmi.Selection(f"{object_geom['atom2']}")
+            sel1_model = sel1.copy_model_selection(st[0])
+            assert (
+                sel1_model.count_atom_sites() == 1
+            ), f"{object_geom['atom2']} does not select exactly one atom."
+            pos1 = sel1.first(st)[1].atom.pos
+
+            if object_geom["type"] == "bond":
+                dist = pos0.dist(pos1)
+                object_geom["values"].append(dist)
+
+            elif object_geom["type"] in ["angle", "torsion"]:
+                sel2 = gemmi.Selection(f"{object_geom['atom3']}")
+                sel2_model = sel2.copy_model_selection(st[0])
+                assert (
+                    sel2_model.count_atom_sites() == 1
+                ), f"{object_geom['atom3']} does not select exactly one atom."
+                pos2 = sel2.first(st)[1].atom.pos
+
+                if object_geom["type"] == "angle":
+                    angle = calculate_angle(pos0, pos1, pos2)
+                    object_geom["values"].append(angle)
+
+                elif object_geom["type"] == "torsion":
+                    sel3 = gemmi.Selection(f"{object_geom['atom4']}")
+                    sel3_model = sel3.copy_model_selection(st[0])
+                    assert (
+                        sel3_model.count_atom_sites() == 1
+                    ), f"{object_geom['atom4']} does not select exactly one atom."
+                    pos3 = sel3.first(st)[1].atom.pos
+                    torsion = calculate_torsion_angle(pos0, pos1, pos2, pos3)
+                    object_geom["values"].append(torsion)
+
+        return objects_cids
+
+    if geometry_cids_file:
+        geometry_objects = select_cids_for_geometry_analysis(geometry_cids_file)
     # numpy.set_printoptions(threshold=numpy.inf)
     st_master = gemmi.read_structure(refined_mmcifs[0])
     st_master_cras = [
@@ -777,6 +882,10 @@ def bootstrap_analyse_structures(
     # Collect coordinates and B-values
     for s, mmcif in enumerate(refined_mmcifs):
         st = gemmi.read_structure(mmcif)
+
+        if geometry_cids_file and geometry_objects:
+            geometry_objects = geometry_analysis_load(st, geometry_objects)
+
         st_cras = [
             cra
             for cra in st[0].all()
@@ -831,6 +940,34 @@ def bootstrap_analyse_structures(
                         torsions[t, s] = calculate_torsion_angle(
                             cra1.atom.pos, cra2.atom.pos, cra3.atom.pos, cra4.atom.pos
                         )
+
+    if geometry_cids_file and geometry_objects:
+        geometry_analysis_bonds = [
+            obj for obj in geometry_objects if obj["type"] == "bond"
+        ]
+        for obj in geometry_analysis_bonds:
+            obj["values"] = numpy.array(obj["values"])
+            obj["mean"] = numpy.nanmean(obj["values"])
+            obj["std"] = numpy.nanstd(obj["values"], ddof=1)
+            del obj["values"]
+        geometry_analysis_angles_torsions = [
+            obj for obj in geometry_objects if obj["type"] in ["angle", "torsion"]
+        ]
+        for obj in geometry_analysis_angles_torsions:
+            obj["values"] = numpy.array(obj["values"])
+            obj["mean"] = circular_mean_deg(obj["values"])
+            obj["std"] = circular_std_deg(obj["values"])
+            del obj["values"]
+        df = pandas.DataFrame(
+            geometry_analysis_bonds + geometry_analysis_angles_torsions
+        )
+        filename = (
+            f"{prefix}group{idx}_mean_geometry_stats.txt"
+            if idx
+            else "mean_geometry_stats.txt"
+        )
+        df.to_string(filename, index=False, na_rep="")
+        logging.info(f"Saved geometry statistics to {filename}")
 
     if smcif:
         if bonds_list:
