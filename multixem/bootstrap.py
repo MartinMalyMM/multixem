@@ -16,6 +16,14 @@ from .tools import write_bin_stats, write_mtz_from_df, makeAddressStr
 matplotlib.use("Agg")
 
 
+def match_sigfigs(value, ref):
+    """Format `value` to have the same number of significant figures as `ref`."""
+    if ref == 0:
+        return f"{value:.2f}"
+    decimals = max(0, -int(numpy.floor(numpy.log10(abs(ref)))) + 1)
+    return f"{value:.{decimals}f}"
+
+
 def df_scatter_plot(
     df, x_cols, y_cols_groups, filename="scatter_plot.png", per_element=False
 ):
@@ -294,8 +302,8 @@ def plot_histogram(values, xlabel, idx=0, prefix=""):
     Args:
         data (list or numpy array): Data to plot.
         xlabel (str): Label for the x-axis.
-        prefix (str): Prefix for the output filename.
         idx (int): Index for naming the output file (applies if not set to 0).
+        prefix (str): Prefix for the output filename.
     """
     counts, bins = numpy.histogram(values, bins="fd")
     mean = numpy.mean(values)
@@ -316,13 +324,13 @@ def plot_histogram(values, xlabel, idx=0, prefix=""):
         mean,
         color="blue",
         linestyle="--",
-        label=f"Mean ± St.Dev. = {mean:.2f} ± {stdev:.2f}",
+        label=f"Mean ± St.Dev. = {match_sigfigs(mean, stdev)} ± {stdev:.2g}",
     )
     plt.axvline(
         median,
         color="green",
         linestyle="--",
-        label=f"Median ± MAD = {median:.2f} ± {mad:.2f}",
+        label=f"Median ± MAD = {match_sigfigs(median, mad)} ± {mad:.2g}",
     )
     plt.grid(axis="y", alpha=0.75)
     plt.tight_layout()
