@@ -756,10 +756,12 @@ def bootstrap_analyse_structures(
         Example file content:
         //AAA/401/O3 //AAA/228/NE2
         //AAA/401/N2 //AAA/228/OE1
+        //AAA/401/O2 //AAA/57/OG1@2010100
         //AAA/401/O1 //AAA/401/O2 //AAA/254/ND2
         //AAA/176/NE //AAA/176/CZ //AAA/176/NH2 //AAA/401/O4
 
         Each line has 2, 3, or 4 atom CIDs for bond, angle, or torsion analysis.
+        The CID format is extended to allow specifying symmetry mates (e.g. @2010100)
 
         Returns:
             list of dict: Each dict has keys: atom1, atom2, atom3, atom4, type, values
@@ -793,6 +795,47 @@ def bootstrap_analyse_structures(
                     objects_geom.append(object_geom)
         return objects_geom
 
+    def apply_symmetry_and_translation(st, op, t, pos_cart):
+        # Convert Cartesian to fractional
+        pos_frac = st.cell.fractionalize(pos_cart)
+        # Apply symmetry op (returns list), then wrap as Fractional
+        sym_applied = gemmi.Fractional(*op.apply_to_xyz(pos_frac))
+        new_frac = sym_applied + gemmi.Fractional(t[0], t[1], t[2])
+        # Convert back to Cartesian
+        pos_cart_new = st.cell.orthogonalize(new_frac)
+        return pos_cart_new
+
+    def get_pos_from_cid(st, cid):
+        """
+        Get Cartesian position of an atom from its CID in a structure.
+        Extended CID format: /model/chain/residue/atom[@symop]
+        where symop is e.g. 2010100 for space group operation No. 2
+        and translation (1,1,0)&{0,0,0}.
+        """
+        sel = gemmi.Selection(f"{cid.split('@')[0]}")
+        sel_model = sel.copy_model_selection(st[0])
+        assert sel_model.count_atom_sites() == 1, (
+            f"{cid} does not select exactly one atom but"
+            f" {sel_model.count_atom_sites()} atoms."
+        )
+        pos = sel.first(st)[1].atom.pos
+
+        if "@" in cid:
+            try:
+                symop_str = cid.split("@")[-1]
+                symop_no = int(symop_str[:-6])
+                op = list(st.find_spacegroup().operations())[symop_no - 1]
+                t = (
+                    int(symop_str[-6]) + int(symop_str[-5]),
+                    int(symop_str[-4]) + int(symop_str[-3]),
+                    int(symop_str[-2]) + int(symop_str[-1]),
+                )
+                pos = gemmi.Position(pos.x, pos.y, pos.z)  # Make a copy
+                pos = apply_symmetry_and_translation(st, op, t, pos)
+            except Exception as e:
+                raise ValueError(f"Invalid symmetry operation in {cid}:" f" {e}")
+        return pos
+
     def geometry_analysis_load(st, objects_cids):
         """
         For a given structure, calculate bond lengths, angles, and torsions
@@ -803,44 +846,23 @@ def bootstrap_analyse_structures(
         """
 
         for object_geom in objects_cids:
-            sel0 = gemmi.Selection(f"{object_geom['atom1']}")
-            sel0_model = sel0.copy_model_selection(st[0])
-            assert (
-                sel0_model.count_atom_sites() == 1
-            ), f"{object_geom['atom1']} does not select exactly one atom."
-            pos0 = sel0.first(st)[1].atom.pos
-
-            sel1 = gemmi.Selection(f"{object_geom['atom2']}")
-            sel1_model = sel1.copy_model_selection(st[0])
-            assert (
-                sel1_model.count_atom_sites() == 1
-            ), f"{object_geom['atom2']} does not select exactly one atom."
-            pos1 = sel1.first(st)[1].atom.pos
+            pos1 = get_pos_from_cid(st, object_geom["atom1"])
+            pos2 = get_pos_from_cid(st, object_geom["atom2"])
 
             if object_geom["type"] == "bond":
-                dist = pos0.dist(pos1)
+                dist = pos1.dist(pos2)
                 object_geom["values"].append(dist)
 
             elif object_geom["type"] in ["angle", "torsion"]:
-                sel2 = gemmi.Selection(f"{object_geom['atom3']}")
-                sel2_model = sel2.copy_model_selection(st[0])
-                assert (
-                    sel2_model.count_atom_sites() == 1
-                ), f"{object_geom['atom3']} does not select exactly one atom."
-                pos2 = sel2.first(st)[1].atom.pos
+                pos3 = get_pos_from_cid(st, object_geom["atom3"])
 
                 if object_geom["type"] == "angle":
-                    angle = calculate_angle(pos0, pos1, pos2)
+                    angle = calculate_angle(pos1, pos2, pos3)
                     object_geom["values"].append(angle)
 
                 elif object_geom["type"] == "torsion":
-                    sel3 = gemmi.Selection(f"{object_geom['atom4']}")
-                    sel3_model = sel3.copy_model_selection(st[0])
-                    assert (
-                        sel3_model.count_atom_sites() == 1
-                    ), f"{object_geom['atom4']} does not select exactly one atom."
-                    pos3 = sel3.first(st)[1].atom.pos
-                    torsion = calculate_torsion_angle(pos0, pos1, pos2, pos3)
+                    pos4 = get_pos_from_cid(st, object_geom["atom4"])
+                    torsion = calculate_torsion_angle(pos1, pos2, pos3, pos4)
                     object_geom["values"].append(torsion)
 
         return objects_cids
