@@ -392,7 +392,7 @@ def bootstrap_analyse_stats(jsons, idx=0, prefix=""):
         data_ref = json.load(f)
     stats_avail = data_ref[-1]["data"]["summary"].keys()
     data_overall_dict = {stat: [] for stat in stats_avail}
-    data_overall_init_dict = data_overall_dict.copy()
+    data_overall_init_dict = {stat: [] for stat in stats_avail}
     stats_additional = []
     for stat in stats_avail:
         if "CC" in stat:
@@ -400,7 +400,7 @@ def bootstrap_analyse_stats(jsons, idx=0, prefix=""):
             data_overall_init_dict[f"R2_{stat}"] = []
             stats_additional.append(f"R2_{stat}")
 
-    for i_json, json_file in enumerate(jsons):
+    for json_file in jsons:
         with open(json_file) as f:
             data_loaded = json.load(f)
         for stat in stats_avail:
