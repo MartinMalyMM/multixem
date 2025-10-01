@@ -305,7 +305,7 @@ def plot_histogram(values, xlabel, idx=0, prefix=""):
         idx (int): Index for naming the output file (applies if not set to 0).
         prefix (str): Prefix for the output filename.
     """
-    counts, bins = numpy.histogram(values, bins="fd")
+    counts, bins = numpy.histogram(values, bins="auto")
     mean = numpy.mean(values)
     stdev = numpy.std(values, ddof=1)
     median = numpy.median(values)
