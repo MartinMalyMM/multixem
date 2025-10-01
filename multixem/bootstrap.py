@@ -388,6 +388,7 @@ def plot_scatter(x, y, label, idx=0, prefix=""):
 
 
 def bootstrap_analyse_stats(jsons, idx=0, prefix=""):
+    logging.info(f"Loading {len(jsons)} json files with statistics...")
     with open(jsons[0]) as f:
         data_ref = json.load(f)
     stats_avail = data_ref[-1]["data"]["summary"].keys()
