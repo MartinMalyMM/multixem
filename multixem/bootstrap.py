@@ -345,22 +345,120 @@ def plot_histogram(values, xlabel, idx=0, prefix=""):
     logging.info(f"Saved histogram to {png_filename}")
 
 
+def plot_scatter(x, y, label, idx=0, prefix=""):
+    """
+    Plot a scatter plot of x vs y and save as PNG.
+
+    Args:
+        x (list or numpy array): Data for the x-axis.
+        y (list or numpy array): Data for the y-axis.
+        label (str): Label for the axes and the output file.
+        idx (int): Index for naming the output file (applies if not set to 0).
+        prefix (str): Prefix for the output filename.
+    """
+    if len(x) != len(y):
+        raise ValueError("x and y must have the same length.")
+
+    min_val = min(min(x), min(y))
+    max_val = max(max(x), max(y))
+    buffer = (max_val - min_val) * 0.05  # 5% buffer around the data range
+
+    plt.figure(figsize=(8, 8))
+    plt.scatter(x, y, alpha=0.5)
+    plt.plot(  # line y=x
+        [min_val - buffer, max_val + buffer],
+        [min_val - buffer, max_val + buffer],
+        color="gray",
+        linestyle="--",
+    )
+    plt.xlabel(f"Initial {label}")
+    plt.ylabel(f"Refined {label}")
+    plt.xlim(min_val - buffer, max_val + buffer)
+    plt.ylim(min_val - buffer, max_val + buffer)
+    plt.grid(True)
+    plt.tight_layout()
+    png_filename = (
+        f"{prefix}group{idx}_bootstrap_scatter_{label.replace(' ', '_')}.png"
+        if idx
+        else f"scatter_{label.replace(' ', '_')}.png"
+    )
+    plt.savefig(png_filename)
+    plt.close()
+    logging.info(f"Saved scatter plot to {png_filename}")
+
+
 def bootstrap_analyse_stats(jsons, idx=0, prefix=""):
     with open(jsons[0]) as f:
         data_ref = json.load(f)
     stats_avail = data_ref[-1]["data"]["summary"].keys()
-    data_dict = {key: [] for key in stats_avail}
+    data_overall_dict = {stat: [] for stat in stats_avail}
+    data_overall_init_dict = data_overall_dict.copy()
+    stats_additional = []
+    for stat in stats_avail:
+        if "CC" in stat:
+            data_overall_dict[f"R2_{stat}"] = []
+            data_overall_init_dict[f"R2_{stat}"] = []
+            stats_additional.append(f"R2_{stat}")
 
-    for json_file in jsons:
+    for i_json, json_file in enumerate(jsons):
         with open(json_file) as f:
             data_loaded = json.load(f)
-        for key in stats_avail:
-            data_dict[key].append(data_loaded[-1]["data"]["summary"].get(key, 0))
+        for stat in stats_avail:
+            data_overall_init_dict[stat].append(
+                data_loaded[0]["data"]["summary"].get(stat, 0)
+            )
+            data_overall_dict[stat].append(
+                data_loaded[-1]["data"]["summary"].get(stat, 0)
+            )
 
-    for stat in stats_avail:
-        plot_histogram(data_dict[stat], stat, idx, prefix)
+            if "CC" in stat:
+                # also calculate R = sqrt(1 - CC^2)
+                # per resolution bin and average it with weights
+                if "work" in stat:
+                    n_label = "n_work"
+                elif "free" in stat:
+                    n_label = "n_free"
+                else:
+                    n_label = "n_obs"
+                stat_binned = stat.replace("avg", "")
 
-    return data_dict
+                CCvalues_init = []
+                n_obs_values_init = []
+                for bin_data in data_loaded[0]["data"]["binned"]:
+                    CCvalues_init.append(bin_data.get(stat_binned, 0))
+                    n_obs_values_init.append(bin_data.get(n_label, 0))
+                CCvalues_init = numpy.array(CCvalues_init)
+                n_obs_values_init = numpy.array(n_obs_values_init)
+                R2values_init = numpy.sqrt(1 - numpy.power(CCvalues_init, 2))
+                R2value_init = (
+                    numpy.average(R2values_init, weights=n_obs_values_init)
+                    if n_obs_values_init.size > 0 and n_obs_values_init.sum() > 0
+                    else 0
+                )
+                data_overall_init_dict[f"R2_{stat}"].append(R2value_init)
+
+                CCvalues = []
+                n_obs_values = []
+                for bin_data in data_loaded[-1]["data"]["binned"]:
+                    CCvalues.append(bin_data.get(stat_binned, 0))
+                    n_obs_values.append(bin_data.get(n_label, 0))
+                CCvalues = numpy.array(CCvalues)
+                n_obs_values = numpy.array(n_obs_values)
+                R2values = numpy.sqrt(1 - numpy.power(CCvalues, 2))
+                R2value = (
+                    numpy.average(R2values, weights=n_obs_values)
+                    if n_obs_values.size > 0 and n_obs_values.sum() > 0
+                    else 0
+                )
+                data_overall_dict[f"R2_{stat}"].append(R2value)
+
+    for stat in list(stats_avail) + stats_additional:
+        plot_histogram(data_overall_dict[stat], stat, idx, prefix)
+        plot_scatter(
+            data_overall_init_dict[stat], data_overall_dict[stat], stat, idx, prefix
+        )
+
+    return data_overall_dict
 
 
 def bootstrap_analyse_structures(
@@ -748,7 +846,6 @@ def bootstrap_analyse_structures(
         # Circular standard deviation in degrees
         return numpy.rad2deg(numpy.sqrt(-2 * numpy.log(R)))
 
-    # TODO: symmetry-related atoms
     def select_cids_for_geometry_analysis(geometry_cids_file):
         """
         Read a file with atom CIDs for geometry analysis.
