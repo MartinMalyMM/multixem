@@ -360,7 +360,7 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
         hkl_common_array_fwt, dtype=numpy.int32
     )
     output_mtz_fwt = f"{output_prefix}_fwt.mtz"
-    print(f"No. reflections in {output_mtz_fwt}: {len(df_fwt)}")
+    logging.info(f"No. reflections in {output_mtz_fwt}: {len(df_fwt)}")
     binner_fwt = binner
     df_fwt["BIN"] = binner_fwt.get_bins(hkl_common_array_fwt)
 
