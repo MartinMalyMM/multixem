@@ -364,7 +364,7 @@ def plot_scatter(x, y, label, idx=0, prefix=""):
     buffer = (max_val - min_val) * 0.05  # 5% buffer around the data range
 
     plt.figure(figsize=(8, 8))
-    plt.scatter(x, y, alpha=0.5)
+    plt.scatter(x, y, alpha=0.1)
     plt.plot(  # line y=x
         [min_val - buffer, max_val + buffer],
         [min_val - buffer, max_val + buffer],
