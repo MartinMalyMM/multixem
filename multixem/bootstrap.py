@@ -347,7 +347,7 @@ def plot_histogram(values, xlabel, idx=0, prefix=""):
     logging.info(f"Saved histogram to {png_filename}")
 
 
-def plot_scatter(x, y, label, idx=0, prefix=""):
+def scatter_plot_simple(x, y, label, idx=0, prefix=""):
     """
     Plot a scatter plot of x vs y and save as PNG.
 
@@ -457,7 +457,7 @@ def bootstrap_analyse_stats(jsons, idx=0, prefix=""):
 
     for stat in list(stats_avail) + stats_additional:
         plot_histogram(data_overall_dict[stat], stat, idx, prefix)
-        plot_scatter(
+        scatter_plot_simple(
             data_overall_init_dict[stat], data_overall_dict[stat], stat, idx, prefix
         )
 
@@ -856,12 +856,12 @@ def bootstrap_analyse_structures(
         Example file content:
         //AAA/401/O3 //AAA/228/NE2
         //AAA/401/N2 //AAA/228/OE1
-        //AAA/401/O2 //AAA/57/OG1@2010100
+        //AAA/401/O2 //AAA/57/OG1@2665
         //AAA/401/O1 //AAA/401/O2 //AAA/254/ND2
         //AAA/176/NE //AAA/176/CZ //AAA/176/NH2 //AAA/401/O4
 
         Each line has 2, 3, or 4 atom CIDs for bond, angle, or torsion analysis.
-        The CID format is extended to allow specifying symmetry mates (e.g. @2010100)
+        The CID format is extended to allow specifying symmetry mates (e.g. @2665)
 
         Returns:
             list of dict: Each dict has keys: atom1, atom2, atom3, atom4, type, values
@@ -870,6 +870,8 @@ def bootstrap_analyse_structures(
         if geometry_cids_file and os.path.isfile(geometry_cids_file):
             with open(geometry_cids_file) as f:
                 for line in f:
+                    if not line.strip():
+                        continue
                     cids = line.split()
                     assert len(cids) in [
                         2,
@@ -905,12 +907,12 @@ def bootstrap_analyse_structures(
         pos_cart_new = st.cell.orthogonalize(new_frac)
         return pos_cart_new
 
-    def get_pos_from_cid(st, cid):
+    def get_pos_from_cid(st, cid, pos_reference=None):
         """
         Get Cartesian position of an atom from its CID in a structure.
         Extended CID format: /model/chain/residue/atom[@symop]
-        where symop is e.g. 2010100 for space group operation No. 2
-        and translation (1,1,0)&{0,0,0}.
+        where symop is e.g. 2665 for space group operation No. 2
+        and translation (+1,+1,0), i.e. -x+1, -y+1, z in I222.
         """
         sel = gemmi.Selection(f"{cid.split('@')[0]}")
         sel_model = sel.copy_model_selection(st[0])
@@ -918,22 +920,41 @@ def bootstrap_analyse_structures(
             f"{cid} does not select exactly one atom but"
             f" {sel_model.count_atom_sites()} atoms."
         )
-        pos = sel.first(st)[1].atom.pos
-
-        if "@" in cid:
+        if pos_reference and "@" not in cid:
+            # get position corresponding to a symmetry mate with
+            # the shortest distance
+            pos_candidates = []
+            for i_symm_op in range(len(list(st.find_spacegroup().operations()))):
+                pos = st.cell.find_nearest_pbc_position(
+                    pos_reference, sel.first(st)[1].atom.pos, i_symm_op
+                )
+                pos_candidates.append(pos)
+            pos = min(pos_candidates, key=lambda p: pos_reference.dist(p))
+        elif "@" in cid:
+            # get the distance of an explicitly given symmetry mate
+            symop_str = cid.split("@")[-1]
+            assert len(symop_str) == 4, (
+                "Symmetry operation format must have 4 digits (e.g. 2665 or 1555),"
+                f" this is invalid: {symop_str}"
+            )
             try:
-                symop_str = cid.split("@")[-1]
-                symop_no = int(symop_str[:-6])
+                symop_no = int(symop_str[0])
                 op = list(st.find_spacegroup().operations())[symop_no - 1]
                 t = (
-                    int(symop_str[-6]) + int(symop_str[-5]),
-                    int(symop_str[-4]) + int(symop_str[-3]),
-                    int(symop_str[-2]) + int(symop_str[-1]),
+                    int(symop_str[1]) - 5,
+                    int(symop_str[2]) - 5,
+                    int(symop_str[3]) - 5,
                 )
+                pos = sel.first(st)[1].atom.pos
                 pos = gemmi.Position(pos.x, pos.y, pos.z)  # Make a copy
                 pos = apply_symmetry_and_translation(st, op, t, pos)
             except Exception as e:
-                raise ValueError(f"Invalid symmetry operation in {cid}:" f" {e}")
+                raise ValueError(
+                    "Symmetry operation format must have 4 digits (e.g. 2665 or 1555),"
+                    f" this is invalid: {cid}.\n{e}"
+                )
+        else:
+            pos = sel.first(st)[1].atom.pos
         return pos
 
     def geometry_analysis_load(st, objects_cids):
@@ -947,21 +968,21 @@ def bootstrap_analyse_structures(
 
         for object_geom in objects_cids:
             pos1 = get_pos_from_cid(st, object_geom["atom1"])
-            pos2 = get_pos_from_cid(st, object_geom["atom2"])
+            pos2 = get_pos_from_cid(st, object_geom["atom2"], pos1)
 
             if object_geom["type"] == "distance":
                 dist = pos1.dist(pos2)
                 object_geom["values"].append(dist)
 
             elif object_geom["type"] in ["angle", "torsion"]:
-                pos3 = get_pos_from_cid(st, object_geom["atom3"])
+                pos3 = get_pos_from_cid(st, object_geom["atom3"], pos2)
 
                 if object_geom["type"] == "angle":
                     angle = calculate_angle(pos1, pos2, pos3)
                     object_geom["values"].append(angle)
 
                 elif object_geom["type"] == "torsion":
-                    pos4 = get_pos_from_cid(st, object_geom["atom4"])
+                    pos4 = get_pos_from_cid(st, object_geom["atom4"], pos3)
                     torsion = calculate_torsion_angle(pos1, pos2, pos3, pos4)
                     object_geom["values"].append(torsion)
 
