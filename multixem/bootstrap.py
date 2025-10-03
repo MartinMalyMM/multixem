@@ -301,7 +301,7 @@ def plot_histogram(values, xlabel, idx=0, prefix=""):
 
     Args:
         data (list or numpy array): Data to plot.
-        xlabel (str): Label for the x-axis.
+        xlabel (str): Label for the x-axis and the output file.
         idx (int): Index for naming the output file (applies if not set to 0).
         prefix (str): Prefix for the output filename.
     """
@@ -335,10 +335,12 @@ def plot_histogram(values, xlabel, idx=0, prefix=""):
     plt.grid(axis="y", alpha=0.75)
     plt.tight_layout()
     plt.legend()
+    # Replace any character that is not alphanumeric, underscore, or dash with "_"
+    xlabel = re.sub(r"[^A-Za-z0-9_\-]", "_", xlabel)
     png_filename = (
-        f"{prefix}group{idx}_bootstrap_histogram_{xlabel.replace(' ', '_')}.png"
+        f"{prefix}group{idx}_bootstrap_histogram_{xlabel}.png"
         if idx
-        else f"histogram_{xlabel.replace(' ', '_')}.png"
+        else f"histogram_{xlabel}.png"
     )
     plt.savefig(png_filename)
     plt.close()
@@ -881,7 +883,7 @@ def bootstrap_analyse_structures(
                     if len(cids) == 2:
                         object_geom["atom3"] = ""
                         object_geom["atom4"] = ""
-                        object_geom["type"] = "bond"
+                        object_geom["type"] = "distance"
                     elif len(cids) == 3:
                         object_geom["atom3"] = cids[2]
                         object_geom["atom4"] = ""
@@ -947,7 +949,7 @@ def bootstrap_analyse_structures(
             pos1 = get_pos_from_cid(st, object_geom["atom1"])
             pos2 = get_pos_from_cid(st, object_geom["atom2"])
 
-            if object_geom["type"] == "bond":
+            if object_geom["type"] == "distance":
                 dist = pos1.dist(pos2)
                 object_geom["values"].append(dist)
 
@@ -1071,12 +1073,18 @@ def bootstrap_analyse_structures(
 
     if geometry_cids_file and geometry_objects:
         geometry_analysis_bonds = [
-            obj for obj in geometry_objects if obj["type"] == "bond"
+            obj for obj in geometry_objects if obj["type"] == "distance"
         ]
         for obj in geometry_analysis_bonds:
             obj["values"] = numpy.array(obj["values"])
             obj["mean"] = numpy.nanmean(obj["values"])
             obj["std"] = numpy.nanstd(obj["values"], ddof=1)
+            plot_histogram(
+                obj["values"],
+                f"distance {obj['atom1']} {obj['atom2']}",
+                idx,
+                prefix,
+            )
             del obj["values"]
         geometry_analysis_angles_torsions = [
             obj for obj in geometry_objects if obj["type"] in ["angle", "torsion"]
@@ -1085,6 +1093,21 @@ def bootstrap_analyse_structures(
             obj["values"] = numpy.array(obj["values"])
             obj["mean"] = circular_mean_deg(obj["values"])
             obj["std"] = circular_std_deg(obj["values"])
+            if obj["type"] == "angle":
+                plot_histogram(
+                    obj["values"],
+                    f"angle {obj['atom1']} {obj['atom2']} {obj['atom3']}",
+                    idx,
+                    prefix,
+                )
+            else:  # torsion
+                plot_histogram(
+                    obj["values"],
+                    f"torsion angle"
+                    f" {obj['atom1']} {obj['atom2']} {obj['atom3']} {obj['atom4']}",
+                    idx,
+                    prefix,
+                )
             del obj["values"]
         df = pandas.DataFrame(
             geometry_analysis_bonds + geometry_analysis_angles_torsions
