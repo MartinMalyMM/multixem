@@ -396,12 +396,14 @@ def bootstrap_analyse_stats(jsons, idx=0, prefix=""):
     stats_avail = data_ref[-1]["data"]["summary"].keys()
     data_overall_dict = {stat: [] for stat in stats_avail}
     data_overall_init_dict = {stat: [] for stat in stats_avail}
+    """
     stats_additional = []
     for stat in stats_avail:
         if "CC" in stat:
             data_overall_dict[f"R2_{stat}"] = []
             data_overall_init_dict[f"R2_{stat}"] = []
             stats_additional.append(f"R2_{stat}")
+    """
 
     for json_file in jsons:
         with open(json_file) as f:
@@ -414,6 +416,7 @@ def bootstrap_analyse_stats(jsons, idx=0, prefix=""):
                 data_loaded[-1]["data"]["summary"].get(stat, 0)
             )
 
+            """
             if "CC" in stat:
                 # also calculate R = sqrt(1 - CC^2)
                 # per resolution bin and average it with weights
@@ -454,8 +457,10 @@ def bootstrap_analyse_stats(jsons, idx=0, prefix=""):
                     else 0
                 )
                 data_overall_dict[f"R2_{stat}"].append(R2value)
+            """
 
-    for stat in list(stats_avail) + stats_additional:
+    # for stat in list(stats_avail) + stats_additional:
+    for stat in stats_avail:
         plot_histogram(data_overall_dict[stat], stat, idx, prefix)
         scatter_plot_simple(
             data_overall_init_dict[stat], data_overall_dict[stat], stat, idx, prefix
