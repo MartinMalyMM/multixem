@@ -150,5 +150,5 @@ def filename_replace_char(filename):
     filename = filename.replace("=", "_equals_")
     filename = filename.replace(">", "_gt_")
     filename = filename.replace("<", "_lt_")
-    filename = re.sub(r"[^A-Za-z0-9_\-]", "_", filename)
+    filename = re.sub(r"[^A-Za-z0-9_\-.]", "_", filename)
     return filename

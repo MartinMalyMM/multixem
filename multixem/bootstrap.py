@@ -388,6 +388,94 @@ def scatter_plot_simple(x, y, label, idx=0, prefix=""):
     logging.info(f"Saved scatter plot to {png_filename}")
 
 
+def scatter_plot_histogram(x, y, label, idx=0, prefix=""):
+    """
+    Plot a scatter plot of x vs y including histograms and save as PNG.
+
+    Args:
+        x (list or numpy array): Data for the x-axis.
+        y (list or numpy array): Data for the y-axis.
+        label (str): Label for the axes and the output file.
+        idx (int): Index for naming the output file (applies if not set to 0).
+        prefix (str): Prefix for the output filename.
+    """
+    if len(x) != len(y):
+        raise ValueError("x and y must have the same length.")
+
+    counts, bins = numpy.histogram(x, bins="auto")
+    mean = numpy.mean(x)
+    stdev = numpy.std(x, ddof=1)
+    median = numpy.median(x)
+    mad = numpy.median(numpy.abs(x - median))
+
+    min_val = min(min(x), min(y))
+    max_val = max(max(x), max(y))
+    buffer = (max_val - min_val) * 0.05  # 5% buffer around the data range
+
+    fig, axs = plt.subplot_mosaic(
+        [["histx"], ["scatter"]],
+        sharex=True,
+        figsize=(7, 9),
+        height_ratios=(1, 2),
+        layout="constrained",
+    )
+
+    ax = axs["scatter"]
+    ax_histx = axs["histx"]
+
+    """
+    binwidth = 0.25
+    xymax = max(numpy.max(numpy.abs(x)), numpy.max(numpy.abs(y)))
+    lim = (int(xymax/binwidth) + 1) * binwidth
+
+    bins = numpy.arange(-lim, lim + binwidth, binwidth)
+    """
+
+    ax.scatter(x, y, alpha=0.1)
+    ax.plot(  # line y=x
+        [min_val - buffer, max_val + buffer],
+        [min_val - buffer, max_val + buffer],
+        color="gray",
+        linestyle="--",
+    )
+    ax.set_xlabel(f"Refined {label}")
+    ax.set_ylabel(f"Initial {label}")
+    ax.set_xlim(min_val - buffer, max_val + buffer)
+    ax.set_ylim(min_val - buffer, max_val + buffer)
+    ax.grid(True)
+
+    ax_histx.bar(
+        bins[:-1], counts.astype(int), width=numpy.diff(bins), align="edge", alpha=0.7
+    )
+    ax_histx.tick_params(axis="x", labelbottom=False)
+    ax_histx.set_ylabel("Frequency")
+    # plt.xlabel(xlabel)
+    ax_histx.yaxis.set_major_locator(
+        ticker.MaxNLocator(integer=True)
+    )  # Ensure integer y-axis labels
+    ax_histx.axvline(
+        mean,
+        color="blue",
+        linestyle="--",
+        label=f"Mean ± St.Dev. = {match_sigfigs(mean, stdev)} ± {stdev:.2g}",
+    )
+    ax_histx.axvline(
+        median,
+        color="green",
+        linestyle="--",
+        label=f"Median ± MAD = {match_sigfigs(median, mad)} ± {mad:.2g}",
+    )
+    ax_histx.grid(axis="y", alpha=0.75)
+    ax_histx.legend()
+
+    fig.tight_layout()
+    png_filename = filename_replace_char(f"scatter2_{label}.png")
+    if idx:
+        png_filename = f"{prefix}group{idx}_bootstrap_{png_filename}"
+    fig.savefig(png_filename)
+    logging.info(f"Saved scatter plot to {png_filename}")
+
+
 def bootstrap_analyse_stats(jsons, idx=0, prefix=""):
     logging.info(f"Loading {len(jsons)} json files with statistics...")
     with open(jsons[0]) as f:
@@ -463,6 +551,9 @@ def bootstrap_analyse_stats(jsons, idx=0, prefix=""):
         plot_histogram(data_overall_dict[stat], stat, idx, prefix)
         scatter_plot_simple(
             data_overall_init_dict[stat], data_overall_dict[stat], stat, idx, prefix
+        )
+        scatter_plot_histogram(
+            data_overall_dict[stat], data_overall_init_dict[stat], stat, idx, prefix
         )
 
     return data_overall_dict
