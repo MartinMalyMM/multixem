@@ -3,6 +3,7 @@ import numpy
 import gemmi
 import logging
 import pandas
+import re
 
 
 def write_bin_stats(bin_stats_list, filename):
@@ -143,3 +144,11 @@ def makeAddressStr(cra):
         address += "."
         address += cra.atom.altloc
     return address
+
+
+def filename_replace_char(filename):
+    filename = filename.replace("=", "_equals_")
+    filename = filename.replace(">", "_gt_")
+    filename = filename.replace("<", "_lt_")
+    filename = re.sub(r"[^A-Za-z0-9_\-]", "_", filename)
+    return filename

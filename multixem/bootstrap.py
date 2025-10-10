@@ -10,7 +10,12 @@ import json
 import matplotlib.pyplot as plt
 import matplotlib
 import matplotlib.ticker as ticker
-from .tools import write_bin_stats, write_mtz_from_df, makeAddressStr
+from .tools import (
+    write_bin_stats,
+    write_mtz_from_df,
+    makeAddressStr,
+    filename_replace_char,
+)
 
 
 matplotlib.use("Agg")
@@ -335,13 +340,9 @@ def plot_histogram(values, xlabel, idx=0, prefix=""):
     plt.grid(axis="y", alpha=0.75)
     plt.tight_layout()
     plt.legend()
-    # Replace any character that is not alphanumeric, underscore, or dash with "_"
-    xlabel = re.sub(r"[^A-Za-z0-9_\-]", "_", xlabel)
-    png_filename = (
-        f"{prefix}group{idx}_bootstrap_histogram_{xlabel}.png"
-        if idx
-        else f"histogram_{xlabel}.png"
-    )
+    png_filename = filename_replace_char(f"histogram_{xlabel}.png")
+    if idx:
+        png_filename = f"{prefix}group{idx}_bootstrap_{png_filename}"
     plt.savefig(png_filename)
     plt.close()
     logging.info(f"Saved histogram to {png_filename}")
@@ -379,11 +380,9 @@ def scatter_plot_simple(x, y, label, idx=0, prefix=""):
     plt.ylim(min_val - buffer, max_val + buffer)
     plt.grid(True)
     plt.tight_layout()
-    png_filename = (
-        f"{prefix}group{idx}_bootstrap_scatter_{label.replace(' ', '_')}.png"
-        if idx
-        else f"scatter_{label.replace(' ', '_')}.png"
-    )
+    png_filename = filename_replace_char(f"scatter_{label}.png")
+    if idx:
+        png_filename = f"{prefix}group{idx}_bootstrap_{png_filename}"
     plt.savefig(png_filename)
     plt.close()
     logging.info(f"Saved scatter plot to {png_filename}")
