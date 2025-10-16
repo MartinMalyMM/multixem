@@ -388,13 +388,14 @@ def scatter_plot_simple(x, y, label, idx=0, prefix=""):
     logging.info(f"Saved scatter plot to {png_filename}")
 
 
-def scatter_plot_histogram(x, y, label, idx=0, prefix=""):
+def scatter_plot_histogram(x, y, label, stat_ref, idx=0, prefix=""):
     """
     Plot a scatter plot of x vs y including histograms and save as PNG.
 
     Args:
         x (list or numpy array): Data for the x-axis.
         y (list or numpy array): Data for the y-axis.
+        stat_ref (dict): Reference statistic for the plot {label: value}.
         label (str): Label for the axes and the output file.
         idx (int): Index for naming the output file (applies if not set to 0).
         prefix (str): Prefix for the output filename.
@@ -465,10 +466,16 @@ def scatter_plot_histogram(x, y, label, idx=0, prefix=""):
         linestyle="--",
         label=f"Median ± MAD = {match_sigfigs(median, mad)} ± {mad:.2g}",
     )
+    for stat_ref_label, stat_value in stat_ref.items():
+        ax_histx.axvline(
+            stat_value,
+            color="orange",
+            linestyle="--",
+            label=f"{stat_ref_label} = {match_sigfigs(stat_value, stdev)}",
+        )
     ax_histx.grid(axis="y", alpha=0.75)
     ax_histx.legend()
 
-    fig.tight_layout()
     png_filename = filename_replace_char(f"scatter2_{label}.png")
     if idx:
         png_filename = f"{prefix}group{idx}_bootstrap_{png_filename}"
@@ -476,7 +483,7 @@ def scatter_plot_histogram(x, y, label, idx=0, prefix=""):
     logging.info(f"Saved scatter plot to {png_filename}")
 
 
-def bootstrap_analyse_stats(jsons, idx=0, prefix=""):
+def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
     logging.info(f"Loading {len(jsons)} json files with statistics...")
     with open(jsons[0]) as f:
         data_ref = json.load(f)
@@ -546,14 +553,49 @@ def bootstrap_analyse_stats(jsons, idx=0, prefix=""):
                 data_overall_dict[f"R2_{stat}"].append(R2value)
             """
 
+    if idx and prefix:
+        stats_ref_equivalents = {
+            "R_llw>0": "Rwork",
+            "R_llw=0": "Rfree",
+            "CCF_llw>0_avg": "CCFworkavg",
+            "CCF_llw=0_avg": "CCFfreeavg",
+            "R1_llw>0": "R1work",
+            "R1_llw=0": "R1free",
+            "CCI_llw>0_avg": "CCIworkavg",
+            "CCI_llw=0_avg": "CCIfreeavg",
+        }
+        # Find reference statistics for a structure refined in a classic way
+        data_ref = {}
+        if json_ref and os.path.isfile(json_ref):
+            with open(json_ref) as f:
+                data_ref_loaded = json.load(f)
+                data_ref = data_ref_loaded[-1]["data"]["summary"]
+        else:
+            logging.warning(f"Reference file with statistics not found: {json_ref}")
+
     # for stat in list(stats_avail) + stats_additional:
     for stat in stats_avail:
         plot_histogram(data_overall_dict[stat], stat, idx, prefix)
         scatter_plot_simple(
             data_overall_init_dict[stat], data_overall_dict[stat], stat, idx, prefix
         )
+        stat_ref = {}
+        if (
+            stat in stats_ref_equivalents.keys()
+            and data_ref.get(stats_ref_equivalents[stat], None) is not None
+        ):
+            stat_ref = {
+                stats_ref_equivalents[stat]: data_ref.get(
+                    stats_ref_equivalents[stat], None
+                )
+            }
         scatter_plot_histogram(
-            data_overall_dict[stat], data_overall_init_dict[stat], stat, idx, prefix
+            data_overall_dict[stat],
+            data_overall_init_dict[stat],
+            stat,
+            stat_ref,
+            idx,
+            prefix,
         )
 
     return data_overall_dict

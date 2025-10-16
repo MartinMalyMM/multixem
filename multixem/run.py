@@ -263,7 +263,7 @@ def create_parser():
         "file_name_template",
         type=str,
         help=(
-            "Template name for input files, e.g. put `dataset_llweight`"
+            "Template name for input files, e.g. put `dataset`"
             " for `dataset_llweight*_refine.mtz` and `dataset_llweight*_refine.mmcif`."
         ),
     )
@@ -1282,11 +1282,14 @@ def main():
         setup_logging()
         import glob
 
-        refined_jsons = glob.glob(f"{args.file_name_template}*_refine_stats.json")
+        refined_jsons = glob.glob(
+            f"{args.file_name_template}_llweight*_refine_stats.json"
+        )
+        refined_json_ref = f"{args.file_name_template}_refine_stats.json"
         if refined_jsons:
-            bootstrap_analyse_stats(refined_jsons, 1, prefix)
-        refined_mmcifs = glob.glob(f"{args.file_name_template}*_refine.mmcif")
-        refined_mmcifs2 = glob.glob(f"{args.file_name_template}*_refine.cif")
+            bootstrap_analyse_stats(refined_jsons, refined_json_ref, 1, prefix)
+        refined_mmcifs = glob.glob(f"{args.file_name_template}_llweight*_refine.mmcif")
+        refined_mmcifs2 = glob.glob(f"{args.file_name_template}_llweight*_refine.cif")
         refined_mmcifs = refined_mmcifs + refined_mmcifs2
         if refined_mmcifs:
             bootstrap_analyse_structures(
@@ -1295,15 +1298,15 @@ def main():
         else:
             logging.warning(
                 f"No refined mmCIF files found with a filename template"
-                f"{args.file_name_template}*_refine.mmcif"
+                f"{args.file_name_template}_llweight*_refine.mmcif"
             )
-        refined_mtzs = glob.glob(f"{args.file_name_template}*_refine.mtz")
+        refined_mtzs = glob.glob(f"{args.file_name_template}_llweight*_refine.mtz")
         if refined_mtzs:
             bootstrap_mean_map(refined_mtzs, 1, prefix)
         else:
             logging.warning(
                 f"No refined MTZ files found with a filename template"
-                f"{args.file_name_template}*_refine.mtz"
+                f"{args.file_name_template}_llweight*_refine.mtz"
             )
         return
 
@@ -1553,7 +1556,9 @@ def main():
                     quick=args.quick,
                     n_proc=n_proc,
                 )
-                bootstrap_analyse_stats(refined_jsons_bootstrap, 1, prefix)
+                bootstrap_analyse_stats(
+                    refined_jsons_bootstrap, refined_jsons[i_mtz], 1, prefix
+                )
                 if os.path.splitext(model)[1] == ".cif":
                     bootstrap_analyse_structures(
                         refined_mmcifs_bootstrap,
