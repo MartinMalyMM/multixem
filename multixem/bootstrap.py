@@ -411,6 +411,10 @@ def scatter_plot_histogram(x, y, label, stat_ref, idx=0, prefix=""):
 
     min_val = min(min(x), min(y))
     max_val = max(max(x), max(y))
+    if stat_ref:
+        for ref_value in stat_ref.values():
+            min_val = min(min_val, ref_value)
+            max_val = max(max_val, ref_value)
     buffer = (max_val - min_val) * 0.05  # 5% buffer around the data range
 
     fig, axs = plt.subplot_mosaic(
@@ -471,7 +475,7 @@ def scatter_plot_histogram(x, y, label, stat_ref, idx=0, prefix=""):
             stat_value,
             color="orange",
             linestyle="--",
-            label=f"{stat_ref_label} = {match_sigfigs(stat_value, stdev)}",
+            label=f"reference {stat_ref_label} = {match_sigfigs(stat_value, stdev)}",
         )
     ax_histx.grid(axis="y", alpha=0.75)
     ax_histx.legend()
