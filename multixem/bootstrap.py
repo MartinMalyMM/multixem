@@ -555,6 +555,10 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
 
     if idx and prefix:
         stats_ref_equivalents = {
+            "R": "R",
+            "R1": "R1",
+            "CCFavg": "CCFavg",
+            "CCIavg": "CCIavg",
             "R_llw>0": "Rwork",
             "R_llw=0": "Rfree",
             "CCF_llw>0_avg": "CCFworkavg",
@@ -570,6 +574,13 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
             with open(json_ref) as f:
                 data_ref_loaded = json.load(f)
                 data_ref = data_ref_loaded[-1]["data"]["summary"]
+                if data_ref:
+                    logging.info(f"Loaded reference statistics from {json_ref}")
+                    print(data_ref)
+                else:
+                    logging.warning(
+                        f"No summary statistics found in reference {json_ref}"
+                    )
         else:
             logging.warning(f"Reference file with statistics not found: {json_ref}")
 
