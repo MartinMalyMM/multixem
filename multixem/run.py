@@ -24,6 +24,8 @@ from .bootstrap import (
     bootstrap_analyse_stats,
     bootstrap_analyse_structures,
     bootstrap_mean_map,
+    select_cids_for_geometry_analysis,
+    geometry_analysis_load,
 )
 
 matplotlib.use("Agg")
@@ -1302,7 +1304,16 @@ def main():
         refined_mmcifs = glob.glob(f"{args.file_name_template}_llweight*_refine.mmcif")
         refined_mmcifs2 = glob.glob(f"{args.file_name_template}_llweight*_refine.cif")
         refined_mmcifs = refined_mmcifs + refined_mmcifs2
+
         if refined_mmcifs:
+            if args.geometry_cids and refined_mmcif_ref:
+                st_ref = gemmi.read_structure(refined_mmcif_ref)
+                geometry_objects_ref = select_cids_for_geometry_analysis(
+                    args.geometry_cids
+                )
+                geometry_objects_ref = geometry_analysis_load(
+                    st_ref, geometry_objects_ref
+                )
             bootstrap_analyse_structures(
                 refined_mmcifs,
                 refined_mmcif_ref,
@@ -1311,6 +1322,7 @@ def main():
                 False,
                 args.cif,
                 args.geometry_cids,
+                geometry_objects_ref,
             )
         else:
             logging.warning(
@@ -1555,9 +1567,18 @@ def main():
             for i_mtz, (mtz_in, labin, model) in enumerate(
                 zip(mtzs_in, labins, models)
             ):
+                if args.geometry_cids:
+                    st_ref = gemmi.read_structure(refined_mmcifs[i_mtz])
+                    geometry_objects_ref = select_cids_for_geometry_analysis(
+                        args.geometry_cids
+                    )
+                    geometry_objects_ref = geometry_analysis_load(
+                        st_ref, geometry_objects_ref
+                    )
                 mtzs_bootstrap = bootstrap_dataset(
                     mtz_in, binner_master, seeds=range(1001, 1001 + args.bootstrap)
                 )
+                # TODO create retraints
                 (
                     refined_mmcifs_bootstrap,
                     refined_mtzs_bootstrap,
@@ -1585,6 +1606,7 @@ def main():
                         False,
                         model,
                         args.geometry_cids,
+                        geometry_objects_ref,
                     )
                 else:
                     bootstrap_analyse_structures(
@@ -1595,6 +1617,7 @@ def main():
                         False,
                         "",
                         args.geometry_cids,
+                        geometry_objects_ref,
                     )
                 bootstrap_mean_map(
                     refined_mtzs_bootstrap, i_mtz + 1, prefix, binner_master

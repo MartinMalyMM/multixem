@@ -588,6 +588,235 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
     return data_overall_dict
 
 
+def calculate_angle(atom1_pos, atom2_pos, atom3_pos, degrees=True):
+    """
+    Calculate the angle ABC (at atom2) from gemmi.Position objects.
+    """
+    A = numpy.array(atom1_pos.tolist())
+    B = numpy.array(atom2_pos.tolist())
+    C = numpy.array(atom3_pos.tolist())
+    BA = A - B
+    BC = C - B
+    BA_norm = numpy.linalg.norm(BA)
+    BC_norm = numpy.linalg.norm(BC)
+
+    if BA_norm == 0 or BC_norm == 0:
+        raise ValueError("One of the vectors has zero length.")
+
+    cos_theta = numpy.dot(BA, BC) / (BA_norm * BC_norm)
+    cos_theta = numpy.clip(cos_theta, -1.0, 1.0)  # Numerical stability
+    theta_rad = numpy.arccos(cos_theta)
+
+    return numpy.degrees(theta_rad) if degrees else theta_rad
+
+
+def calculate_torsion_angle(atom1_pos, atom2_pos, atom3_pos, atom4_pos, degrees=True):
+    """
+    Calculates the torsion (dihedral) angle between four gemmi.Position objects.
+    Angle is defined by A–B–C–D.
+    """
+    A = numpy.array(atom1_pos.tolist())
+    B = numpy.array(atom2_pos.tolist())
+    C = numpy.array(atom3_pos.tolist())
+    D = numpy.array(atom4_pos.tolist())
+    b1 = B - A
+    b2 = C - B
+    b3 = D - C
+
+    # Normalize b2 to avoid length effects
+    b2_norm = numpy.linalg.norm(b2)
+    if b2_norm == 0:
+        raise ValueError("Vector B–C has zero length.")
+    b2_unit = b2 / b2_norm
+
+    # Normal vectors to the planes
+    n1 = numpy.cross(b1, b2)  # normal to plane A–B–C
+    n2 = numpy.cross(b2, b3)  # normal to plane B–C–D
+    n1_norm = numpy.linalg.norm(n1)
+    n2_norm = numpy.linalg.norm(n2)
+
+    if n1_norm == 0 or n2_norm == 0:
+        raise ValueError("Colinear atoms - torsion angle undefined.")
+
+    n1_unit = n1 / n1_norm
+    n2_unit = n2 / n2_norm
+
+    m1 = numpy.cross(n1_unit, b2_unit)
+    x = numpy.dot(n1_unit, n2_unit)
+    y = numpy.dot(m1, n2_unit)
+
+    angle_rad = numpy.arctan2(y, x)
+    angle_rad = -angle_rad  # why?
+    return numpy.degrees(angle_rad) if degrees else angle_rad
+
+
+def circular_mean_deg(angles_deg):
+    angles_rad = numpy.deg2rad(angles_deg)
+    mean_angle_rad = numpy.arctan2(
+        numpy.mean(numpy.sin(angles_rad)), numpy.mean(numpy.cos(angles_rad))
+    )
+    mean_angle_deg = numpy.rad2deg(mean_angle_rad)
+    # Ensure result is in [0, 360)
+    if mean_angle_deg >= 180:
+        mean_angle_deg -= 360
+    elif mean_angle_deg < -180:
+        mean_angle_deg += 360
+    return mean_angle_deg
+
+
+def circular_std_deg(angles_deg):
+    angles_rad = numpy.deg2rad(angles_deg)
+    R = numpy.sqrt(
+        numpy.mean(numpy.sin(angles_rad)) ** 2 + numpy.mean(numpy.cos(angles_rad)) ** 2
+    )
+    # Circular standard deviation in degrees
+    return numpy.rad2deg(numpy.sqrt(-2 * numpy.log(R)))
+
+
+def apply_symmetry_and_translation(st, op, t, pos_cart):
+    # Convert Cartesian to fractional
+    pos_frac = st.cell.fractionalize(pos_cart)
+    # Apply symmetry op (returns list), then wrap as Fractional
+    sym_applied = gemmi.Fractional(*op.apply_to_xyz(pos_frac))
+    new_frac = sym_applied + gemmi.Fractional(t[0], t[1], t[2])
+    # Convert back to Cartesian
+    pos_cart_new = st.cell.orthogonalize(new_frac)
+    return pos_cart_new
+
+
+def select_cids_for_geometry_analysis(geometry_cids_file):
+    """
+    Read a file with atom CIDs for geometry analysis.
+
+    Example file content:
+    //AAA/401/O3 //AAA/228/NE2
+    //AAA/401/N2 //AAA/228/OE1
+    //AAA/401/O2 //AAA/57/OG1@2665
+    //AAA/401/O1 //AAA/401/O2 //AAA/254/ND2
+    //AAA/176/NE //AAA/176/CZ //AAA/176/NH2 //AAA/401/O4
+
+    Each line has 2, 3, or 4 atom CIDs for bond, angle, or torsion analysis.
+    The CID format is extended to allow specifying symmetry mates (e.g. @2665)
+
+    Returns:
+        list of dict: Each dict has keys: atom1, atom2, atom3, atom4, type, values
+    """
+    objects_geom = []
+    if geometry_cids_file and os.path.isfile(geometry_cids_file):
+        with open(geometry_cids_file) as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                cids = line.split()
+                assert len(cids) in [
+                    2,
+                    3,
+                    4,
+                ], f"Invalid line in {geometry_cids_file}: {line}"
+                object_geom = {}
+                object_geom["atom1"] = cids[0]
+                object_geom["atom2"] = cids[1]
+                object_geom["values"] = []
+                if len(cids) == 2:
+                    object_geom["atom3"] = ""
+                    object_geom["atom4"] = ""
+                    object_geom["type"] = "distance"
+                elif len(cids) == 3:
+                    object_geom["atom3"] = cids[2]
+                    object_geom["atom4"] = ""
+                    object_geom["type"] = "angle"
+                elif len(cids) == 4:
+                    object_geom["atom3"] = cids[2]
+                    object_geom["atom4"] = cids[3]
+                    object_geom["type"] = "torsion"
+                objects_geom.append(object_geom)
+
+    return objects_geom
+
+
+def geometry_analysis_load(st, objects_cids):
+    """
+    For a given structure, calculate bond lengths, angles, and torsions
+    for the specified atom CIDs.
+    `objects_cids` is a list of dicts with keys:
+    atom1, atom2, atom3, atom4, type, values
+    The results are appended to the 'values' list in each dict.
+    """
+
+    for object_geom in objects_cids:
+        pos1 = get_pos_from_cid(st, object_geom["atom1"])
+        pos2 = get_pos_from_cid(st, object_geom["atom2"], pos1)
+
+        if object_geom["type"] == "distance":
+            dist = pos1.dist(pos2)
+            object_geom["values"].append(dist)
+
+        elif object_geom["type"] in ["angle", "torsion"]:
+            pos3 = get_pos_from_cid(st, object_geom["atom3"], pos2)
+
+            if object_geom["type"] == "angle":
+                angle = calculate_angle(pos1, pos2, pos3)
+                object_geom["values"].append(angle)
+
+            elif object_geom["type"] == "torsion":
+                pos4 = get_pos_from_cid(st, object_geom["atom4"], pos3)
+                torsion = calculate_torsion_angle(pos1, pos2, pos3, pos4)
+                object_geom["values"].append(torsion)
+
+    return objects_cids
+
+
+def get_pos_from_cid(st, cid, pos_reference=None):
+    """
+    Get Cartesian position of an atom from its CID in a structure.
+    Extended CID format: /model/chain/residue/atom[@symop]
+    where symop is e.g. 2665 for space group operation No. 2
+    and translation (+1,+1,0), i.e. -x+1, -y+1, z in I222.
+    """
+    sel = gemmi.Selection(f"{cid.split('@')[0]}")
+    sel_model = sel.copy_model_selection(st[0])
+    assert sel_model.count_atom_sites() == 1, (
+        f"{cid} does not select exactly one atom but"
+        f" {sel_model.count_atom_sites()} atoms."
+    )
+    if pos_reference and "@" not in cid:
+        # get position corresponding to a symmetry mate with
+        # the shortest distance
+        pos_candidates = []
+        for i_symm_op in range(len(list(st.find_spacegroup().operations()))):
+            pos = st.cell.find_nearest_pbc_position(
+                pos_reference, sel.first(st)[1].atom.pos, i_symm_op
+            )
+            pos_candidates.append(pos)
+        pos = min(pos_candidates, key=lambda p: pos_reference.dist(p))
+    elif "@" in cid:
+        # get the distance of an explicitly given symmetry mate
+        symop_str = cid.split("@")[-1]
+        assert len(symop_str) == 4, (
+            "Symmetry operation format must have 4 digits (e.g. 2665 or 1555),"
+            f" this is invalid: {symop_str}"
+        )
+        try:
+            symop_no = int(symop_str[0])
+            op = list(st.find_spacegroup().operations())[symop_no - 1]
+            t = (
+                int(symop_str[1]) - 5,
+                int(symop_str[2]) - 5,
+                int(symop_str[3]) - 5,
+            )
+            pos = sel.first(st)[1].atom.pos
+            pos = gemmi.Position(pos.x, pos.y, pos.z)  # Make a copy
+            pos = apply_symmetry_and_translation(st, op, t, pos)
+        except Exception as e:
+            raise ValueError(
+                "Symmetry operation format must have 4 digits (e.g. 2665 or 1555),"
+                f" this is invalid: {cid}.\n{e}"
+            )
+    else:
+        pos = sel.first(st)[1].atom.pos
+    return pos
+
+
 def bootstrap_analyse_structures(
     refined_mmcifs,
     mmcif_ref,
@@ -596,6 +825,7 @@ def bootstrap_analyse_structures(
     skip_hydrogen=False,
     smcif="",
     geometry_cids_file="",
+    geometry_objects_ref=[],
 ):
     """
     Analyse structure models (mmCIF files) to compute mean coordinates and B-factors.
@@ -891,229 +1121,6 @@ def bootstrap_analyse_structures(
 
         return atoms_list, u_aniso_list, bonds_list, angles_list, torsions_list
 
-    def calculate_angle(atom1_pos, atom2_pos, atom3_pos, degrees=True):
-        """
-        Calculate the angle ABC (at atom2) from gemmi.Position objects.
-        """
-        A = numpy.array(atom1_pos.tolist())
-        B = numpy.array(atom2_pos.tolist())
-        C = numpy.array(atom3_pos.tolist())
-        BA = A - B
-        BC = C - B
-        BA_norm = numpy.linalg.norm(BA)
-        BC_norm = numpy.linalg.norm(BC)
-
-        if BA_norm == 0 or BC_norm == 0:
-            raise ValueError("One of the vectors has zero length.")
-
-        cos_theta = numpy.dot(BA, BC) / (BA_norm * BC_norm)
-        cos_theta = numpy.clip(cos_theta, -1.0, 1.0)  # Numerical stability
-        theta_rad = numpy.arccos(cos_theta)
-
-        return numpy.degrees(theta_rad) if degrees else theta_rad
-
-    def calculate_torsion_angle(
-        atom1_pos, atom2_pos, atom3_pos, atom4_pos, degrees=True
-    ):
-        """
-        Calculates the torsion (dihedral) angle between four gemmi.Position objects.
-        Angle is defined by A–B–C–D.
-        """
-        A = numpy.array(atom1_pos.tolist())
-        B = numpy.array(atom2_pos.tolist())
-        C = numpy.array(atom3_pos.tolist())
-        D = numpy.array(atom4_pos.tolist())
-        b1 = B - A
-        b2 = C - B
-        b3 = D - C
-
-        # Normalize b2 to avoid length effects
-        b2_norm = numpy.linalg.norm(b2)
-        if b2_norm == 0:
-            raise ValueError("Vector B–C has zero length.")
-        b2_unit = b2 / b2_norm
-
-        # Normal vectors to the planes
-        n1 = numpy.cross(b1, b2)  # normal to plane A–B–C
-        n2 = numpy.cross(b2, b3)  # normal to plane B–C–D
-        n1_norm = numpy.linalg.norm(n1)
-        n2_norm = numpy.linalg.norm(n2)
-
-        if n1_norm == 0 or n2_norm == 0:
-            raise ValueError("Colinear atoms - torsion angle undefined.")
-
-        n1_unit = n1 / n1_norm
-        n2_unit = n2 / n2_norm
-
-        m1 = numpy.cross(n1_unit, b2_unit)
-        x = numpy.dot(n1_unit, n2_unit)
-        y = numpy.dot(m1, n2_unit)
-
-        angle_rad = numpy.arctan2(y, x)
-        angle_rad = -angle_rad  # why?
-        return numpy.degrees(angle_rad) if degrees else angle_rad
-
-    def circular_mean_deg(angles_deg):
-        angles_rad = numpy.deg2rad(angles_deg)
-        mean_angle_rad = numpy.arctan2(
-            numpy.mean(numpy.sin(angles_rad)), numpy.mean(numpy.cos(angles_rad))
-        )
-        mean_angle_deg = numpy.rad2deg(mean_angle_rad)
-        # Ensure result is in [0, 360)
-        if mean_angle_deg >= 180:
-            mean_angle_deg -= 360
-        elif mean_angle_deg < -180:
-            mean_angle_deg += 360
-        return mean_angle_deg
-
-    def circular_std_deg(angles_deg):
-        angles_rad = numpy.deg2rad(angles_deg)
-        R = numpy.sqrt(
-            numpy.mean(numpy.sin(angles_rad)) ** 2
-            + numpy.mean(numpy.cos(angles_rad)) ** 2
-        )
-        # Circular standard deviation in degrees
-        return numpy.rad2deg(numpy.sqrt(-2 * numpy.log(R)))
-
-    def select_cids_for_geometry_analysis(geometry_cids_file):
-        """
-        Read a file with atom CIDs for geometry analysis.
-
-        Example file content:
-        //AAA/401/O3 //AAA/228/NE2
-        //AAA/401/N2 //AAA/228/OE1
-        //AAA/401/O2 //AAA/57/OG1@2665
-        //AAA/401/O1 //AAA/401/O2 //AAA/254/ND2
-        //AAA/176/NE //AAA/176/CZ //AAA/176/NH2 //AAA/401/O4
-
-        Each line has 2, 3, or 4 atom CIDs for bond, angle, or torsion analysis.
-        The CID format is extended to allow specifying symmetry mates (e.g. @2665)
-
-        Returns:
-            list of dict: Each dict has keys: atom1, atom2, atom3, atom4, type, values
-        """
-        objects_geom = []
-        if geometry_cids_file and os.path.isfile(geometry_cids_file):
-            with open(geometry_cids_file) as f:
-                for line in f:
-                    if not line.strip():
-                        continue
-                    cids = line.split()
-                    assert len(cids) in [
-                        2,
-                        3,
-                        4,
-                    ], f"Invalid line in {geometry_cids_file}: {line}"
-                    object_geom = {}
-                    object_geom["atom1"] = cids[0]
-                    object_geom["atom2"] = cids[1]
-                    object_geom["values"] = []
-                    if len(cids) == 2:
-                        object_geom["atom3"] = ""
-                        object_geom["atom4"] = ""
-                        object_geom["type"] = "distance"
-                    elif len(cids) == 3:
-                        object_geom["atom3"] = cids[2]
-                        object_geom["atom4"] = ""
-                        object_geom["type"] = "angle"
-                    elif len(cids) == 4:
-                        object_geom["atom3"] = cids[2]
-                        object_geom["atom4"] = cids[3]
-                        object_geom["type"] = "torsion"
-                    objects_geom.append(object_geom)
-        return objects_geom
-
-    def apply_symmetry_and_translation(st, op, t, pos_cart):
-        # Convert Cartesian to fractional
-        pos_frac = st.cell.fractionalize(pos_cart)
-        # Apply symmetry op (returns list), then wrap as Fractional
-        sym_applied = gemmi.Fractional(*op.apply_to_xyz(pos_frac))
-        new_frac = sym_applied + gemmi.Fractional(t[0], t[1], t[2])
-        # Convert back to Cartesian
-        pos_cart_new = st.cell.orthogonalize(new_frac)
-        return pos_cart_new
-
-    def get_pos_from_cid(st, cid, pos_reference=None):
-        """
-        Get Cartesian position of an atom from its CID in a structure.
-        Extended CID format: /model/chain/residue/atom[@symop]
-        where symop is e.g. 2665 for space group operation No. 2
-        and translation (+1,+1,0), i.e. -x+1, -y+1, z in I222.
-        """
-        sel = gemmi.Selection(f"{cid.split('@')[0]}")
-        sel_model = sel.copy_model_selection(st[0])
-        assert sel_model.count_atom_sites() == 1, (
-            f"{cid} does not select exactly one atom but"
-            f" {sel_model.count_atom_sites()} atoms."
-        )
-        if pos_reference and "@" not in cid:
-            # get position corresponding to a symmetry mate with
-            # the shortest distance
-            pos_candidates = []
-            for i_symm_op in range(len(list(st.find_spacegroup().operations()))):
-                pos = st.cell.find_nearest_pbc_position(
-                    pos_reference, sel.first(st)[1].atom.pos, i_symm_op
-                )
-                pos_candidates.append(pos)
-            pos = min(pos_candidates, key=lambda p: pos_reference.dist(p))
-        elif "@" in cid:
-            # get the distance of an explicitly given symmetry mate
-            symop_str = cid.split("@")[-1]
-            assert len(symop_str) == 4, (
-                "Symmetry operation format must have 4 digits (e.g. 2665 or 1555),"
-                f" this is invalid: {symop_str}"
-            )
-            try:
-                symop_no = int(symop_str[0])
-                op = list(st.find_spacegroup().operations())[symop_no - 1]
-                t = (
-                    int(symop_str[1]) - 5,
-                    int(symop_str[2]) - 5,
-                    int(symop_str[3]) - 5,
-                )
-                pos = sel.first(st)[1].atom.pos
-                pos = gemmi.Position(pos.x, pos.y, pos.z)  # Make a copy
-                pos = apply_symmetry_and_translation(st, op, t, pos)
-            except Exception as e:
-                raise ValueError(
-                    "Symmetry operation format must have 4 digits (e.g. 2665 or 1555),"
-                    f" this is invalid: {cid}.\n{e}"
-                )
-        else:
-            pos = sel.first(st)[1].atom.pos
-        return pos
-
-    def geometry_analysis_load(st, objects_cids):
-        """
-        For a given structure, calculate bond lengths, angles, and torsions
-        for the specified atom CIDs.
-        `objects_cids` is a list of dicts with keys:
-        atom1, atom2, atom3, atom4, type, values
-        The results are appended to the 'values' list in each dict.
-        """
-
-        for object_geom in objects_cids:
-            pos1 = get_pos_from_cid(st, object_geom["atom1"])
-            pos2 = get_pos_from_cid(st, object_geom["atom2"], pos1)
-
-            if object_geom["type"] == "distance":
-                dist = pos1.dist(pos2)
-                object_geom["values"].append(dist)
-
-            elif object_geom["type"] in ["angle", "torsion"]:
-                pos3 = get_pos_from_cid(st, object_geom["atom3"], pos2)
-
-                if object_geom["type"] == "angle":
-                    angle = calculate_angle(pos1, pos2, pos3)
-                    object_geom["values"].append(angle)
-
-                elif object_geom["type"] == "torsion":
-                    pos4 = get_pos_from_cid(st, object_geom["atom4"], pos3)
-                    torsion = calculate_torsion_angle(pos1, pos2, pos3, pos4)
-                    object_geom["values"].append(torsion)
-
-        return objects_cids
-
     # numpy.set_printoptions(threshold=numpy.inf)
     st_first = gemmi.read_structure(refined_mmcifs[0])
     st_first_cras = [
@@ -1169,9 +1176,6 @@ def bootstrap_analyse_structures(
 
     if geometry_cids_file:
         geometry_objects = select_cids_for_geometry_analysis(geometry_cids_file)
-        if mmcif_ref and os.path.isfile(mmcif_ref):
-            geometry_objects_ref = select_cids_for_geometry_analysis(geometry_cids_file)
-            geometry_objects_ref = geometry_analysis_load(st_ref, geometry_objects_ref)
 
     if smcif:
         atoms_list, u_aniso_list, bonds_list, angles_list, torsions_list = (
