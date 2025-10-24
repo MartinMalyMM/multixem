@@ -1254,21 +1254,45 @@ def bootstrap_analyse_structures(
         geometry_analysis_bonds = [
             obj for obj in geometry_objects if obj["type"] == "distance"
         ]
-        for obj in geometry_analysis_bonds:
+        geometry_analysis_angles_torsions = [
+            obj for obj in geometry_objects if obj["type"] in ["angle", "torsion"]
+        ]
+        obj_bond_refs = [{}] * len(geometry_analysis_bonds)
+        obj_angle_torsion_refs = [{}] * len(geometry_analysis_angles_torsions)
+        if mmcif_ref and os.path.isfile(mmcif_ref):
+            geometry_analysis_bonds_ref = [
+                obj for obj in geometry_objects_ref if obj["type"] == "distance"
+            ]
+            assert len(geometry_analysis_bonds) == len(geometry_analysis_bonds_ref)
+            for i, obj in enumerate(geometry_analysis_bonds_ref):
+                assert len(obj["values"]) == 1
+                obj_bond_refs[i] = {"distance": obj["values"][0]}
+            geometry_analysis_angles_torsions_ref = [
+                obj
+                for obj in geometry_objects_ref
+                if obj["type"] in ["angle", "torsion"]
+            ]
+            assert len(geometry_analysis_angles_torsions) == len(
+                geometry_analysis_angles_torsions_ref
+            )
+            for i, obj in enumerate(geometry_analysis_angles_torsions_ref):
+                assert len(obj["values"]) == 1
+                obj_angle_torsion_refs[i] = {obj["type"]: obj["values"][0]}
+
+        for i, obj in enumerate(geometry_analysis_bonds):
             obj["values"] = numpy.array(obj["values"])
             obj["mean"] = numpy.nanmean(obj["values"])
             obj["std"] = numpy.nanstd(obj["values"], ddof=1)
             plot_histogram(
                 obj["values"],
                 f"distance {obj['atom1']} {obj['atom2']}",
+                obj_bond_refs[i],
                 idx,
                 prefix,
             )
             del obj["values"]
-        geometry_analysis_angles_torsions = [
-            obj for obj in geometry_objects if obj["type"] in ["angle", "torsion"]
-        ]
-        for obj in geometry_analysis_angles_torsions:
+
+        for i, obj in enumerate(geometry_analysis_angles_torsions):
             obj["values"] = numpy.array(obj["values"])
             obj["mean"] = circular_mean_deg(obj["values"])
             obj["std"] = circular_std_deg(obj["values"])
@@ -1276,6 +1300,7 @@ def bootstrap_analyse_structures(
                 plot_histogram(
                     obj["values"],
                     f"angle {obj['atom1']} {obj['atom2']} {obj['atom3']}",
+                    obj_angle_torsion_refs[i],
                     idx,
                     prefix,
                 )
@@ -1284,6 +1309,7 @@ def bootstrap_analyse_structures(
                     obj["values"],
                     f"torsion angle"
                     f" {obj['atom1']} {obj['atom2']} {obj['atom3']} {obj['atom4']}",
+                    obj_angle_torsion_refs[i],
                     idx,
                     prefix,
                 )
