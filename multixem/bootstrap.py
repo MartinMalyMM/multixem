@@ -300,13 +300,14 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
     return mtzs_out
 
 
-def plot_histogram(values, xlabel, idx=0, prefix=""):
+def plot_histogram(values, xlabel, ref={}, idx=0, prefix=""):
     """
     Plot a histogram of the data and save as PNG.
 
     Args:
         data (list or numpy array): Data to plot.
         xlabel (str): Label for the x-axis and the output file.
+        ref (dict): Reference values for the plot {label: value}.
         idx (int): Index for naming the output file (applies if not set to 0).
         prefix (str): Prefix for the output filename.
     """
@@ -315,6 +316,12 @@ def plot_histogram(values, xlabel, idx=0, prefix=""):
     stdev = numpy.std(values, ddof=1)
     median = numpy.median(values)
     mad = numpy.median(numpy.abs(values - median))
+    min_val = numpy.min(values)
+    max_val = numpy.max(values)
+    if ref:
+        for ref_value in ref.values():
+            min_val = min(min_val, ref_value)
+            max_val = max(max_val, ref_value)
 
     plt.figure(figsize=(8, 6))
     plt.bar(
@@ -325,6 +332,8 @@ def plot_histogram(values, xlabel, idx=0, prefix=""):
     plt.gca().yaxis.set_major_locator(
         ticker.MaxNLocator(integer=True)
     )  # Ensure integer y-axis labels
+    buffer = (max_val - min_val) * 0.05  # 5% buffer around the data range
+    plt.xlim(min_val - buffer, max_val + buffer)
     plt.axvline(
         mean,
         color="blue",
@@ -337,6 +346,13 @@ def plot_histogram(values, xlabel, idx=0, prefix=""):
         linestyle="--",
         label=f"Median ± MAD = {match_sigfigs(median, mad)} ± {mad:.2g}",
     )
+    for stat_ref_label, stat_value in ref.items():
+        plt.axvline(
+            stat_value,
+            color="orange",
+            linestyle="--",
+            label=f"reference {stat_ref_label} = {match_sigfigs(stat_value, stdev)}",
+        )
     plt.grid(axis="y", alpha=0.75)
     plt.tight_layout()
     plt.legend()
@@ -348,7 +364,7 @@ def plot_histogram(values, xlabel, idx=0, prefix=""):
     logging.info(f"Saved histogram to {png_filename}")
 
 
-def scatter_plot_histogram(x, y, label, stat_ref, idx=0, prefix=""):
+def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix=""):
     """
     Plot a scatter plot of x vs y including histograms and save as PNG.
 
@@ -574,6 +590,7 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
 
 def bootstrap_analyse_structures(
     refined_mmcifs,
+    mmcif_ref,
     idx=0,
     prefix="",
     skip_hydrogen=False,
@@ -587,6 +604,7 @@ def bootstrap_analyse_structures(
 
     Args:
         refined_mmcifs (list of str): List of mmCIF filenames.
+        mmcif_ref: Reference mmCIF (refined in a standard way)
         idx (int): Index for naming the output files (applies if not set to 0).
         prefix (str): Prefix for the output filenames.
         skip_hydrogen (bool): If True, skip hydrogen atoms in the analysis.
@@ -1096,32 +1114,64 @@ def bootstrap_analyse_structures(
 
         return objects_cids
 
-    if geometry_cids_file:
-        geometry_objects = select_cids_for_geometry_analysis(geometry_cids_file)
     # numpy.set_printoptions(threshold=numpy.inf)
-    st_master = gemmi.read_structure(refined_mmcifs[0])
-    st_master_cras = [
+    st_first = gemmi.read_structure(refined_mmcifs[0])
+    st_first_cras = [
         cra
-        for cra in st_master[0].all()
+        for cra in st_first[0].all()
         if not skip_hydrogen or not cra.atom.is_hydrogen()
     ]
     logging.info(
-        f"{len(st_master_cras)} atoms in the master structure will be analysed."
+        f"{len(st_first_cras)} atoms in the first structure {refined_mmcifs[0]}"
+        " will be analysed."
     )
     if skip_hydrogen:
         logging.info("(Not taking into account hydrogen atoms)")
 
-    atom_addresses = [makeAddressStr(cra) for cra in st_master_cras]
-    atomic_numbers = [cra.atom.element.atomic_number for cra in st_master_cras]
+    atom_addresses = [makeAddressStr(cra) for cra in st_first_cras]
+    atomic_numbers = [cra.atom.element.atomic_number for cra in st_first_cras]
     coords = numpy.zeros(
-        (len(st_master_cras), 3, len(refined_mmcifs)), dtype=numpy.float32
+        (len(st_first_cras), 3, len(refined_mmcifs)), dtype=numpy.float32
     )
     b_values = numpy.zeros(
-        (len(st_master_cras), len(refined_mmcifs)), dtype=numpy.float32
+        (len(st_first_cras), len(refined_mmcifs)), dtype=numpy.float32
     )
     u_aniso = numpy.zeros(
-        (len(st_master_cras), 6, len(refined_mmcifs)), dtype=numpy.float32
+        (len(st_first_cras), 6, len(refined_mmcifs)), dtype=numpy.float32
     )
+
+    ref_b_value = {}
+    if mmcif_ref and os.path.isfile(mmcif_ref):
+        st_ref = gemmi.read_structure(mmcif_ref)
+        st_ref_cras = [
+            cra
+            for cra in st_ref[0].all()
+            if not skip_hydrogen or not cra.atom.is_hydrogen()
+        ]
+        logging.info(
+            f"{len(st_ref_cras)} atoms in the reference structure {mmcif_ref}"
+            " will be analysed."
+        )
+        if skip_hydrogen:
+            logging.info("(Not taking into account hydrogen atoms)")
+
+        ref_b_values = []
+        if len(st_first_cras) != len(st_ref_cras):
+            logging.warning(
+                f"Inconsistent reference structure {mmcif_ref}"
+                f" ({len(st_ref_cras)} atoms) with structure models after bootstrapping"
+                f" ({len(st_first_cras)} atoms)"
+            )
+        for cra_ref in st_ref_cras:
+            ref_b_values.append(cra_ref.atom.b_iso)
+        ref_b_values = numpy.array(ref_b_values)
+        ref_b_value = {"median B-value": numpy.median(ref_b_values)}
+
+    if geometry_cids_file:
+        geometry_objects = select_cids_for_geometry_analysis(geometry_cids_file)
+        if mmcif_ref and os.path.isfile(mmcif_ref):
+            geometry_objects_ref = select_cids_for_geometry_analysis(geometry_cids_file)
+            geometry_objects_ref = geometry_analysis_load(st_ref, geometry_objects_ref)
 
     if smcif:
         atoms_list, u_aniso_list, bonds_list, angles_list, torsions_list = (
@@ -1150,15 +1200,15 @@ def bootstrap_analyse_structures(
             for cra in st[0].all()
             if not skip_hydrogen or not cra.atom.is_hydrogen()
         ]
-        assert len(st_master_cras) == len(st_cras), "Different number of atoms in"
+        assert len(st_first_cras) == len(st_cras), "Different number of atoms in"
         f" structure models after bootstrapping: {mmcif}."
-        for a, (cra_master, cra) in enumerate(zip(st_master_cras, st_cras)):
+        for a, (cra_first, cra) in enumerate(zip(st_first_cras, st_cras)):
             assert (
-                cra_master.atom.name == cra.atom.name
-                and cra_master.atom.altloc == cra.atom.altloc
-                and cra_master.residue.name == cra.residue.name
-                and cra_master.residue.seqid == cra.residue.seqid
-                and cra_master.chain.name == cra.chain.name
+                cra_first.atom.name == cra.atom.name
+                and cra_first.atom.altloc == cra.atom.altloc
+                and cra_first.residue.name == cra.residue.name
+                and cra_first.residue.seqid == cra.residue.seqid
+                and cra_first.chain.name == cra.chain.name
             ), f"Inconsistent structure models after bootstrapping: {mmcif}."
             coords[a, :, s] = [cra.atom.pos.x, cra.atom.pos.y, cra.atom.pos.z]
             b_values[a, s] = cra.atom.b_iso
@@ -1313,8 +1363,8 @@ def bootstrap_analyse_structures(
     #
     # std_coords_norm = sqrt(σ_x² + σ_y² + σ_z² + 2 * (σ_xy + σ_xz + σ_yz))
     # Calculate joint sigma of coordinates, assuming correlation between x, y, z
-    std_coords_norm = numpy.zeros(len(st_master_cras))
-    for i in range(len(st_master_cras)):
+    std_coords_norm = numpy.zeros(len(st_first_cras))
+    for i in range(len(st_first_cras)):
         cov = numpy.cov(coords[i, :, :])
         std_coords_norm[i] = numpy.sqrt(
             numpy.trace(cov) + 2 * (cov[0, 1] + cov[0, 2] + cov[1, 2])
@@ -1325,7 +1375,9 @@ def bootstrap_analyse_structures(
     std_u_aniso = numpy.std(u_aniso, ddof=1, axis=2)  # shape: (n_atoms, 6)
 
     mean_b_values_per_structure = numpy.mean(b_values, axis=0)  # shape: (n_structures,)
-    plot_histogram(mean_b_values_per_structure, "Average B-value", idx, prefix)
+    plot_histogram(
+        mean_b_values_per_structure, "Average B-value", ref_b_value, idx, prefix
+    )
 
     keys_u_aniso = [
         "u11",
@@ -1387,7 +1439,7 @@ def bootstrap_analyse_structures(
             for key in keys_u_aniso:
                 csv_data[i][f"{key}_deposit"] = None
             for i_aniso in range(len(u_aniso_list)):
-                if u_aniso_list[i_aniso]["u_aniso_atom"] == st_master_cras[i].atom.name:
+                if u_aniso_list[i_aniso]["u_aniso_atom"] == st_first_cras[i].atom.name:
                     for key in keys_u_aniso:
                         csv_data[i][f"{key}_deposit"] = u_aniso_list[i_aniso][
                             f"{key}_deposit"
@@ -1436,7 +1488,7 @@ def bootstrap_analyse_structures(
         )
 
     # Write mean structure as mmCIF
-    for i, cra in enumerate(st_master_cras):
+    for i, cra in enumerate(st_first_cras):
         # Replace position with mean coordinates
         cra.atom.pos = gemmi.Position(*mean_coords[i])
         # Replace B-factor with norm of std deviation (or square it if desired)
@@ -1444,7 +1496,7 @@ def bootstrap_analyse_structures(
     mmcif_filename = (
         f"{prefix}group{idx}_mean_structure.mmcif" if idx else "mean_structure.mmcif"
     )
-    st_master.make_mmcif_document().write_file(mmcif_filename)
+    st_first.make_mmcif_document().write_file(mmcif_filename)
     logging.info(f"Mean structure written to {mmcif_filename}.")
     return
 

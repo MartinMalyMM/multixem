@@ -1285,15 +1285,32 @@ def main():
         refined_jsons = glob.glob(
             f"{args.file_name_template}_llweight*_refine_stats.json"
         )
-        refined_json_ref = f"{args.file_name_template}_refine_stats.json"
+        refined_json_ref_candidate = f"{args.file_name_template}_refine_stats.json"
+        refined_json_ref = (
+            refined_json_ref_candidate
+            if os.path.isfile(refined_json_ref_candidate)
+            else None
+        )
         if refined_jsons:
             bootstrap_analyse_stats(refined_jsons, refined_json_ref, 1, prefix)
+        refined_mmcif_ref_candidate = f"{args.file_name_template}_refine.mmcif"
+        refined_mmcif_ref = (
+            refined_mmcif_ref_candidate
+            if os.path.isfile(refined_mmcif_ref_candidate)
+            else None
+        )
         refined_mmcifs = glob.glob(f"{args.file_name_template}_llweight*_refine.mmcif")
         refined_mmcifs2 = glob.glob(f"{args.file_name_template}_llweight*_refine.cif")
         refined_mmcifs = refined_mmcifs + refined_mmcifs2
         if refined_mmcifs:
             bootstrap_analyse_structures(
-                refined_mmcifs, 1, prefix, False, args.cif, args.geometry_cids
+                refined_mmcifs,
+                refined_mmcif_ref,
+                1,
+                prefix,
+                False,
+                args.cif,
+                args.geometry_cids,
             )
         else:
             logging.warning(
@@ -1562,6 +1579,7 @@ def main():
                 if os.path.splitext(model)[1] == ".cif":
                     bootstrap_analyse_structures(
                         refined_mmcifs_bootstrap,
+                        refined_mmcifs[i_mtz],
                         i_mtz + 1,
                         prefix,
                         False,
@@ -1571,6 +1589,7 @@ def main():
                 else:
                     bootstrap_analyse_structures(
                         refined_mmcifs_bootstrap,
+                        refined_mmcifs[i_mtz],
                         i_mtz + 1,
                         prefix,
                         False,
