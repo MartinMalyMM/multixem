@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 import matplotlib.ticker as ticker
 from .tools import (
+    CID2RefmacRestraint,
     write_bin_stats,
     write_mtz_from_df,
     makeAddressStr,
@@ -298,6 +299,31 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
     )
 
     return mtzs_out
+
+
+def unrestrain(geometry_objects_ref):
+    """
+    Create a restraints file with unrestrained geometry for bootstrapping.
+
+    Args:
+        geometry_cids (list of list of str): List of CIDs for geometry restraints.
+        geometry_objects_ref (list of dict): Geometry objects from reference structure.
+
+    Returns:
+        str: Filename of the created restraints file.
+    """
+    restraints_lines = []
+    for geometry_object in geometry_objects_ref:
+        assert len(geometry_object["values"]) == 1
+        restraint = CID2RefmacRestraint(geometry_object)
+        restraints_lines.append(restraint)
+
+    restraints_filename = "restraints.txt"
+    with open(restraints_filename, "w") as f:
+        for line in restraints_lines:
+            f.write(line + "\n")
+    logging.info(f"Saved unrestrained geometry to {restraints_filename}")
+    return restraints_filename
 
 
 def plot_histogram(values, xlabel, ref={}, idx=0, prefix=""):

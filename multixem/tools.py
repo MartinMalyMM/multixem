@@ -146,6 +146,64 @@ def makeAddressStr(cra):
     return address
 
 
+def CID2RefmacRestraint(geometry_object):
+    """geometry_object is a dict with keys:
+    atom1, atom2, atom3, atom4 - CIDs of the atoms involved
+    values - list of reference values, should contain one value only"""
+
+    ref_value = geometry_object.get("values", [None])[0]
+    refmacAddresses = []
+    for cid in [
+        geometry_object["atom1"],
+        geometry_object["atom2"],
+        geometry_object["atom3"],
+        geometry_object["atom4"],
+    ]:
+        if not cid:
+            continue
+        print(f"Processing CID: {cid}")
+        cid_symm = len(cid.split("@")) > 1
+        cid_split = cid.split("@")[0].split("/")
+        assert len(cid_split) >= 5, f"Invalid CID: {cid}"
+        seqid_split = cid_split[3].split(".")
+        atom_split = cid_split[4].split(".")
+        refmacAddress = f"chain {cid_split[2]} "
+        refmacAddress += f"resi {seqid_split[0]} "
+        if len(seqid_split) > 1:
+            refmacAddress += f"inse {seqid_split[1]} "
+        refmacAddress += f"atom {atom_split[0]}"
+        if len(atom_split) > 1:
+            refmacAddress += f" alte {atom_split[1]}"
+        if cid_symm:
+            refmacAddress += " symm y"
+        refmacAddresses.append(refmacAddress)
+
+    if not geometry_object["atom2"]:
+        # single atom in refmac syntax - may not be useful...
+        return refmacAddresses[0]
+    elif not geometry_object["atom3"]:
+        # external distance restraint
+        if ref_value is None:
+            ref_value = 2.2
+        restraint = f"exte dist first {refmacAddresses[0]} second {refmacAddresses[1]}"
+        restraint += f" value {ref_value:<.2f} sigma {ref_value:<.2f} type 0"
+    elif not geometry_object["atom4"]:
+        # external angle restraint
+        if ref_value is None:
+            ref_value = 120
+        restraint = f"exte angle first {refmacAddresses[0]} next {refmacAddresses[1]}"
+        restraint += f" next {refmacAddresses[2]}"
+        restraint += f" value {ref_value:<.2f} sigma 120 type 0"
+    else:
+        # external torsion restraint
+        if ref_value is None:
+            ref_value = 120
+        restraint = f"exte torsion first {refmacAddresses[0]} next {refmacAddresses[1]}"
+        restraint += f" next {refmacAddresses[2]} next {refmacAddresses[3]}"
+        restraint += f" value {ref_value:<.2f} sigma 120 type 0"
+    return restraint
+
+
 def filename_replace_char(filename):
     filename = filename.replace("=", "_equals_")
     filename = filename.replace(">", "_gt_")

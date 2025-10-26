@@ -26,6 +26,7 @@ from .bootstrap import (
     bootstrap_mean_map,
     select_cids_for_geometry_analysis,
     geometry_analysis_load,
+    unrestrain,
 )
 
 matplotlib.use("Agg")
@@ -796,6 +797,7 @@ def run_servalcat_refine(
     models,
     mtzs_free=[],
     source="xray",
+    keyword_file="",
     arguments=[],
     sigmaa=True,
     quick=False,
@@ -836,6 +838,8 @@ def run_servalcat_refine(
         ]
         if mtz_free:
             cmd.extend(["--hklin_free", mtz_free])
+        if keyword_file:
+            cmd.extend(["--keyword_file", keyword_file])
         if arguments:
             cmd.extend(arguments)
         if quick:
@@ -1563,6 +1567,7 @@ def main():
                 refined_mtzs, binner_master, bin_stats_matrix
             )
         if args.bootstrap:
+            # TODO: some features assume only single model...
             mtzs_in = mtzs_i
             for i_mtz, (mtz_in, labin, model) in enumerate(
                 zip(mtzs_in, labins, models)
@@ -1578,7 +1583,7 @@ def main():
                 mtzs_bootstrap = bootstrap_dataset(
                     mtz_in, binner_master, seeds=range(1001, 1001 + args.bootstrap)
                 )
-                # TODO create retraints
+                restraints_file = unrestrain(geometry_objects_ref)
                 (
                     refined_mmcifs_bootstrap,
                     refined_mtzs_bootstrap,
@@ -1589,6 +1594,7 @@ def main():
                     [model],
                     mtzs_free=mtzs_bootstrap,
                     source=args.source,
+                    keyword_file=restraints_file,
                     arguments=servalcat_args + ["--labin_llweight", "llweight"],
                     sigmaa=False,
                     quick=args.quick,
