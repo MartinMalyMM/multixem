@@ -1572,6 +1572,7 @@ def main():
             for i_mtz, (mtz_in, labin, model) in enumerate(
                 zip(mtzs_in, labins, models)
             ):
+                restraints_file = ""
                 if args.geometry_cids:
                     st_ref = gemmi.read_structure(refined_mmcifs[i_mtz])
                     geometry_objects_ref = select_cids_for_geometry_analysis(
@@ -1580,10 +1581,10 @@ def main():
                     geometry_objects_ref = geometry_analysis_load(
                         st_ref, geometry_objects_ref
                     )
+                    restraints_file = unrestrain(geometry_objects_ref)
                 mtzs_bootstrap = bootstrap_dataset(
                     mtz_in, binner_master, seeds=range(1001, 1001 + args.bootstrap)
                 )
-                restraints_file = unrestrain(geometry_objects_ref)
                 (
                     refined_mmcifs_bootstrap,
                     refined_mtzs_bootstrap,
