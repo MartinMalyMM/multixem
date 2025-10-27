@@ -582,7 +582,6 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
                 data_ref = data_ref_loaded[-1]["data"]["summary"]
                 if data_ref:
                     logging.info(f"Loaded reference statistics from {json_ref}")
-                    print(data_ref)
                 else:
                     logging.warning(
                         f"No summary statistics found in reference {json_ref}"
