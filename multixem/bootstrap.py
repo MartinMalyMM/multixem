@@ -226,7 +226,7 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
         # TODO: FreeR_flag
         # Save the llweights in the MTZ file
         mtz_out_name = (
-            f"{os.path.splitext(os.path.basename(mtz_file))[0]}_llweight_{i}.mtz"
+            f"{os.path.splitext(os.path.basename(mtz_file))[0]}_llweight{i}.mtz"
         )
         write_mtz_from_df(
             df_bootstrap1_weight_hkl,
