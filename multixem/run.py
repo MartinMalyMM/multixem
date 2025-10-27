@@ -1310,6 +1310,7 @@ def main():
         refined_mmcifs = refined_mmcifs + refined_mmcifs2
 
         if refined_mmcifs:
+            geometry_objects_ref = []
             if args.geometry_cids and refined_mmcif_ref:
                 st_ref = gemmi.read_structure(refined_mmcif_ref)
                 geometry_objects_ref = select_cids_for_geometry_analysis(
@@ -1572,6 +1573,7 @@ def main():
             for i_mtz, (mtz_in, labin, model) in enumerate(
                 zip(mtzs_in, labins, models)
             ):
+                geometry_objects_ref = []
                 restraints_file = ""
                 if args.geometry_cids:
                     st_ref = gemmi.read_structure(refined_mmcifs[i_mtz])
