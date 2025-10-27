@@ -186,21 +186,21 @@ def CID2RefmacRestraint(geometry_object):
         if ref_value is None:
             ref_value = 2.2
         restraint = f"exte dist first {refmacAddresses[0]} second {refmacAddresses[1]}"
-        restraint += f" value {ref_value:<.2f} sigma {ref_value:<.2f} type 0"
+        restraint += f" value {ref_value:<.2f} sigma 99 type 0"
     elif not geometry_object["atom4"]:
         # external angle restraint
         if ref_value is None:
             ref_value = 120
         restraint = f"exte angle first {refmacAddresses[0]} next {refmacAddresses[1]}"
         restraint += f" next {refmacAddresses[2]}"
-        restraint += f" value {ref_value:<.2f} sigma 120 type 0"
+        restraint += f" value {ref_value:<.2f} sigma 999 type 0"
     else:
         # external torsion restraint
         if ref_value is None:
             ref_value = 120
         restraint = f"exte torsion first {refmacAddresses[0]} next {refmacAddresses[1]}"
         restraint += f" next {refmacAddresses[2]} next {refmacAddresses[3]}"
-        restraint += f" value {ref_value:<.2f} sigma 120 type 0"
+        restraint += f" value {ref_value:<.2f} sigma 999 type 0"
     return restraint
 
 
