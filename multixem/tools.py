@@ -161,7 +161,6 @@ def CID2RefmacRestraint(geometry_object):
     ]:
         if not cid:
             continue
-        print(f"Processing CID: {cid}")
         cid_symm = len(cid.split("@")) > 1
         cid_split = cid.split("@")[0].split("/")
         assert len(cid_split) >= 5, f"Invalid CID: {cid}"
