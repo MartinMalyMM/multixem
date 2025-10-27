@@ -166,7 +166,7 @@ def CID2RefmacRestraint(geometry_object):
         cid_split = cid.split("@")[0].split("/")
         assert len(cid_split) >= 5, f"Invalid CID: {cid}"
         seqid_split = cid_split[3].split(".")
-        atom_split = cid_split[4].split(".")
+        atom_split = cid_split[4].split(":")
         refmacAddress = f"chain {cid_split[2]} "
         refmacAddress += f"resi {seqid_split[0]} "
         if len(seqid_split) > 1:
