@@ -182,21 +182,30 @@ def CID2RefmacRestraint(geometry_object):
         return refmacAddresses[0]
     elif not geometry_object["atom3"]:
         # external distance restraint
+        assert "@" not in geometry_object["atom1"], (
+            "For interatomic distances, the first atom must not be from"
+            f" a symmetry mate: {geometry_object['atom1']} {geometry_object['atom2']}"
+        )
         if ref_value is None:
             ref_value = 2.2
         restraint = f"exte dist first {refmacAddresses[0]} second {refmacAddresses[1]}"
         restraint += f" value {ref_value:<.2f} sigma 99 type 0"
     elif not geometry_object["atom4"]:
         # external angle restraint
+        assert "@" not in geometry_object["atom2"], (
+            "For angles, the second atom must not be from a symmetry mate:"
+            f" {geometry_object['atom1']} {geometry_object['atom2']}"
+            f" {geometry_object['atom3']}"
+        )
         if ref_value is None:
-            ref_value = 120
+            ref_value = 120.0
         restraint = f"exte angle first {refmacAddresses[0]} next {refmacAddresses[1]}"
         restraint += f" next {refmacAddresses[2]}"
         restraint += f" value {ref_value:<.2f} sigma 999 type 0"
     else:
         # external torsion restraint
         if ref_value is None:
-            ref_value = 120
+            ref_value = 120.0
         restraint = f"exte torsion first {refmacAddresses[0]} next {refmacAddresses[1]}"
         restraint += f" next {refmacAddresses[2]} next {refmacAddresses[3]}"
         restraint += f" value {ref_value:<.2f} sigma 999 type 0"
