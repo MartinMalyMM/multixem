@@ -306,8 +306,9 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
         # df.loc[df_bin.index, 'DELFWTFWT2SC'] = numpy.sqrt(
         #    (df_bin['FWT1RE'] - scale_delfwtfwt2sc*df_bin['FWT2RE'])**2 + \
         #    (df_bin['FWT1IM'] - scale_delfwtfwt2sc*df_bin['FWT2IM'])**2)
-        df.loc[df_bin.index, "DELFOFO2SC"] = numpy.sqrt(
-            df["DELFOFO2SCRE"] ** 2 + df["DELFOFO2SCIM"] ** 2
+        df.loc[df_bin.index, "DELFOFO2SC"] = numpy.hypot(
+            df["DELFOFO2SCRE"].astype(numpy.float64),
+            df["DELFOFO2SCIM"].astype(numpy.float64),
         )
         df.loc[df_bin.index, "PHDELFOFO2SC"] = numpy.rad2deg(
             numpy.arctan2(df["DELFOFO2SCIM"], df["DELFOFO2SCRE"])
@@ -323,8 +324,9 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
         # df.loc[df_bin.index, 'DELFWTFWT2SC'] = numpy.sqrt(
         #    (df_bin['FWT1RE'] - scale_delfwtfwt2sc*df_bin['FWT2RE'])**2 + \
         #    (df_bin['FWT1IM'] - scale_delfwtfwt2sc*df_bin['FWT2IM'])**2)
-        df.loc[df_bin.index, "DELFWTFWT2SC"] = numpy.sqrt(
-            df["DELFWTFWT2SCRE"] ** 2 + df["DELFWTFWT2SCIM"] ** 2
+        df.loc[df_bin.index, "DELFWTFWT2SC"] = numpy.hypot(
+            df["DELFWTFWT2SCRE"].astype(numpy.float64),
+            df["DELFWTFWT2SCIM"].astype(numpy.float64),
         )
         df.loc[df_bin.index, "PHDELFWTFWT2SC"] = numpy.rad2deg(
             numpy.arctan2(df["DELFWTFWT2SCIM"], df["DELFWTFWT2SCRE"])
@@ -385,8 +387,9 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
         df_fwt.loc[df_fwt_bin.index, "DELFWTFWT2SCallIM"] = (
             df_fwt_bin["FWT1IM"] - scale_delfwtfwt2scall * df_fwt_bin["FWT2IM"]
         )
-        df_fwt.loc[df_fwt_bin.index, "DELFWTFWT2SCall"] = numpy.sqrt(
-            df_fwt["DELFWTFWT2SCallRE"] ** 2 + df_fwt["DELFWTFWT2SCallIM"] ** 2
+        df_fwt.loc[df_fwt_bin.index, "DELFWTFWT2SCall"] = numpy.hypot(
+            df_fwt["DELFWTFWT2SCallRE"].astype(numpy.float64),
+            df_fwt["DELFWTFWT2SCallIM"].astype(numpy.float64),
         )
         df_fwt.loc[df_fwt_bin.index, "PHDELFWTFWT2SCall"] = numpy.rad2deg(
             numpy.arctan2(df_fwt["DELFWTFWT2SCallIM"], df_fwt["DELFWTFWT2SCallRE"])
@@ -397,8 +400,9 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
         df_fwt.loc[df_fwt_bin.index, "DELFestFest2SCallIM"] = (
             df_fwt_bin["Fcombi1IM"] - scale_delfestfest2scall * df_fwt_bin["Fcombi2IM"]
         )
-        df_fwt.loc[df_fwt_bin.index, "DELFestFest2SCall"] = numpy.sqrt(
-            df_fwt["DELFestFest2SCallRE"] ** 2 + df_fwt["DELFestFest2SCallIM"] ** 2
+        df_fwt.loc[df_fwt_bin.index, "DELFestFest2SCall"] = numpy.hypot(
+            df_fwt["DELFestFest2SCallRE"].astype(numpy.float64),
+            df_fwt["DELFestFest2SCallIM"].astype(numpy.float64),
         )
         df_fwt.loc[df_fwt_bin.index, "PHDELFestFest2SCall"] = numpy.rad2deg(
             numpy.arctan2(df_fwt["DELFestFest2SCallIM"], df_fwt["DELFestFest2SCallRE"])

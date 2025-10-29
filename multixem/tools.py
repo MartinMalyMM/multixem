@@ -60,7 +60,6 @@ def write_mtz_from_df(df, mtz_ref, columns, filename):
         df[["H", "K", "L"] + list(columns.keys())].values.astype(numpy.float64)
     )
     f32max = numpy.finfo(numpy.float32).max
-    data = numpy.nan_to_num(data, nan=0.0, posinf=f32max, neginf=-f32max)
     data = numpy.clip(data, -f32max, f32max).astype(numpy.float32)
 
     mtz.set_data(data)
