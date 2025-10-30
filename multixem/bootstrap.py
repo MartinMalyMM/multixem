@@ -992,7 +992,7 @@ def bootstrap_analyse_structures(
         j_idx_filtered = [
             j
             for j in range(len(table))
-            if not symmetry_cols or all(col[j] == "." for col in symmetry_cols)
+            if not symmetry_cols or all(col[j] in [".", None] for col in symmetry_cols)
         ]
         geom_list = [
             {f"atom{i + 1}": atom_cols[i][j_idx] for i in range(len(atom_cols))}
