@@ -341,7 +341,8 @@ def plot_histogram(values, xlabel, ref={}, idx=0, prefix=""):
     mean = numpy.mean(values)
     stdev = numpy.std(values, ddof=1)
     median = numpy.median(values)
-    mad = numpy.median(numpy.abs(values - median))
+    # MAD to be consistent with stdev for normal distribution
+    mad = numpy.median(numpy.abs(values - median)) * 1.4826
     min_val = numpy.min(values)
     max_val = numpy.max(values)
     if ref:
@@ -409,7 +410,8 @@ def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix=""):
     mean = numpy.mean(x)
     stdev = numpy.std(x, ddof=1)
     median = numpy.median(x)
-    mad = numpy.median(numpy.abs(x - median))
+    # MAD to be consistent with stdev for normal distribution
+    mad = numpy.median(numpy.abs(x - median)) * 1.4826
 
     min_val = min(min(x), min(y))
     max_val = max(max(x), max(y))
