@@ -494,8 +494,8 @@ def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix=""):
 def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
     logging.info(f"Loading {len(jsons)} json files with statistics...")
     with open(jsons[0]) as f:
-        data_ref = json.load(f)
-    stats_avail = data_ref[-1]["data"]["summary"].keys()
+        data_first = json.load(f)
+    stats_avail = data_first[-1]["data"]["summary"].keys()
     data_overall_dict = {stat: [] for stat in stats_avail}
     data_overall_init_dict = {stat: [] for stat in stats_avail}
     """
@@ -561,7 +561,8 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
                 data_overall_dict[f"R2_{stat}"].append(R2value)
             """
 
-    if idx and prefix:
+    if json_ref and os.path.isfile(json_ref):
+        # Find reference statistics for a structure refined in a classic way
         stats_ref_equivalents = {
             "R": "R",
             "R1": "R1",
@@ -576,20 +577,19 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
             "CCI_llw>0_avg": "CCIworkavg",
             "CCI_llw=0_avg": "CCIfreeavg",
         }
-        # Find reference statistics for a structure refined in a classic way
         data_ref = {}
-        if json_ref and os.path.isfile(json_ref):
-            with open(json_ref) as f:
-                data_ref_loaded = json.load(f)
-                data_ref = data_ref_loaded[-1]["data"]["summary"]
-                if data_ref:
-                    logging.info(f"Loaded reference statistics from {json_ref}")
-                else:
-                    logging.warning(
-                        f"No summary statistics found in reference {json_ref}"
-                    )
-        else:
-            logging.warning(f"Reference file with statistics not found: {json_ref}")
+
+        with open(json_ref) as f:
+            data_ref_loaded = json.load(f)
+            data_ref = data_ref_loaded[-1]["data"]["summary"]
+            if data_ref:
+                logging.info(f"Loaded reference statistics from {json_ref}")
+            else:
+                logging.warning(f"No summary statistics found in reference {json_ref}")
+    else:
+        logging.warning(
+            f"Reference file with statistics not found {json_ref if json_ref else ''}"
+        )
 
     # for stat in list(stats_avail) + stats_additional:
     for stat in stats_avail:
