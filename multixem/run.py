@@ -1300,12 +1300,25 @@ def main():
         )
         if refined_jsons:
             bootstrap_analyse_stats(refined_jsons, refined_json_ref, 1, prefix)
+
         refined_mmcif_ref_candidate = f"{args.file_name_template}_refine.mmcif"
         refined_mmcif_ref = (
             refined_mmcif_ref_candidate
             if os.path.isfile(refined_mmcif_ref_candidate)
             else None
         )
+
+        refined_mtz_ref_candidate = f"{args.file_name_template}_refine.mtz"
+        refined_mtz_ref = (
+            refined_mtz_ref_candidate
+            if os.path.isfile(refined_mtz_ref_candidate)
+            else None
+        )
+
+        for f in [refined_json_ref, refined_mmcif_ref, refined_mtz_ref]:
+            if f:
+                logging.info(f"Reference file found: {f}")
+
         refined_mmcifs = glob.glob(f"{args.file_name_template}_llweight*_refine.mmcif")
         refined_mmcifs2 = glob.glob(f"{args.file_name_template}_llweight*_refine.cif")
         refined_mmcifs = refined_mmcifs + refined_mmcifs2
@@ -1337,7 +1350,7 @@ def main():
             )
         refined_mtzs = glob.glob(f"{args.file_name_template}_llweight*_refine.mtz")
         if refined_mtzs:
-            bootstrap_mean_map(refined_mtzs, 1, prefix)
+            bootstrap_mean_map(refined_mtzs, 1, prefix, mtz_ref=refined_mtz_ref)
         else:
             logging.warning(
                 f"No refined MTZ files found with a filename template"
@@ -1631,5 +1644,9 @@ def main():
                         geometry_objects_ref,
                     )
                 bootstrap_mean_map(
-                    refined_mtzs_bootstrap, i_mtz + 1, prefix, binner_master
+                    refined_mtzs_bootstrap,
+                    i_mtz + 1,
+                    prefix,
+                    binner_master,
+                    refined_mtzs[i_mtz],
                 )

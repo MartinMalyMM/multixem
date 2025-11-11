@@ -1559,7 +1559,7 @@ def bootstrap_analyse_structures(
     return
 
 
-def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
+def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None, mtz_ref=""):
     """
     Calculate the mean 2Fo-Fc and Fo-Fc maps from refined MTZ files after bootstrapping.
     The maps are expected to be after refinement against a bootstrapped
@@ -1569,6 +1569,8 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
         refined_mtzs (list of str): List of MTZ filenames.
         idx (int): Index for naming the output file (applies if not set to 0).
         prefix (str): Prefix for the output filename.
+        binner (gemmi.Binner): Binner object for resolution bins (optional).
+        mtz_ref (str): Reference MTZ file for scaling (optional).
 
     Returns:
         None: Writes the mean maps in '{prefix}bootstrap_mean_map.mtz' or
@@ -1576,7 +1578,7 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
     """
 
     def merge_reflections_bootstrap(
-        df_master, mtz_ref=None, prefix="", suffix="", idx=0, binner=None
+        df_master, mtz_first=None, prefix="", suffix="", idx=0, binner=None, mtz_ref=""
     ):
         """
         Merge reflections from the master DataFrame and calculate mean maps.
@@ -1584,7 +1586,7 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
         Args:
             df_master (pandas.DataFrame): DataFrame containing reflections.
                 It must contain columns "H", "K", "L", "F_complex", "DEL_F_complex",
-            mtz_ref (gemmi.Mtz): Reference MTZ object for cell and spacegroup.
+            mtz_first (gemmi.Mtz): Reference MTZ object for cell and spacegroup.
             prefix (str): Prefix for the output filename.
             suffix (str): Suffix for the output filename.
             idx (int): Index for naming the output file.
@@ -1595,7 +1597,7 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
 
         """# noqa: E741
         def is_centric_vectorized(h, k, l):  # noqa: E741
-            return mtz_ref.spacegroup.operations().is_reflection_centric(
+            return mtz_first.spacegroup.operations().is_reflection_centric(
                 (int(h), int(k), int(l))  # noqa: E741
             )"""
 
@@ -1709,7 +1711,7 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
         df_mean["DELFWT"] = numpy.abs(df_mean["DEL_F_complex_mean"])
         df_mean["PHDELWT"] = numpy.rad2deg(numpy.angle(df_mean["DEL_F_complex_mean"]))
 
-        if mtz_ref and prefix and suffix and idx:
+        if mtz_first and prefix and suffix and idx:
             # Save the mean maps as an MTZ file
             columns = {
                 "FWT": "F",
@@ -1742,13 +1744,13 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
                         "DELFWTcount",
                     ]
                 ],
-                mtz_ref,
+                mtz_first,
                 columns,
                 filename=mtz_filename,
             )
 
         # Calculate statistics per bin
-        if binner and mtz_ref:
+        if binner and mtz_first:
             hkl_array = numpy.array(df_mean[["H", "K", "L"]].values, numpy.int32)
             hkl_array = numpy.ascontiguousarray(hkl_array, dtype=numpy.int32)
             df_mean["bin"] = binner.get_bins(hkl_array)
@@ -1768,8 +1770,8 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
                     delfwt_count = df_bin["DELFWTcount"].sum()
                     bin_n_unique = len(df_bin)
                     bin_n_unique_expected = gemmi.count_reflections(
-                        mtz_ref.cell,
-                        mtz_ref.spacegroup,
+                        mtz_first.cell,
+                        mtz_first.spacegroup,
                         binner.dmin_of_bin(b),
                         binner.dmax_of_bin(b),
                         unique=True,
@@ -1822,10 +1824,15 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
 
     logging.info(f"Loading {len(refined_mtzs)} density maps...")
     columns_selected = ["H", "K", "L", "FWT", "PHWT", "DELFWT", "PHDELWT", "llweight"]
-    mtz_first = gemmi.read_mtz_file(refined_mtzs[0])
-    col_labels_first = mtz_first.column_labels()
-    df_first = pandas.DataFrame(data=mtz_first.array, columns=col_labels_first)
-    df_first = df_first[columns_selected]
+    if binner:
+        if mtz_ref:
+            logging.info(f"Scaling reflections to {mtz_ref}")
+        else:
+            mtz_first = gemmi.read_mtz_file(refined_mtzs[0])
+            col_labels_first = mtz_first.column_labels()
+            df_first = pandas.DataFrame(data=mtz_first.array, columns=col_labels_first)
+            df_first = df_first[columns_selected]
+            logging.info(f"Scaling reflections to {refined_mtzs[0]}")
     for i, mtz_file in enumerate(refined_mtzs):
         mtz = gemmi.read_mtz_file(mtz_file)
         col_labels = mtz.column_labels()
@@ -1840,7 +1847,10 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
             else:
                 if binner:
                     # scale per resolution bin
-                    df_scaled, bin_stats = scale_reflections(df_first, df, binner)
+                    if mtz_ref:
+                        df_scaled, bin_stats = scale_reflections(mtz_ref, df, binner)
+                    else:
+                        df_scaled, bin_stats = scale_reflections(df_first, df, binner)
                     df_master = pandas.concat([df_master, df_scaled], ignore_index=True)
                 else:
                     df_master = pandas.concat([df_master, df], ignore_index=True)
@@ -1861,14 +1871,16 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
     df_master_llweight_0 = df_master[df_master["llweight"] == 0].copy()
     df_master_llweight_pos = df_master[df_master["llweight"] > 0].copy()
 
-    mtz_ref = gemmi.read_mtz_file(refined_mtzs[0])
+    mtz_first = gemmi.read_mtz_file(refined_mtzs[0])
     # save 3 mean maps: all reflections, llweight == 0 and llweight > 0
-    merge_reflections_bootstrap(df_master, mtz_ref, prefix, "_all", idx, binner)
     merge_reflections_bootstrap(
-        df_master_llweight_0, mtz_ref, prefix, "_llweight0", idx, binner
+        df_master, mtz_first, prefix, "_all", idx, binner, mtz_ref
     )
     merge_reflections_bootstrap(
-        df_master_llweight_pos, mtz_ref, prefix, "_llweightpos", idx, binner
+        df_master_llweight_0, mtz_first, prefix, "_llweight0", idx, binner, mtz_ref
+    )
+    merge_reflections_bootstrap(
+        df_master_llweight_pos, mtz_first, prefix, "_llweightpos", idx, binner, mtz_ref
     )
 
     return
