@@ -738,7 +738,7 @@ def run_molrep(model, mtz):
         "-m",
         model,
     ]
-    logging.info("Running command: " + " ".join(cmd))
+    logging.info("Running command: %s", shlex.join(cmd))
     try:
         with open(log_filename, "w") as log_file:
             subprocess.run(cmd, check=True, stdout=log_file, stderr=subprocess.STDOUT)
@@ -775,7 +775,7 @@ def run_servalcat_fwt(mtz_groups_i, prefix="", n_proc=1):
         log_group_fi = f"{group_fi_prefix}.log"
         mtz_group_fi = f"{group_fi_prefix}.mtz"
         cmd = ["servalcat", "fw", "--hklin", mtz_group_i, "-o", group_fi_prefix]
-        logging.info("Running command: " + " ".join(cmd))
+        logging.info("Running command: %s", shlex.join(cmd))
         try:
             with open(log_group_fi, "w") as log_file:
                 subprocess.run(
@@ -845,7 +845,7 @@ def run_servalcat_refine(
             cmd.extend(arguments)
         if quick:
             cmd.extend(["--ncycle", "1"])
-        logging.info("Running command: " + " ".join(cmd))
+        logging.info("Running command: %s", shlex.join(cmd))
         try:
             with open(log_filename, "w") as log_file:
                 subprocess.run(
@@ -879,7 +879,7 @@ def run_servalcat_refine(
                 cmd_sigmaa.extend(["--hklin_free", mtz_free])
             # if arguments:
             #     cmd_sigmaa.extend(arguments)
-            logging.info("Running command: " + " ".join(cmd_sigmaa))
+            logging.info("Running command: %s", shlex.join(cmd_sigmaa))
             try:
                 with open(log_filename_sigmaa, "w") as log_file_sigmaa:
                     subprocess.run(
@@ -1368,7 +1368,8 @@ def main():
     logging.info(f"Prefix for the output files: {prefix}")
 
     n_proc = min(os.cpu_count(), args.n_proc)
-    servalcat_args = args.servalcat_args.split() if args.servalcat_args else []
+    # parse servalcat args preserving quoted groups
+    servalcat_args = shlex.split(args.servalcat_args) if args.servalcat_args else []
 
     mtzs_i = []
     labins = []
