@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 import logging
 import json
+import shlex
 from collections import Counter
 import concurrent.futures
 from . import __version__
@@ -1357,7 +1358,7 @@ def main():
 
     setup_logging()
 
-    logging.info(f"Command line: {' '.join(sys.argv)}")
+    logging.info(f"Command line: {shlex.join(sys.argv)}")
     logging.info(f"Running multixem version: {__version__}")
     args_dict = vars(args)
     logging.info("Parsed arguments:")
