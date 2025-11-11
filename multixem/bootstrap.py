@@ -16,6 +16,7 @@ from .tools import (
     write_mtz_from_df,
     makeAddressStr,
     filename_replace_char,
+    scale_reflections,
 )
 
 
@@ -1821,6 +1822,10 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
 
     logging.info(f"Loading {len(refined_mtzs)} density maps...")
     columns_selected = ["H", "K", "L", "FWT", "PHWT", "DELFWT", "PHDELWT", "llweight"]
+    mtz_first = gemmi.read_mtz_file(refined_mtzs[0])
+    col_labels_first = mtz_first.column_labels()
+    df_first = pandas.DataFrame(data=mtz_first.array, columns=col_labels_first)
+    df_first = df_first[columns_selected]
     for i, mtz_file in enumerate(refined_mtzs):
         mtz = gemmi.read_mtz_file(mtz_file)
         col_labels = mtz.column_labels()
@@ -1833,7 +1838,12 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None):
                     {name: "int32" for name in ["H", "K", "L"]}
                 )
             else:
-                df_master = pandas.concat([df_master, df], ignore_index=True)
+                if binner:
+                    # scale per resolution bin
+                    df_scaled, bin_stats = scale_reflections(df_first, df, binner)
+                    df_master = pandas.concat([df_master, df_scaled], ignore_index=True)
+                else:
+                    df_master = pandas.concat([df_master, df], ignore_index=True)
         else:
             logging.warning(
                 f"No reflections in {mtz_file} for FWT/PHWT/DELFWT/PHDELWT."

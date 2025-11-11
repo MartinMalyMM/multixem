@@ -1,4 +1,5 @@
 # coding: utf-8
+import os
 import numpy
 import gemmi
 import logging
@@ -220,3 +221,168 @@ def filename_replace_char(filename):
     filename = filename.replace("<", "_lt_")
     filename = re.sub(r"[^A-Za-z0-9_\-.]", "_", filename)
     return filename
+
+
+def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefix=""):
+    """
+    Scale reflections from refl2 to refl1 in resolution bins defined by binner.
+
+    Args:
+        refl1 (str or gemmi.Mtz or pandas.DataFrame): First reflection dataset.
+        refl2 (str or gemmi.Mtz or pandas.DataFrame): Second reflection dataset.
+        binner (Binner): Binner object defining resolution bins.
+        bin_stats_list (list of dict): List to store statistics for each resolution bin.
+
+    Returns:
+        bin_stats_list (list of dict): Updated list with statistics
+            for each resolution bin.
+    """
+
+    if isinstance(refl1, str):
+        if not os.path.isfile(refl1):
+            raise FileNotFoundError(f"Reflection file not found: {refl1}")
+        mtz1 = gemmi.read_mtz_file(refl1)
+        df1 = pandas.DataFrame(data=mtz1.array, columns=mtz1.column_labels())
+        df1 = df1.astype({name: "int32" for name in ["H", "K", "L"]})
+    elif isinstance(refl1, gemmi.Mtz):
+        df1 = pandas.DataFrame(data=refl1.array, columns=refl1.column_labels())
+        df1 = df1.astype({name: "int32" for name in ["H", "K", "L"]})
+    else:
+        df1 = refl1
+
+    if isinstance(refl2, str):
+        if not os.path.isfile(refl2):
+            raise FileNotFoundError(f"Reflection file not found: {refl2}")
+        mtz2 = gemmi.read_mtz_file(refl2)
+        df2 = pandas.DataFrame(data=mtz2.array, columns=mtz2.column_labels())
+        df2 = df2.astype({name: "int32" for name in ["H", "K", "L"]})
+    elif isinstance(refl2, gemmi.Mtz):
+        df2 = pandas.DataFrame(data=refl2.array, columns=refl2.column_labels())
+        df2 = df2.astype({name: "int32" for name in ["H", "K", "L"]})
+    else:
+        df2 = refl2
+
+    f_col = "FWT"
+    columns = ["FWT", "PHWT", "DELFWT", "PHDELWT"]
+    # afterwards, rename to FWT1, PHWT1, ..., FWT2, PHWT2, ...
+    # columns1 = [col + "1" for col in columns]
+    columns1_dict = {col: col + "1" for col in columns}
+    # columns2 = [col + "2" for col in columns]
+    columns2_dict = {col: col + "2" for col in columns}
+
+    df1 = df1[["H", "K", "L"] + columns]  # Select only relevant columns
+    df1 = df1.dropna(subset=[f_col])  # Select only reflections with F
+    df1 = df1.rename(columns=columns1_dict)  # Rename
+    # n_refl1 = len(df1)
+    # logging.info(f"No. unique reflections: {n_refl1} in file {mtz_file_1}")
+
+    df2 = df2[["H", "K", "L"] + columns]
+    df2 = df2.dropna(subset=[f_col])
+    df2 = df2.rename(columns=columns2_dict)
+    # n_refl2 = len(df2)
+    # logging.info(f"No. unique reflections: {n_refl2} in file {mtz_file_2}")
+
+    # Extract common Miller indices (H, K, L)
+    df = pandas.merge(df1, df2, on=["H", "K", "L"])
+    # n_refl = len(df)
+    # logging.info(
+    #     f"No. unique reflections: {n_refl} in common;"
+    #     f" ratios to the originals: {n_refl / n_refl1:.4f}   {n_refl / n_refl2:.4f}"
+    # )
+    hkl_common_array = numpy.array(df[["H", "K", "L"]].values, numpy.int32)
+    hkl_common_array = numpy.ascontiguousarray(hkl_common_array, dtype=numpy.int32)
+    # print(len(hkl_common_array))  # should be equal to n_refl
+
+    # Scaling per resolution bins
+    df["BIN"] = binner.get_bins(hkl_common_array)
+
+    df["FWT1RE"] = df["FWT1"] * numpy.cos(numpy.deg2rad(df["PHWT1"]))
+    df["FWT1IM"] = df["FWT1"] * numpy.sin(numpy.deg2rad(df["PHWT1"]))
+    df["FWT2RE"] = df["FWT2"] * numpy.cos(numpy.deg2rad(df["PHWT2"]))
+    df["FWT2IM"] = df["FWT2"] * numpy.sin(numpy.deg2rad(df["PHWT2"]))
+    df["DELFWT1RE"] = df["DELFWT1"] * numpy.cos(numpy.deg2rad(df["PHDELWT1"]))
+    df["DELFWT1IM"] = df["DELFWT1"] * numpy.sin(numpy.deg2rad(df["PHDELWT1"]))
+    df["DELFWT2RE"] = df["DELFWT2"] * numpy.cos(numpy.deg2rad(df["PHDELWT2"]))
+    df["DELFWT2IM"] = df["DELFWT2"] * numpy.sin(numpy.deg2rad(df["PHDELWT2"]))
+
+    if not bin_stats_list:
+        bin_stats_list = [
+            {
+                "bin": b + 1,
+                "dmax": binner.dmax_of_bin(b),
+                "dmin": binner.dmin_of_bin(b),
+            }
+            for b in range(binner.size)
+            # DELFWT bin size?
+        ]
+    if len(bin_stats_list) != binner.size:
+        logging.warning(
+            f"bin_stats_list has {len(bin_stats_list)} bins,"
+            f" but binner has {binner.size} bins.",
+        )
+    for b in range(len(bin_stats_list)):
+        df_bin = df[df["BIN"] == b]
+
+        scale_fwt = calc_scale_complex(
+            df_bin,
+            "FWT",
+            "FWT2",
+            b,
+            bin_stats_list[b]["dmax"],
+            bin_stats_list[b]["dmin"],
+        )
+        scale_delfwt = calc_scale_complex(
+            df_bin,
+            "DELFWT",
+            "DELFWT2",
+            b,
+            bin_stats_list[b]["dmax"],
+            bin_stats_list[b]["dmin"],
+        )
+
+        if len(df_bin) < 100:
+            logging.warning(
+                f"Less than 100 reflections in bin {b + 1}"
+                f" ({bin_stats_list[b]['dmax']:.4f} -"
+                f" {bin_stats_list[b]['dmin']:.4f} A)."
+            )
+        bin_stats_list[b]["scale_fwt"] = scale_fwt
+        bin_stats_list[b]["fwt_count"] = len(df_bin)
+        bin_stats_list[b]["scale_delfwt"] = scale_delfwt
+
+        # FWT
+        df.loc[df_bin.index, "FWT2SCRE"] = scale_fwt * df_bin["FWT2RE"]
+        df.loc[df_bin.index, "FWT2SCIM"] = scale_fwt * df_bin["FWT2IM"]
+        # DELFWT
+        df.loc[df_bin.index, "DELFWT2SCRE"] = scale_fwt * df_bin["DELFWT2RE"]
+        df.loc[df_bin.index, "DELFWT2SCIM"] = scale_fwt * df_bin["DELFWT2IM"]
+
+    df["FWT"] = numpy.hypot(
+        df["FWT2SCRE"].astype(numpy.float64),
+        df["FWT2SCIM"].astype(numpy.float64),
+    )
+    df["PHWT"] = numpy.rad2deg(numpy.arctan2(df["FWT2SCIM"], df["FWT2SCRE"]))
+    df["DELFWT"] = numpy.hypot(
+        df["DELFWT2SCRE"].astype(numpy.float64),
+        df["DELFWT2SCIM"].astype(numpy.float64),
+    )
+    df["PHDELWT"] = numpy.rad2deg(numpy.arctan2(df["DELFWT2SCIM"], df["DELFWT2SCRE"]))
+    df2_scaled = df[["H", "K", "L", "FWT", "PHWT", "DELFWT", "PHDELWT"]].copy()
+
+    if output_mtz2_prefix:
+        output_mtz2 = f"{output_mtz2_prefix}_scaled.mtz"
+        columns_to_write_list = [
+            "FWT",
+            "PHWT",
+            "DELFWT",
+            "PHDELWT",
+        ]
+        columns_to_write_dict = {
+            col: ("F" if not col.startswith("PH") else "P")
+            for col in columns_to_write_list
+        }
+        write_mtz_from_df(df, mtz1, columns_to_write_dict, output_mtz2)
+        stats_filename = f"{output_mtz2_prefix}_scaled_bin_stats.txt"
+        write_bin_stats(bin_stats_list, stats_filename)
+
+    return df2_scaled, bin_stats_list
