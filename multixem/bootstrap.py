@@ -1842,27 +1842,20 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None, mtz_ref=""):
         df = pandas.DataFrame(data=mtz.array, columns=col_labels)
         df = df[columns_selected]
         if not df.empty:
+            if binner and mtz_ref:
+                # scale per resolution bin
+                mtz_file_base = os.path.splitext(os.path.basename(mtz_file))[0]
+                df, bin_stats = scale_reflections(
+                    mtz_ref, df, binner, output_mtz2_prefix=mtz_file_base
+                )
+                bin_stats_bootstrap_scale.append(bin_stats)
             if i == 0:
                 df_master = df.copy()
                 df_master = df_master.astype(
                     {name: "int32" for name in ["H", "K", "L"]}
                 )
             else:
-                if binner:
-                    mtz_file_base = os.path.splitext(os.path.basename(mtz_file))[0]
-                    # scale per resolution bin
-                    if mtz_ref:
-                        df_scaled, bin_stats = scale_reflections(
-                            mtz_ref, df, binner, output_mtz2_prefix=mtz_file_base
-                        )
-                    else:
-                        df_scaled, bin_stats = scale_reflections(
-                            df_first, df, binner, output_mtz2_prefix=mtz_file_base
-                        )
-                    df_master = pandas.concat([df_master, df_scaled], ignore_index=True)
-                    bin_stats_bootstrap_scale.append(bin_stats)
-                else:
-                    df_master = pandas.concat([df_master, df], ignore_index=True)
+                df_master = pandas.concat([df_master, df], ignore_index=True)
         else:
             logging.warning(
                 f"No reflections in {mtz_file} for FWT/PHWT/DELFWT/PHDELWT."

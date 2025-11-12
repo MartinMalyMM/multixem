@@ -285,7 +285,8 @@ def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefi
     # n_refl1 = len(df1)
     # logging.info(f"No. unique reflections: {n_refl1} in file {mtz_file_1}")
 
-    df2 = df2[["H", "K", "L"] + columns]
+    llweight_col = ["llweight"] if "llweight" in df2.columns else []
+    df2 = df2[["H", "K", "L"] + columns + llweight_col]
     df2 = df2.dropna(subset=[f_col])
     df2 = df2.rename(columns=columns2_dict)
     # n_refl2 = len(df2)
@@ -383,7 +384,9 @@ def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefi
         df["DELFWT2SCIM"].astype(numpy.float64),
     )
     df["PHDELWT"] = numpy.rad2deg(numpy.arctan2(df["DELFWT2SCIM"], df["DELFWT2SCRE"]))
-    df2_scaled = df[["H", "K", "L", "FWT", "PHWT", "DELFWT", "PHDELWT"]].copy()
+    df2_scaled = df[
+        ["H", "K", "L", "FWT", "PHWT", "DELFWT", "PHDELWT"] + llweight_col
+    ].copy()
 
     if output_mtz2_prefix:
         output_mtz2 = f"{output_mtz2_prefix}_scaled.mtz"
@@ -397,6 +400,8 @@ def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefi
             col: ("F" if not col.startswith("PH") else "P")
             for col in columns_to_write_list
         }
+        if llweight_col:
+            columns_to_write_dict["llweight"] = "I"
         write_mtz_from_df(df, mtz1, columns_to_write_dict, output_mtz2)
         stats_filename = f"{output_mtz2_prefix}_scaled_bin_stats.txt"
         write_bin_stats(bin_stats_list, stats_filename)
