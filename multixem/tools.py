@@ -223,6 +223,15 @@ def filename_replace_char(filename):
     return filename
 
 
+def json_numpy_converter(o):
+    if isinstance(o, numpy.generic):
+        return o.item()
+    if isinstance(o, numpy.ndarray):
+        return o.tolist()
+    # Fallback: convert unknown objects to string
+    return str(o)
+
+
 def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefix=""):
     """
     Scale reflections from refl2 to refl1 in resolution bins defined by binner.
@@ -313,7 +322,6 @@ def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefi
                 "dmin": binner.dmin_of_bin(b),
             }
             for b in range(binner.size)
-            # DELFWT bin size?
         ]
     if len(bin_stats_list) != binner.size:
         logging.warning(
@@ -331,14 +339,14 @@ def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefi
             bin_stats_list[b]["dmax"],
             bin_stats_list[b]["dmin"],
         )
-        scale_delfwt = calc_scale_complex(
+        """scale_delfwt = calc_scale_complex(
             df_bin,
             "DELFWT",
             "DELFWT2",
             b,
             bin_stats_list[b]["dmax"],
             bin_stats_list[b]["dmin"],
-        )
+        )"""
 
         if len(df_bin) < 100:
             logging.warning(
@@ -347,8 +355,16 @@ def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefi
                 f" {bin_stats_list[b]['dmin']:.4f} A)."
             )
         bin_stats_list[b]["scale_fwt"] = scale_fwt
-        bin_stats_list[b]["fwt_count"] = len(df_bin)
-        bin_stats_list[b]["scale_delfwt"] = scale_delfwt
+        bin_stats_list[b]["bin_count"] = len(df_bin)
+        fwt2_count = int(
+            pandas.to_numeric(df_bin["FWT2"], errors="coerce").notna().sum()
+        )
+        bin_stats_list[b]["fwt_count"] = fwt2_count
+        # bin_stats_list[b]["scale_delfwt"] = scale_delfwt
+        delfwt2_count = int(
+            pandas.to_numeric(df_bin["DELFWT2"], errors="coerce").notna().sum()
+        )
+        bin_stats_list[b]["delfwt_count"] = min(delfwt2_count, delfwt2_count)
 
         # FWT
         df.loc[df_bin.index, "FWT2SCRE"] = scale_fwt * df_bin["FWT2RE"]

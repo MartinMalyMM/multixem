@@ -16,6 +16,7 @@ from .tools import (
     write_mtz_from_df,
     makeAddressStr,
     filename_replace_char,
+    json_numpy_converter,
     scale_reflections,
 )
 
@@ -1833,6 +1834,8 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None, mtz_ref=""):
             df_first = pandas.DataFrame(data=mtz_first.array, columns=col_labels_first)
             df_first = df_first[columns_selected]
             logging.info(f"Scaling reflections to {refined_mtzs[0]}")
+
+    bin_stats_bootstrap_scale = []
     for i, mtz_file in enumerate(refined_mtzs):
         mtz = gemmi.read_mtz_file(mtz_file)
         col_labels = mtz.column_labels()
@@ -1846,17 +1849,42 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None, mtz_ref=""):
                 )
             else:
                 if binner:
+                    mtz_file_base = os.path.splitext(os.path.basename(mtz_file))[0]
                     # scale per resolution bin
                     if mtz_ref:
-                        df_scaled, bin_stats = scale_reflections(mtz_ref, df, binner)
+                        df_scaled, bin_stats = scale_reflections(
+                            mtz_ref, df, binner, output_mtz2_prefix=mtz_file_base
+                        )
                     else:
-                        df_scaled, bin_stats = scale_reflections(df_first, df, binner)
+                        df_scaled, bin_stats = scale_reflections(
+                            df_first, df, binner, output_mtz2_prefix=mtz_file_base
+                        )
                     df_master = pandas.concat([df_master, df_scaled], ignore_index=True)
+                    bin_stats_bootstrap_scale.append(bin_stats)
                 else:
                     df_master = pandas.concat([df_master, df], ignore_index=True)
         else:
             logging.warning(
                 f"No reflections in {mtz_file} for FWT/PHWT/DELFWT/PHDELWT."
+            )
+    if bin_stats_bootstrap_scale:
+        try:
+            json_filename = (
+                f"{prefix}group{idx}_bootstrap_map_scaling_stats.json"
+                if idx
+                else f"{prefix}bootstrap_map_scaling_stats.json"
+            )
+            with open(json_filename, "w") as f_json:
+                json.dump(
+                    bin_stats_bootstrap_scale,
+                    f_json,
+                    indent=4,
+                    default=json_numpy_converter,
+                )
+            logging.info(f"Saved bootstrap map scaling stats to {json_filename}.")
+        except Exception as e:
+            logging.warning(
+                f"Could not write bootstrap map scaling stats JSON file: {e}"
             )
 
     # Convert FWT & PHWT and DELFWT & PHDELWT to complex numbers and calculate mean
