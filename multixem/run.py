@@ -848,12 +848,21 @@ def run_servalcat_refine(
         logging.info("Running command: %s", shlex.join(cmd))
         try:
             with open(log_filename, "w") as log_file:
-                subprocess.run(
-                    cmd, check=True, stdout=log_file, stderr=subprocess.STDOUT
+                process = subprocess.Popen(
+                    cmd, stdout=log_file, stderr=subprocess.PIPE, text=True, bufsize=1
                 )
+                for line in process.stderr:
+                    logging.error(line.rstrip())
+                    log_file.write(line)
+                process.wait()
+                if process.returncode != 0:
+                    raise subprocess.CalledProcessError(process.returncode, cmd)
         except subprocess.CalledProcessError as e:
             logging.error(f"Error occurred while running command: {e}")
-        with open(prefix_local + "_stats.json", "r") as stats_file:
+        json_filename = prefix_local + "_stats.json"
+        if not os.path.exists(json_filename):
+            raise FileNotFoundError(f"Expected stats file not found: {json_filename}")
+        with open(json_filename, "r") as stats_file:
             stats = json.load(stats_file)
             stats_line_list = [
                 f"{stat} = {stats[-1]['data']['summary'][stat]:.4f}"
