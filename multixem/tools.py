@@ -239,10 +239,13 @@ def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefi
     Args:
         refl1 (str or gemmi.Mtz or pandas.DataFrame): First reflection dataset.
         refl2 (str or gemmi.Mtz or pandas.DataFrame): Second reflection dataset.
-        binner (Binner): Binner object defining resolution bins.
+        binner (gemmi.Binner): Binner object defining resolution bins.
         bin_stats_list (list of dict): List to store statistics for each resolution bin.
+        output_mtz2_prefix (str): If provided, save scaled refl2 to MTZ file
+            with this prefix.
 
     Returns:
+        df2_scaled (pandas.DataFrame): Scaled reflections from refl2.
         bin_stats_list (list of dict): Updated list with statistics
             for each resolution bin.
     """
