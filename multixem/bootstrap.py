@@ -1821,7 +1821,99 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None, mtz_ref=""):
                 )
                 write_bin_stats(bin_stats, stats_filename)
 
-        return df_mean
+        if mtz_ref and binner and prefix and suffix:
+            mtz_scaled_prefix = (
+                f"{prefix}group{idx}_bootstrap_mean_map{suffix}"
+                if idx
+                else f"{prefix}bootstrap_mean_map{suffix}"
+            )
+            df_scaled, bin_stats_scaled = scale_reflections(
+                mtz_ref,
+                df_mean.copy(),
+                binner,
+                output_mtz2_prefix=mtz_scaled_prefix,
+            )
+            """if mtz_ref and prefix and suffix and idx:
+                # Save the scaled mean maps as an MTZ file
+                columns_scaled = {
+                    "FWT": "F",
+                    "PHWT": "P",
+                    "DELFWT": "F",
+                    "PHDELWT": "P",
+                }
+                write_mtz_from_df(
+                    df_scaled[["H", "K", "L"] + list(columns_scaled.keys())],
+                    mtz_ref,
+                    columns_scaled,
+                    mtz_scaled_filename,
+                )"""
+
+            # Calculate statistics per bin
+            # if binner and mtz_ref:
+            hkl_array = numpy.array(df_scaled[["H", "K", "L"]].values, numpy.int32)
+            hkl_array = numpy.ascontiguousarray(hkl_array, dtype=numpy.int32)
+            df_scaled["bin"] = binner.get_bins(hkl_array)
+            for b in range(binner.size):
+                df_bin = df_scaled[df_scaled["bin"] == b]
+                if not df_bin.empty:
+                    mean_fwt = df_bin["FWT"].mean()
+                    # mean_sigfwt = df_bin["SIGFWT"].mean()
+                    # mean_fwt_sigfwt = mean_fwt / mean_sigfwt if mean_sigfwt else 0.0
+                    # fwt_count = df_bin["FWTcount"].sum()
+                    mean_delfwt = df_bin["DELFWT"].mean()
+                    # mean_sigdelfwt = df_bin["SIGDELFWT"].mean()
+                    # mean_delfwt_sigdelfwt = (
+                    # #     mean_delfwt / mean_sigdelfwt if mean_sigdelfwt else 0.0
+                    # )
+                    # delfwt_count = df_bin["DELFWTcount"].sum()
+                    bin_n_unique = len(df_bin)
+                    """bin_n_unique_expected = gemmi.count_reflections(
+                        mtz_first.cell,
+                        mtz_first.spacegroup,
+                        binner.dmin_of_bin(b),
+                        binner.dmax_of_bin(b),
+                        unique=True,
+                    )
+                    completeness = bin_n_unique / bin_n_unique_expected"""
+                    bin_stats_scaled[b].update(
+                        {
+                            "bin": b + 1,
+                            "dmax": binner.dmax_of_bin(b),
+                            "dmin": binner.dmin_of_bin(b),
+                            "mean_FWT": mean_fwt,
+                            # "mean_SIGFWT": mean_sigfwt,
+                            # "mean_FWT_SIGFWT": mean_fwt_sigfwt,
+                            # "FWTcount": fwt_count,
+                            "mean_DELFWT": mean_delfwt,
+                            # "mean_SIGDELFWT": mean_sigdelfwt,
+                            # "mean_DELFWT_SIGDELFWT": mean_delfwt_sigdelfwt,
+                            # "DELFWTcount": delfwt_count,
+                            "count": bin_n_unique,
+                            # "completeness": completeness,
+                        }
+                    )
+                else:
+                    bin_stats_scaled.update(
+                        {
+                            "bin": b + 1,
+                            "dmax": binner.dmax_of_bin(b),
+                            "dmin": binner.dmin_of_bin(b),
+                            "mean_FWT": 0.0,
+                            # "mean_SIGFWT": 0.0,
+                            # "mean_FWT_SIGFWT": 0.0,
+                            # "FWTcount": 0,
+                            "mean_DELFWT": 0.0,
+                            # "mean_SIGDELFWT": 0.0,
+                            # "mean_DELFWT_SIGDELFWT": 0.0,
+                            # "DELFWTcount": 0,
+                            "count": 0,
+                            # "completeness": 0.0,
+                        }
+                    )
+            stats_scaled_filename = mtz_scaled_prefix + "_scaled_stats.txt"
+            write_bin_stats(bin_stats_scaled, stats_scaled_filename)
+
+        return df_scaled
 
     logging.info(f"Loading {len(refined_mtzs)} density maps...")
     columns_selected = ["H", "K", "L", "FWT", "PHWT", "DELFWT", "PHDELWT", "llweight"]
