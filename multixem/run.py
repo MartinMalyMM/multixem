@@ -1292,17 +1292,17 @@ def main():
     if hasattr(args, "func"):
         args.func(args)
 
-    if args.prefix:
-        prefix = args.prefix
-        if args.prefix[-1] != "_":
-            prefix += "_"
-    else:
-        prefix = "multixem_"
-
     # subcommand mean
     if args.command == "mean":
         setup_logging()
         import glob
+
+        if args.prefix:
+            prefix = args.prefix
+        else:
+            prefix = args.file_name_template
+        if args.prefix[-1] != "_":
+            prefix += "_"
 
         refined_jsons = glob.glob(
             f"{args.file_name_template}_llweight*_refine_stats.json"
@@ -1390,6 +1390,13 @@ def main():
 
     # subcommand pipeline
     # elif args.command == 'pipeline' or args.command is None:
+
+    if args.prefix:
+        prefix = args.prefix
+        if args.prefix[-1] != "_":
+            prefix += "_"
+    else:
+        prefix = "multixem_"
 
     working_dir_name = f"multixem_{prefix[:-1]}"
     os.mkdir(working_dir_name)
