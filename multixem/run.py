@@ -275,6 +275,12 @@ def create_parser():
         "--prefix", type=str, help="Prefix for the output filename"
     )
     mean_parser.add_argument(
+        "--n_bins",
+        type=positive_int,
+        default=20,
+        help="Number of resolution bins. Must be a positive integer.",
+    )
+    mean_parser.add_argument(
         "--cif",
         type=existing_file,
         help="Path to a small molecule CIF file.",
@@ -1355,11 +1361,22 @@ def main():
         else:
             logging.warning(
                 f"No refined mmCIF files found with a filename template"
-                f"{args.file_name_template}_llweight*_refine.mmcif"
+                f" {args.file_name_template}_llweight*_refine.mmcif"
             )
         refined_mtzs = glob.glob(f"{args.file_name_template}_llweight*_refine.mtz")
         if refined_mtzs:
-            bootstrap_mean_map(refined_mtzs, 1, prefix, mtz_ref=refined_mtz_ref)
+            if refined_mtz_ref:
+                m = gemmi.read_mtz_file(refined_mtz_ref)
+                binner = gemmi.Binner()
+                binner.setup_from_1_d2(
+                    args.n_bins,
+                    gemmi.Binner.Method.Dstar2,
+                    m.make_1_d2_array(),
+                    m.get_cell(),
+                )
+                bootstrap_mean_map(
+                    refined_mtzs, 1, prefix, binner=binner, mtz_ref=refined_mtz_ref
+                )
         else:
             logging.warning(
                 f"No refined MTZ files found with a filename template"
