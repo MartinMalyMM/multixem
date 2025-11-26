@@ -44,7 +44,7 @@ def write_mtz_from_df(df, mtz_ref, columns, filename):
 
     Args:
         df (pandas.DataFrame): DataFrame containing columns for H, K, L and other data.
-        mtz_ref (gemmi.Mtz): Reference MTZ object for cell and spacegroup.
+        mtz_ref (gemmi.Mtz): Reference MTZ file or object for cell and spacegroup.
         columns (dict): Dictionary of column names and their MTZ data types
             to include after H, K, L.
         filename (str): Output filename for the MTZ file.
@@ -52,6 +52,8 @@ def write_mtz_from_df(df, mtz_ref, columns, filename):
         None
     """
     mtz = gemmi.Mtz(with_base=True)
+    if isinstance(mtz_ref, str):
+        mtz_ref = gemmi.read_mtz_file(mtz_ref)
     mtz.spacegroup = mtz_ref.spacegroup
     mtz.set_cell_for_all(mtz_ref.cell)
     mtz.add_dataset(mtz_ref.datasets[0].dataset_name)
