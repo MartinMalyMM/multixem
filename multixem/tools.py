@@ -274,7 +274,7 @@ def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefi
     else:
         df2 = refl2
 
-    f_col = "FWT"
+    f_col = "DELFWT"  # Select only observed reflections
     columns = ["FWT", "PHWT", "DELFWT", "PHDELWT"]
     # afterwards, rename to FWT1, PHWT1, ..., FWT2, PHWT2, ...
     # columns1 = [col + "1" for col in columns]
@@ -283,14 +283,14 @@ def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefi
     columns2_dict = {col: col + "2" for col in columns}
 
     df1 = df1[["H", "K", "L"] + columns]  # Select only relevant columns
-    df1 = df1.dropna(subset=[f_col])  # Select only reflections with F
+    df1 = df1.dropna(subset=[f_col])  # Select only observed reflections
     df1 = df1.rename(columns=columns1_dict)  # Rename
     # n_refl1 = len(df1)
     # logging.info(f"No. unique reflections: {n_refl1} in file {mtz_file_1}")
 
     llweight_col = ["llweight"] if "llweight" in df2.columns else []
     df2 = df2[["H", "K", "L"] + columns + llweight_col]
-    df2 = df2.dropna(subset=[f_col])
+    df2 = df2.dropna(subset=[f_col])  # Select only observed reflections
     df2 = df2.rename(columns=columns2_dict)
     # n_refl2 = len(df2)
     # logging.info(f"No. unique reflections: {n_refl2} in file {mtz_file_2}")
