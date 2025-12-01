@@ -10,6 +10,7 @@ import json
 import matplotlib.pyplot as plt
 import matplotlib
 import matplotlib.ticker as ticker
+import concurrent.futures
 from .tools import (
     CID2RefmacRestraint,
     write_bin_stats,
@@ -1560,7 +1561,9 @@ def bootstrap_analyse_structures(
     return
 
 
-def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None, mtz_ref=""):
+def bootstrap_mean_map(
+    refined_mtzs, idx=0, prefix="", binner=None, mtz_ref="", n_proc=4
+):
     """
     Calculate the mean 2Fo-Fc and Fo-Fc maps from refined MTZ files after bootstrapping.
     The maps are expected to be after refinement against a bootstrapped
@@ -1927,31 +1930,64 @@ def bootstrap_mean_map(refined_mtzs, idx=0, prefix="", binner=None, mtz_ref=""):
             df_first = df_first[columns_selected]
             logging.info(f"Scaling reflections to {refined_mtzs[0]}")
 
-    bin_stats_bootstrap_scale = []
-    for i, mtz_file in enumerate(refined_mtzs):
-        mtz = gemmi.read_mtz_file(mtz_file)
-        col_labels = mtz.column_labels()
-        df = pandas.DataFrame(data=mtz.array, columns=col_labels)
-        df = df[columns_selected]
-        if not df.empty:
+    # Process MTZ files in parallel
+    def _add_reflections(worker_args):
+        """
+        Worker function to scale one MTZ file for bootstrap mean map calculation.
+        Returns (df, bin_stats) or (None, None) on failure.
+        """
+        mtz_file, columns_selected, binner, mtz_ref = worker_args
+        try:
+            mtz = gemmi.read_mtz_file(mtz_file)
+            col_labels = mtz.column_labels()
+            df = pandas.DataFrame(data=mtz.array, columns=col_labels)
+            df = df[columns_selected]
+            if df.empty:
+                logging.warning(
+                    f"No reflections in {mtz_file} for FWT/PHWT/DELFWT/PHDELWT."
+                )
+                return None, None
+
+            bin_stats = None
             if binner and mtz_ref:
                 # scale per resolution bin
                 mtz_file_base = os.path.splitext(os.path.basename(mtz_file))[0]
                 df, bin_stats = scale_reflections(
                     mtz_ref, df, binner, output_mtz2_prefix=mtz_file_base
                 )
-                bin_stats_bootstrap_scale.append(bin_stats)
-            if i == 0:
-                df_master = df.copy()
-                df_master = df_master.astype(
-                    {name: "int32" for name in ["H", "K", "L"]}
-                )
-            else:
-                df_master = pandas.concat([df_master, df], ignore_index=True)
-        else:
-            logging.warning(
-                f"No reflections in {mtz_file} for FWT/PHWT/DELFWT/PHDELWT."
-            )
+
+            df = df.astype({name: "int32" for name in ["H", "K", "L"]})
+            return df, bin_stats
+
+        except Exception as e:
+            logging.error(f"Error processing {mtz_file}: {e}")
+            import traceback
+
+            traceback.print_exc()
+            return None, None
+
+    worker_args_list = [
+        (mtz_file, columns_selected, binner, mtz_ref) for mtz_file in refined_mtzs
+    ]
+    df_list = []
+    bin_stats_bootstrap_scale = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=n_proc) as executor:
+        futures = [
+            executor.submit(_add_reflections, worker_args)
+            for worker_args in worker_args_list
+        ]
+        for future in concurrent.futures.as_completed(futures):
+            df, bin_stats = future.result()
+            if df is not None:
+                df_list.append(df)
+                if bin_stats is not None:
+                    bin_stats_bootstrap_scale.append(bin_stats)
+    if df_list:
+        df_master = pandas.concat(df_list, ignore_index=True)
+    else:
+        logging.error("No valid MTZ files processed.")
+        return
+
     if bin_stats_bootstrap_scale:
         try:
             json_filename = (
