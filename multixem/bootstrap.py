@@ -155,14 +155,16 @@ def df_scatter_plot(
     plt.close()
 
 
-def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
+def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003], labin=""):
     """
     Bootstrap the dataset from an MTZ file and save the results in new MTZ files.
 
     Args:
         mtz_file (str): Path to the input MTZ file.
+        binner (gemmi.Binner): gemmi.Binner object for resolution binning.
         seeds (list of int): List of random seeds for bootstrapping.
-        n_bins (int): Number of resolution bins to use for bootstrapping.
+        labin (str): Column label (e.g. `IMEAN,SIGIMEAN`)
+            to apply `df.dropna(subset=[labin.split(",")[0]])`.
     Returns:
         list of str: List of output MTZ filenames created during bootstrapping.
     """
@@ -195,10 +197,15 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003]):
     df = pandas.DataFrame(data=mtz.array, columns=mtz.column_labels())
     df = df.astype({name: "int32" for name in ["H", "K", "L"]})
 
-    i_col = "IMEAN"  # can be just "I" after servalcat fw or sigmaa, or IMEAN?
-    column_label_dropna = i_col  # or F?
-    if column_label_dropna in df.columns:
+    # i_col = "IMEAN"  # can be just "I" after servalcat fw or sigmaa, or IMEAN?
+    if labin in df.columns:
+        column_label_dropna = labin.split(",")[0]
         df = df.dropna(subset=[column_label_dropna])
+    else:
+        warnings.warn(
+            f"Column {labin} not found in MTZ file {mtz_file}. "
+            f"Using all reflections for bootstrapping."
+        )
 
     hkl_array = numpy.array(df[["H", "K", "L"]].values, numpy.int32)
     hkl_array = numpy.ascontiguousarray(hkl_array, dtype=numpy.int32)

@@ -1663,7 +1663,10 @@ def main():
                     )
                     restraints_file = unrestrain(geometry_objects_ref)
                 mtzs_bootstrap = bootstrap_dataset(
-                    mtz_in, binner_master, seeds=range(1001, 1001 + args.bootstrap)
+                    mtz_in,
+                    binner_master,
+                    seeds=range(1001, 1001 + args.bootstrap),
+                    labin=labin,
                 )
                 if args.models:
                     input_model_s = args.models
