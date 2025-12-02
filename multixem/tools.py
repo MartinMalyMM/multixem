@@ -293,6 +293,8 @@ def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefi
     llweight_col = ["llweight"] if "llweight" in df2.columns else []
     df2 = df2[["H", "K", "L"] + columns + llweight_col]
     df2 = df2.dropna(subset=[f_col])  # Select only observed reflections
+    if llweight_col:
+        df2 = df2.dropna(subset=llweight_col)
     df2 = df2.rename(columns=columns2_dict)
     # n_refl2 = len(df2)
     # logging.info(f"No. unique reflections: {n_refl2} in file {mtz_file_2}")
