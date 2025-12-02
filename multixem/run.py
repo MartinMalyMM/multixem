@@ -11,6 +11,7 @@ import matplotlib
 import logging
 import json
 import shlex
+import glob
 from collections import Counter
 import concurrent.futures
 from . import __version__
@@ -114,6 +115,14 @@ def create_parser():
         abs_norm_path = os.path.abspath(os.path.normpath(path))
         if not os.path.isfile(abs_norm_path):
             raise argparse.ArgumentTypeError(f"File does not exist: {abs_norm_path}")
+        return abs_norm_path
+
+    def existing_directory(path):
+        abs_norm_path = os.path.abspath(os.path.normpath(path))
+        if not os.path.isdir(abs_norm_path):
+            raise argparse.ArgumentTypeError(
+                f"Directory does not exist: {abs_norm_path}"
+            )
         return abs_norm_path
 
     class ArgumentDefaultsHelpFormatterCustom(argparse.ArgumentDefaultsHelpFormatter):
@@ -251,6 +260,14 @@ def create_parser():
         ),
     )
     main_parser.add_argument(
+        "--model_dir",
+        type=existing_directory,
+        help=(
+            "Directory containing multiple input atomic structure model files"
+            " for bootstrap."
+        ),
+    )
+    main_parser.add_argument(
         "--quick",
         action="store_true",
         help="Quick run (only for development).",
@@ -314,6 +331,18 @@ def create_parser():
             parser.error("--bootstrap must be at least 2.")
         if args.geometry_cids and not args.bootstrap:
             parser.error("--geometry_cids requires --bootstrap to be provided.")
+        if args.bootstrap and args.model_dir:
+            model_files = glob.glob(os.path.join(args.model_dir, "*.pdb"))
+            model_files += glob.glob(os.path.join(args.model_dir, "*.cif"))
+            model_files += glob.glob(os.path.join(args.model_dir, "*.mmcif"))
+            if len(model_files) < args.bootstrap:
+                parser.error(
+                    f"--model_dir contains {len(model_files)} model files, "
+                    f"but --bootstrap expects at least {args.bootstrap}. "
+                    "The number of model files must be at least the bootstrap count."
+                )
+            # Store the found models for later use
+            args.models = sorted(model_files)[: args.bootstrap]
 
     main_parser.set_defaults(func=validate_args)
 
@@ -914,6 +943,8 @@ def run_servalcat_refine(
 
     if len(mtzs_fi) == len(models) >= 2:
         models_list = models
+    elif len(models) == len(mtzs_free) >= 2:
+        models_list = models
     else:
         models_list = [models[0]] * max(len(mtzs_fi), len(mtzs_free))
 
@@ -1295,7 +1326,6 @@ def main():
     # subcommand mean
     if args.command == "mean":
         setup_logging()
-        import glob
 
         if args.prefix:
             prefix = args.prefix
@@ -1635,6 +1665,10 @@ def main():
                 mtzs_bootstrap = bootstrap_dataset(
                     mtz_in, binner_master, seeds=range(1001, 1001 + args.bootstrap)
                 )
+                if args.models:
+                    input_model_s = args.models
+                else:
+                    input_model_s = [model]
                 (
                     refined_mmcifs_bootstrap,
                     refined_mtzs_bootstrap,
@@ -1642,7 +1676,7 @@ def main():
                 ) = run_servalcat_refine(
                     [mtz_in],
                     [labin],
-                    [model],
+                    input_model_s,
                     mtzs_free=mtzs_bootstrap,
                     source=args.source,
                     keyword_file=restraints_file,
@@ -1682,4 +1716,5 @@ def main():
                     prefix,
                     binner_master,
                     refined_mtzs[i_mtz],
+                    n_proc=n_proc,
                 )
