@@ -868,7 +868,7 @@ def run_servalcat_refine(
 
         if mtzs_free and "--labin_llweight" in arguments:
             prefix += f"llweight{i_mtz}_"
-            if "--unre" in arguments:
+            if "--weight" in arguments:
                 prefix += "unre_"
         prefix += "refine"
         log_filename = prefix + ".log"
@@ -1722,7 +1722,14 @@ def main():
                         keyword_file="",
                         arguments=servalcat_args
                         + ["--labin_llweight", "llweight"]
-                        + ["--unre", "--ncycle", str(args.unre)],
+                        + [
+                            "--weight",
+                            "2.0",
+                            "--hydrogen",
+                            "yes",
+                            "--ncycle",
+                            str(args.unre),
+                        ],
                         sigmaa=False,
                         quick=args.quick,
                         n_proc=n_proc,
