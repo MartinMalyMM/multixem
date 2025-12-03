@@ -1355,6 +1355,7 @@ def main():
     if args.command == "mean":
         setup_logging()
 
+        n_proc = min(os.cpu_count(), args.n_proc)
         if args.prefix:
             prefix = args.prefix
         else:
@@ -1438,7 +1439,7 @@ def main():
                     prefix=prefix,
                     binner=binner,
                     mtz_ref=refined_mtz_ref,
-                    n_proc=args.n_proc,
+                    n_proc=n_proc,
                 )
         else:
             logging.warning(
