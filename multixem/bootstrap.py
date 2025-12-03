@@ -859,7 +859,7 @@ def bootstrap_analyse_structures(
     mmcif_ref,
     idx=0,
     prefix="",
-    skip_hydrogen=False,
+    skip_hydrogen=True,
     smcif="",
     geometry_cids_file="",
     geometry_objects_ref=[],
@@ -1163,7 +1163,7 @@ def bootstrap_analyse_structures(
     st_first_cras = [
         cra
         for cra in st_first[0].all()
-        if not skip_hydrogen or not cra.atom.is_hydrogen()
+        if not (skip_hydrogen and cra.atom.is_hydrogen())
     ]
     logging.info(
         f"{len(st_first_cras)} atoms in the first structure {refined_mmcifs[0]}"
@@ -1190,7 +1190,7 @@ def bootstrap_analyse_structures(
         st_ref_cras = [
             cra
             for cra in st_ref[0].all()
-            if not skip_hydrogen or not cra.atom.is_hydrogen()
+            if not (skip_hydrogen and cra.atom.is_hydrogen())
         ]
         logging.info(
             f"{len(st_ref_cras)} atoms in the reference structure {mmcif_ref}"
@@ -1237,9 +1237,7 @@ def bootstrap_analyse_structures(
             geometry_objects = geometry_analysis_load(st, geometry_objects)
 
         st_cras = [
-            cra
-            for cra in st[0].all()
-            if not skip_hydrogen or not cra.atom.is_hydrogen()
+            cra for cra in st[0].all() if not (skip_hydrogen and cra.atom.is_hydrogen())
         ]
         assert len(st_first_cras) == len(st_cras), (
             f"Different number of atoms in structure model after bootstrapping: {mmcif}"

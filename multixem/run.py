@@ -1402,12 +1402,12 @@ def main():
             bootstrap_analyse_structures(
                 refined_mmcifs,
                 refined_mmcif_ref,
-                1,
-                prefix,
-                False,
-                args.cif,
-                args.geometry_cids,
-                geometry_objects_ref,
+                idx=1,
+                prefix=prefix,
+                skip_hydrogen=True,
+                smcif=args.cif,
+                geometry_cids_file=args.geometry_cids,
+                geometry_objects_ref=geometry_objects_ref,
             )
         else:
             logging.warning(
@@ -1426,7 +1426,12 @@ def main():
                     m.get_cell(),
                 )
                 bootstrap_mean_map(
-                    refined_mtzs, 1, prefix, binner=binner, mtz_ref=refined_mtz_ref
+                    refined_mtzs,
+                    idx=1,
+                    prefix=prefix,
+                    binner=binner,
+                    mtz_ref=refined_mtz_ref,
+                    n_proc=args.n_proc,
                 )
         else:
             logging.warning(
@@ -1740,29 +1745,29 @@ def main():
                     bootstrap_analyse_structures(
                         refined_mmcifs_bootstrap,
                         refined_mmcifs[i_mtz],
-                        i_mtz + 1,
-                        prefix,
-                        False,
-                        model,
-                        args.geometry_cids,
-                        geometry_objects_ref,
+                        idx=i_mtz + 1,
+                        prefix=prefix,
+                        skip_hydrogen=True,
+                        smcif=model,
+                        geometry_cids_file=args.geometry_cids,
+                        geometry_objects_ref=geometry_objects_ref,
                     )
                 else:
                     bootstrap_analyse_structures(
                         refined_mmcifs_bootstrap,
                         refined_mmcifs[i_mtz],
-                        i_mtz + 1,
-                        prefix,
-                        False,
-                        "",
-                        args.geometry_cids,
-                        geometry_objects_ref,
+                        idx=i_mtz + 1,
+                        prefix=prefix,
+                        skip_hydrogen=True,
+                        smcif="",
+                        geometry_cids_file=args.geometry_cids,
+                        geometry_objects_ref=geometry_objects_ref,
                     )
                 bootstrap_mean_map(
                     refined_mtzs_bootstrap,
-                    i_mtz + 1,
-                    prefix,
-                    binner_master,
-                    refined_mtzs[i_mtz],
+                    idx=i_mtz + 1,
+                    prefix=prefix,
+                    binner=binner_master,
+                    mtz_ref=refined_mtzs[i_mtz],
                     n_proc=n_proc,
                 )
