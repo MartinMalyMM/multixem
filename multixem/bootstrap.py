@@ -198,9 +198,8 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003], labin=""):
     df = df.astype({name: "int32" for name in ["H", "K", "L"]})
 
     # i_col = "IMEAN"  # can be just "I" after servalcat fw or sigmaa, or IMEAN?
-    if labin in df.columns:
-        column_label_dropna = labin.split(",")[0]
-        df = df.dropna(subset=[column_label_dropna])
+    if labin and labin.split(",")[0] in df.columns:
+        df = df.dropna(subset=[labin.split(",")[0]])
     else:
         warnings.warn(
             f"Column {labin} not found in MTZ file {mtz_file}. "
