@@ -840,31 +840,32 @@ def run_servalcat_refine(
     labins,
     models,
     mtzs_free=[],
+    prefix="multixem_",
     source="xray",
     keyword_file="",
     arguments=[],
     sigmaa=True,
     quick=False,
     n_proc=1,
-):  # , prefix=""):
-    # TODO: --keyword_file, --config
+):
+    # TODO: --config
     refined_mmcifs = []
     refined_mtzs = []
     refined_jsons = []
 
     def refine_one(params):
-        i_mtz, (mtz_fi, labin, mtz_free, model) = params
+        i_mtz, (mtz_fi, labin, mtz_free, model, prefix) = params
         local_refined_mmcifs = []
         local_refined_mtzs = []
         local_refined_jsons = []
+
         if mtzs_free and "--labin_llweight" in arguments:
-            prefix_local = (
-                f"{os.path.splitext(os.path.basename(mtz_fi))[0]}_"
-                f"llweight{i_mtz}_refine"
-            )
-        else:
-            prefix_local = f"{os.path.splitext(os.path.basename(mtz_fi))[0]}_refine"
-        log_filename = prefix_local + ".log"
+            prefix += f"llweight{i_mtz}_"
+            if "--unre" in arguments:
+                prefix += "unre_"
+        prefix += "refine"
+        log_filename = prefix + ".log"
+
         cmd = [
             "servalcat",
             "refine_xtal_norefmac",
@@ -878,7 +879,7 @@ def run_servalcat_refine(
             labin,
             "--hout",
             "-o",
-            prefix_local,
+            prefix,
         ]
         if mtz_free:
             cmd.extend(["--hklin_free", mtz_free])
@@ -902,7 +903,7 @@ def run_servalcat_refine(
                     raise subprocess.CalledProcessError(process.returncode, cmd)
         except subprocess.CalledProcessError as e:
             logging.error(f"Error occurred while running command: {e}")
-        json_filename = prefix_local + "_stats.json"
+        json_filename = prefix + "_stats.json"
         if not os.path.exists(json_filename):
             raise FileNotFoundError(f"Expected stats file not found: {json_filename}")
         with open(json_filename, "r") as stats_file:
@@ -912,20 +913,20 @@ def run_servalcat_refine(
                 for stat in stats[-1]["data"]["summary"]
                 if stat != "-LL"
             ]
-            logging.info(f"Finished: {prefix_local}.mmcif {', '.join(stats_line_list)}")
+            logging.info(f"Finished: {prefix}.mmcif {', '.join(stats_line_list)}")
         if sigmaa:
-            log_filename_sigmaa = prefix_local + "_sigmaa.log"
+            log_filename_sigmaa = prefix + "_sigmaa.log"
             cmd_sigmaa = [
                 "servalcat",
                 "sigmaa",
                 "--hklin",
                 mtz_fi,
                 "--model",
-                prefix_local + ".mmcif",
+                prefix + ".mmcif",
                 "-s",
                 source,
                 "-o",
-                prefix_local + "_sigmaa",
+                prefix + "_sigmaa",
             ]
             if mtz_free:
                 cmd_sigmaa.extend(["--hklin_free", mtz_free])
@@ -942,11 +943,11 @@ def run_servalcat_refine(
                     )
             except subprocess.CalledProcessError as e:
                 logging.error(f"Error occurred while running command: {e}")
-            local_refined_mtzs.append(prefix_local + "_sigmaa.mtz")
+            local_refined_mtzs.append(prefix + "_sigmaa.mtz")
         else:
-            local_refined_mtzs.append(prefix_local + ".mtz")
-        local_refined_mmcifs.append(prefix_local + ".mmcif")
-        local_refined_jsons.append(prefix_local + "_stats.json")
+            local_refined_mtzs.append(prefix + ".mtz")
+        local_refined_mmcifs.append(prefix + ".mmcif")
+        local_refined_jsons.append(prefix + "_stats.json")
         return local_refined_mmcifs[0], local_refined_mtzs[0], local_refined_jsons[0]
 
     if len(mtzs_fi) == len(models) >= 2:
@@ -959,18 +960,30 @@ def run_servalcat_refine(
     if mtzs_free and len(mtzs_free) >= 2 and len(mtzs_fi) == 1:
         # refinement after bootstrapping
         params = zip(
-            mtzs_fi * len(mtzs_free), labins * len(mtzs_free), mtzs_free, models_list
+            mtzs_fi * len(mtzs_free),
+            labins * len(mtzs_free),
+            mtzs_free,
+            models_list,
+            [prefix] * len(mtzs_free),
         )
     elif not mtzs_free:
         # refinement after merging, no free set provided
-        params = zip(mtzs_fi, labins, [None] * len(mtzs_fi), models_list)
+        params = zip(
+            mtzs_fi, labins, [None] * len(mtzs_fi), models_list, [prefix] * len(mtzs_fi)
+        )
     elif len(mtzs_free) == 1:
         # refinement after merging, single free set provided
-        params = zip(mtzs_fi, labins, mtzs_free * len(mtzs_fi), models_list)
+        params = zip(
+            mtzs_fi,
+            labins,
+            mtzs_free * len(mtzs_fi),
+            models_list,
+            [prefix] * len(mtzs_fi),
+        )
     else:
         # unexpected case, should not happen
         raise ValueError(
-            "Unexpected case: both mtzs_fi and mtzs_free have" " more than one element."
+            "Unexpected case: both mtzs_fi and mtzs_free have more than one element."
         )
     with concurrent.futures.ThreadPoolExecutor(max_workers=n_proc) as executor:
         results = list(executor.map(refine_one, enumerate(params)))
@@ -1643,6 +1656,7 @@ def main():
             labins,
             models,
             mtzs_free=[args.hklin_free],
+            prefix=prefix,
             source=args.source,
             arguments=servalcat_args,
             quick=args.quick,
@@ -1691,6 +1705,7 @@ def main():
                         [labin],
                         input_model_s,
                         mtzs_free=mtzs_bootstrap,
+                        prefix=f"{prefix}group{i_mtz + 1}_",
                         source=args.source,
                         keyword_file="",
                         arguments=servalcat_args
@@ -1710,6 +1725,7 @@ def main():
                     [labin],
                     input_model_s,
                     mtzs_free=mtzs_bootstrap,
+                    prefix=f"{prefix}group{i_mtz + 1}_",
                     source=args.source,
                     keyword_file=restraints_file,
                     arguments=servalcat_args + ["--labin_llweight", "llweight"],
