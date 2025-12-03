@@ -1241,8 +1241,10 @@ def bootstrap_analyse_structures(
             for cra in st[0].all()
             if not skip_hydrogen or not cra.atom.is_hydrogen()
         ]
-        assert len(st_first_cras) == len(st_cras), "Different number of atoms in"
-        f" structure models after bootstrapping: {mmcif}."
+        assert len(st_first_cras) == len(st_cras), (
+            f"Different number of atoms in structure model after bootstrapping: {mmcif}"
+            f". Expected {len(st_first_cras)} atoms, got {len(st_cras)}."
+        )
         for a, (cra_first, cra) in enumerate(zip(st_first_cras, st_cras)):
             assert (
                 cra_first.atom.name == cra.atom.name
