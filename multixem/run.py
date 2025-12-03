@@ -316,6 +316,13 @@ def create_parser():
             " analysed while performing bootstrap."
         ),
     )
+    mean_parser.add_argument(
+        "--n_proc",
+        type=positive_int,
+        default=4,
+        help="Number of processes to use for parallelisation."
+        + " Must be a positive integer.",
+    )
 
     def validate_args(args):
         if args.n_batches and not args.hklin_unmerged:
