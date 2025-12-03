@@ -1704,7 +1704,7 @@ def main():
                     seeds=range(1001, 1001 + args.bootstrap),
                     labin=labin,
                 )
-                if hasattr(args, "models") and args.models:
+                if args.model_dir and args.models:
                     input_model_s = args.models
                 else:
                     input_model_s = [model]
