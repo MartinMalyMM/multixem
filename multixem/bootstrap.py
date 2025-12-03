@@ -878,8 +878,8 @@ def bootstrap_analyse_structures(
         geometry_atoms (str): Path to a corresponding file with list of atoms.
 
     Returns:
-        None: Writes the statistics in '{prefix}group{idx}_mean_stats.csv' and
-              the mean structure to '{prefix}group{idx}_mean_structure.mmcif'
+        None: Writes the statistics in '{prefix}group{idx}_bootstrap_mean_stats.csv' and
+              the mean structure to '{prefix}group{idx}_bootstrap_mean_structure.mmcif'
               where 1000 * sigma_coordinate is saved as B-value.
     """
 
@@ -1513,16 +1513,20 @@ def bootstrap_analyse_structures(
                     break
     df_csv = pandas.DataFrame(csv_data)
     df_csv = df_csv.round(6)
-    csv_filename = f"{prefix}group{idx}_mean_stats.csv" if idx else "mean_stats.csv"
+    csv_filename = (
+        f"{prefix}group{idx}_bootstrap_mean_stats.csv"
+        if idx
+        else "bootstrap_mean_stats.csv"
+    )
     df_csv.to_csv(csv_filename, index=False)
     logging.info(f"Mean structure statistics written to {csv_filename}.")
 
     if smcif and atoms_list:
         # df_csv_noH = df_csv[~df_csv["atom_id"].str.contains("/H")]
         png_filename = (
-            f"{prefix}group{idx}_mean_stats_plot_xyzb.png"
+            f"{prefix}group{idx}_bootstrap_mean_stats_plot_xyzb.png"
             if idx
-            else "mean_stats_plot_xyzb.png"
+            else "bootstrap_mean_stats_plot_xyzb.png"
         )
         df_scatter_plot(
             df_csv,
@@ -1536,9 +1540,9 @@ def bootstrap_analyse_structures(
             filename=png_filename,
         )
         png_filename_per_element = (
-            f"{prefix}group{idx}_mean_stats_plot_xyzb_per_element.png"
+            f"{prefix}group{idx}_bootstrap_mean_stats_plot_xyzb_per_element.png"
             if idx
-            else "mean_stats_plot_xyzb_per_element.png"
+            else "bootstrap_mean_stats_plot_xyzb_per_element.png"
         )
         df_scatter_plot(
             df_csv,
@@ -1558,9 +1562,11 @@ def bootstrap_analyse_structures(
         # Replace position with mean coordinates
         cra.atom.pos = gemmi.Position(*mean_coords[i])
         # Replace B-factor with norm of std deviation (or square it if desired)
-        cra.atom.b_iso = 1000 * std_coords_norm[i]  # or (8π²/3)*σ² ???
+        cra.atom.b_iso = std_coords_norm[i]  # or (8π²/3)*σ² ???
     mmcif_filename = (
-        f"{prefix}group{idx}_mean_structure.mmcif" if idx else "mean_structure.mmcif"
+        f"{prefix}group{idx}_bootstrap_mean_structure.mmcif"
+        if idx
+        else "bootstrap_mean_structure.mmcif"
     )
     st_first.make_mmcif_document().write_file(mmcif_filename)
     logging.info(f"Mean structure written to {mmcif_filename}.")
