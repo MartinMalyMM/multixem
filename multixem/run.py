@@ -1433,10 +1433,11 @@ def main():
         prefix = args.prefix
         if args.prefix[-1] != "_":
             prefix += "_"
+        working_dir_name = f"multixem_{prefix[:-1]}"
     else:
         prefix = "multixem_"
+        working_dir_name = "multixem_project"
 
-    working_dir_name = f"multixem_{prefix[:-1]}"
     os.mkdir(working_dir_name)
     os.chdir(working_dir_name)
 
@@ -1683,8 +1684,8 @@ def main():
                 if args.unre:
                     (
                         refined_mmcifs_bootstrap_unre,
-                        refined_mtzs_bootstrap_unre,
-                        refined_jsons_bootstrap_unre,
+                        _,
+                        _,
                     ) = run_servalcat_refine(
                         [mtz_in],
                         [labin],
