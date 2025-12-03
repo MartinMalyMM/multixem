@@ -1360,7 +1360,7 @@ def main():
             prefix = args.prefix
         else:
             prefix = args.file_name_template
-        if args.prefix[-1] != "_":
+        if prefix[-1] != "_":
             prefix += "_"
 
         refined_jsons = glob.glob(
@@ -1457,7 +1457,7 @@ def main():
 
     if args.prefix:
         prefix = args.prefix
-        if args.prefix[-1] != "_":
+        if prefix[-1] != "_":
             prefix += "_"
         working_dir_name = f"multixem_{prefix[:-1]}"
     else:
