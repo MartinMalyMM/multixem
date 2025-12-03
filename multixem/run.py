@@ -268,6 +268,12 @@ def create_parser():
         ),
     )
     main_parser.add_argument(
+        "--unre",
+        type=positive_int,
+        default=0,
+        help="Number of cycles for prior unrestrained refinement during bootstrap.",
+    )
+    main_parser.add_argument(
         "--quick",
         action="store_true",
         help="Quick run (only for development).",
@@ -331,6 +337,8 @@ def create_parser():
             parser.error("--bootstrap must be at least 2.")
         if args.geometry_cids and not args.bootstrap:
             parser.error("--geometry_cids requires --bootstrap to be provided.")
+        if args.unre and not args.bootstrap:
+            parser.error("--unre requires --bootstrap to be provided.")
         if args.bootstrap and args.model_dir:
             model_files = glob.glob(os.path.join(args.model_dir, "*.pdb"))
             model_files += glob.glob(os.path.join(args.model_dir, "*.cif"))
@@ -1672,6 +1680,26 @@ def main():
                     input_model_s = args.models
                 else:
                     input_model_s = [model]
+                if args.unre:
+                    (
+                        refined_mmcifs_bootstrap_unre,
+                        refined_mtzs_bootstrap_unre,
+                        refined_jsons_bootstrap_unre,
+                    ) = run_servalcat_refine(
+                        [mtz_in],
+                        [labin],
+                        input_model_s,
+                        mtzs_free=mtzs_bootstrap,
+                        source=args.source,
+                        keyword_file="",
+                        arguments=servalcat_args
+                        + ["--labin_llweight", "llweight"]
+                        + ["--unre", "--ncycle", str(args.unre)],
+                        sigmaa=False,
+                        quick=args.quick,
+                        n_proc=n_proc,
+                    )
+                    input_model_s = refined_mmcifs_bootstrap_unre
                 (
                     refined_mmcifs_bootstrap,
                     refined_mtzs_bootstrap,
