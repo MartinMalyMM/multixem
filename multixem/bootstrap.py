@@ -1571,13 +1571,21 @@ def bootstrap_analyse_structures(
         cra.atom.pos = gemmi.Position(*mean_coords[i])
         # Replace B-factor with norm of std deviation (or square it if desired)
         cra.atom.b_iso = std_coords_norm[i]  # or (8π²/3)*σ² ???
-    mmcif_filename = (
-        f"{prefix}group{idx}_bootstrap_mean_structure.mmcif"
+        cra.atom.occ = mean_occupancies[i]
+    mean_structure_prefix = (
+        f"{prefix}group{idx}_bootstrap_mean_structure"
         if idx
-        else "bootstrap_mean_structure.mmcif"
+        else "bootstrap_mean_structure"
     )
-    st_first.make_mmcif_document().write_file(mmcif_filename)
-    logging.info(f"Mean structure written to {mmcif_filename}.")
+    st_first.make_mmcif_document().write_file(f"{mean_structure_prefix}.mmcif")
+    logging.info(f"Mean structure saved as {mean_structure_prefix}.mmcif")
+    try:
+        st_first.write_pdb(f"{mean_structure_prefix}.pdb")
+        logging.info(f"Mean structure saved as {mean_structure_prefix}.pdb")
+    except:  # noqa: E722
+        logging.warning(
+            "Saving the mean structure in the PDB format was not successful."
+        )
     return
 
 
