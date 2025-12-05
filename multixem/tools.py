@@ -67,7 +67,7 @@ def write_mtz_from_df(df, mtz_ref, columns, filename):
 
     mtz.set_data(data)
     mtz.write_to_file(filename)
-    logging.info(f"Saved {len(df)} reflections to {filename}.")
+    logging.info(f"Saved {len(df)} reflections to {filename}")
     return
 
 

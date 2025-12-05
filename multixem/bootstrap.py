@@ -2088,7 +2088,7 @@ def bootstrap_mean_map(
                     indent=4,
                     default=json_numpy_converter,
                 )
-            logging.info(f"Saved bootstrap map scaling stats to {json_filename}.")
+            logging.info(f"Saved bootstrap map scaling stats to {json_filename}")
         except Exception as e:
             logging.warning(
                 f"Could not write bootstrap map scaling stats JSON file: {e}"
