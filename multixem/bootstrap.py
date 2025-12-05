@@ -1182,6 +1182,9 @@ def bootstrap_analyse_structures(
     u_aniso = numpy.zeros(
         (len(st_first_cras), 6, len(refined_mmcifs)), dtype=numpy.float32
     )
+    occupancies = numpy.zeros(
+        (len(st_first_cras), len(refined_mmcifs)), dtype=numpy.float32
+    )
 
     ref_b_value = {}
     if mmcif_ref and os.path.isfile(mmcif_ref):
@@ -1260,6 +1263,7 @@ def bootstrap_analyse_structures(
                 cra.atom.aniso.u13,
                 cra.atom.aniso.u23,
             ]
+            occupancies[a, s] = cra.atom.occ
 
         if smcif:
             # Calculate geometry
@@ -1439,6 +1443,8 @@ def bootstrap_analyse_structures(
     std_b_values = numpy.std(b_values, ddof=1, axis=1)  # shape: (n_atoms,)
     mean_u_aniso = numpy.mean(u_aniso, axis=2)  # shape: (n_atoms, 6)
     std_u_aniso = numpy.std(u_aniso, ddof=1, axis=2)  # shape: (n_atoms, 6)
+    mean_occupancies = numpy.mean(occupancies, axis=1)  # shape: (n_atoms,)
+    std_occupancies = numpy.std(occupancies, ddof=1, axis=1)  # shape: (n_atoms,)
 
     mean_b_values_per_structure = numpy.mean(b_values, axis=0)  # shape: (n_structures,)
     plot_histogram(
@@ -1487,6 +1493,8 @@ def bootstrap_analyse_structures(
                 "sigma_u12": std_u_aniso[i][3],
                 "sigma_u13": std_u_aniso[i][4],
                 "sigma_u23": std_u_aniso[i][5],
+                "mean_occupancy": mean_occupancies[i],
+                "sigma_occupancy": std_occupancies[i],
             }
         )
         if smcif and atoms_list:
