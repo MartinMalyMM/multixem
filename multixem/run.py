@@ -1697,7 +1697,7 @@ def main():
                     geometry_objects_ref = geometry_analysis_load(
                         st_ref, geometry_objects_ref
                     )
-                    restraints_file = unrestrain(geometry_objects_ref)
+                    restraints_file = unrestrain(geometry_objects_ref, model)
                 mtzs_bootstrap = bootstrap_dataset(
                     mtz_in,
                     binner_master,

@@ -19,6 +19,8 @@ from .tools import (
     filename_replace_char,
     json_numpy_converter,
     scale_reflections,
+    select_CIDs_of_residues,
+    CRA2CID,
 )
 
 
@@ -310,20 +312,83 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003], labin=""):
     return mtzs_out
 
 
-def unrestrain(geometry_objects_ref):
+def unrestrain(geometry_objects_ref, structure_file):
     """
     Create a restraints file with unrestrained geometry for bootstrapping.
 
     Args:
-        geometry_cids (list of list of str): List of CIDs for geometry restraints.
         geometry_objects_ref (list of dict): Geometry objects from reference structure.
+        structure_file (str): Path to the structure file (PDB or mmCIF).
 
     Returns:
         str: Filename of the created restraints file.
     """
-    restraints_lines = []
+    from itertools import combinations
+
+    logging.info("Creating unrestrained geometry for Servalcat...")
+    CIDs_of_residue_pairs_master = set()  # set of lists of 2or3or4 residues
     for geometry_object in geometry_objects_ref:
         assert len(geometry_object["values"]) == 1
+        CIDs_of_residues = select_CIDs_of_residues(geometry_object)
+        assert len(CIDs_of_residues) >= 2, f"Invalid geometry object: {geometry_object}"
+        # Generate all unique pairs of different entries from a set/list.
+        CIDs_of_residue_pairs = list(combinations(list(CIDs_of_residues), 2))
+        CIDs_of_residue_pairs = [
+            pair for pair in CIDs_of_residue_pairs if pair[0] != pair[1]
+        ]
+        CIDs_of_residue_pairs_master.update(CIDs_of_residue_pairs)
+
+    # for each residue pair, create gemmi selections
+    # to get pair of lists of atom CRAs
+    # and then list of pairs of atoms
+    unrestrained_distances = []
+    st = gemmi.read_structure(structure_file)
+    for CID_residues_pair in CIDs_of_residue_pairs_master:
+        CID_residue1_raw, CID_residue2_raw = CID_residues_pair
+        CID_residue1 = CID_residue1_raw.split("@")[0]
+        if len(CID_residue1_raw.split("@")) > 1:
+            CID_residue1_symm = CID_residue1_raw.split("@")[1]
+        else:
+            CID_residue1_symm = False
+        CID_residue2 = CID_residue2_raw.split("@")[0]
+        if len(CID_residue2_raw.split("@")) > 1:
+            CID_residue2_symm = CID_residue2_raw.split("@")[1]
+        else:
+            CID_residue2_symm = False
+        sel1 = gemmi.Selection(CID_residue1)
+        sel1_model = sel1.copy_model_selection(st[0])
+        cra_atoms1 = list(sel1_model.all())
+        sel2 = gemmi.Selection(CID_residue2)
+        sel2_model = sel2.copy_model_selection(st[0])
+        cra_atoms2 = list(sel2_model.all())
+        for atom1 in cra_atoms1:
+            for atom2 in cra_atoms2:
+                atom1_CID = CRA2CID(atom1)
+                atom2_CID = CRA2CID(atom2)
+                if CID_residue1_symm or CID_residue2_symm:
+                    if len(CID_residue1_raw.split("@")) > 1:
+                        atom2_CID += f"@{CID_residue1_symm}"
+                    elif len(CID_residue2_raw.split("@")) > 1:
+                        atom2_CID += f"@{CID_residue2_symm}"
+                unrestrained_distance = {
+                    "type": "distance",
+                    "atom1": atom1_CID,
+                    "atom2": atom2_CID,
+                    "atom3": "",
+                    "atom4": "",
+                }
+                unrestrained_distances.append(unrestrained_distance)
+
+    restraints_lines = []
+
+    for unrestrained_distance in unrestrained_distances:
+        restraint = CID2RefmacRestraint(unrestrained_distance)
+        restraints_lines.append(restraint)
+
+    for geometry_object in geometry_objects_ref:
+        assert len(geometry_object["values"]) == 1
+        if geometry_object["type"] == "distance":
+            continue  # already processed above
         restraint = CID2RefmacRestraint(geometry_object)
         restraints_lines.append(restraint)
 

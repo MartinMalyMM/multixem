@@ -151,6 +151,106 @@ def makeAddressStr(cra):
     return address
 
 
+def CRA2CID(cra):
+    """Convert a gemmi.CRA to a CID string."""
+    cid = f"//{cra.chain.name}/{cra.residue.seqid.num}"
+    if cra.residue.seqid.icode.strip():
+        cid += f".{cra.residue.seqid.icode}"
+    cid += f"/{cra.atom.name}"
+    if cra.atom.has_altloc():
+        cid += f":{cra.atom.altloc}"
+    return cid
+
+
+def CID2dict(cid, atom_level=True):
+    """
+    Parse a CID string and extract chain, seqid, insertion code, atom name, and altloc.
+
+    Args:
+        cid (str): CID string in format //chain/seqnum[.inscode]/atom[:altloc][@symm]
+
+    Returns:
+        dict: Dictionary with keys chain, seqnum, inscode, atom, altloc, symm
+    """
+    cid_no_symm = cid.split("@")[0]
+    cid_split = cid_no_symm.split("/")
+    assert len(cid_split) >= 2, f"CID select all the model: {cid}"
+    if atom_level:
+        assert len(cid_split) >= 5, f"Invalid CID for an atom: {cid}"
+    if len(cid.split("@")) == 2:
+        symm = cid.split("@")[1]
+    else:
+        symm = ""
+    if len(cid_split) >= 3:
+        chain = cid_split[2]
+        if len(cid_split) >= 4:
+            seqid_split = cid_split[3].split(".")
+            seqnum = seqid_split[0]
+            inscode = seqid_split[1] if len(seqid_split) > 1 else ""
+            if len(cid_split) >= 5:
+                atom_split = cid_split[4].split(":")
+                atom = atom_split[0]
+                altloc = atom_split[1] if len(atom_split) > 1 else ""
+            else:
+                atom = ""
+                altloc = ""
+        else:
+            seqnum = ""
+            inscode = ""
+    else:
+        chain = ""
+
+    return {
+        "chain": chain,
+        "seqnum": seqnum,
+        "inscode": inscode,
+        "atom": atom,
+        "altloc": altloc,
+        "symm": symm,
+    }
+
+
+def dict2CID(atom_dict):
+    """Convert a dictionary with keys:
+    chain, seqnum, inscode, atom, altloc, symm
+    to a CID string."""
+    cid = f"//{atom_dict['chain']}/{atom_dict['seqnum']}"
+    if atom_dict["inscode"]:
+        cid += f".{atom_dict['inscode']}"
+    if atom_dict["atom"] or atom_dict["altloc"]:
+        cid += "/"
+    if atom_dict["atom"]:
+        cid += f"{atom_dict['atom']}"
+    else:
+        cid += "*"
+    if atom_dict["altloc"]:
+        cid += f":{atom_dict['altloc']}"
+    if atom_dict["symm"]:
+        cid += f"@{atom_dict['symm']}"
+    return cid
+
+
+def select_CIDs_of_residues(geometry_object):
+    """geometry_object is a dict with keys:
+    atom1, atom2, atom3, atom4 - CIDs of the atoms involved"""
+
+    cid_select_residues = []
+    for cid in [
+        geometry_object["atom1"],
+        geometry_object["atom2"],
+        geometry_object["atom3"],
+        geometry_object["atom4"],
+    ]:
+        if not cid:
+            continue
+        atom_dict = CID2dict(cid, atom_level=True)
+        atom_dict["atom"] = "*"
+        cid_select_residue = dict2CID(atom_dict)
+        cid_select_residues.append(cid_select_residue)
+
+    return cid_select_residues
+
+
 def CID2RefmacRestraint(geometry_object):
     """geometry_object is a dict with keys:
     atom1, atom2, atom3, atom4 - CIDs of the atoms involved
@@ -166,19 +266,15 @@ def CID2RefmacRestraint(geometry_object):
     ]:
         if not cid:
             continue
-        cid_symm = len(cid.split("@")) > 1
-        cid_split = cid.split("@")[0].split("/")
-        assert len(cid_split) >= 5, f"Invalid CID: {cid}"
-        seqid_split = cid_split[3].split(".")
-        atom_split = cid_split[4].split(":")
-        refmacAddress = f"chain {cid_split[2]} "
-        refmacAddress += f"resi {seqid_split[0]} "
-        if len(seqid_split) > 1:
-            refmacAddress += f"inse {seqid_split[1]} "
-        refmacAddress += f"atom {atom_split[0]}"
-        if len(atom_split) > 1:
-            refmacAddress += f" alte {atom_split[1]}"
-        if cid_symm:
+        atom_dict = CID2dict(cid, atom_level=True)
+        refmacAddress = f"chain {atom_dict['chain']} "
+        refmacAddress += f"resi {atom_dict['seqnum']} "
+        if atom_dict["inscode"]:
+            refmacAddress += f"inse {atom_dict['inscode']} "
+        refmacAddress += f"atom {atom_dict['atom']}"
+        if atom_dict["altloc"]:
+            refmacAddress += f" alte {atom_dict['altloc']}"
+        if atom_dict["symm"]:
             refmacAddress += " symm y"
         refmacAddresses.append(refmacAddress)
 
