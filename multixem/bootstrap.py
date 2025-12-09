@@ -376,10 +376,10 @@ def unrestrain(geometry_objects_ref, structure_file):
             CID_residue2_symm = False
         sel1 = gemmi.Selection(CID_residue1)
         sel1_model = sel1.copy_model_selection(st[0])
-        cra_atoms1 = list(sel1_model.all())
+        cra_atoms1 = [cra for cra in sel1_model.all() if not cra.atom.is_hydrogen()]
         sel2 = gemmi.Selection(CID_residue2)
         sel2_model = sel2.copy_model_selection(st[0])
-        cra_atoms2 = list(sel2_model.all())
+        cra_atoms2 = [cra for cra in sel2_model.all() if not cra.atom.is_hydrogen()]
         for cra1 in cra_atoms1:
             for cra2 in cra_atoms2:
                 atom1_CID = CRA2CID(cra1)
