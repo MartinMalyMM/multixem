@@ -340,9 +340,28 @@ def unrestrain(geometry_objects_ref, structure_file):
 
     # for each residue pair, create gemmi selections
     # to get pair of lists of atom CRAs
-    # and then list of pairs of atoms
-    unrestrained_distances = []
+    # and then list of pairs of atoms, exclude covalently bonded atoms
     st = gemmi.read_structure(structure_file)
+    restraints_lines = []
+    unrestrained_distances = []
+    covalently_bonded = dict()
+    try:
+        logging.info("Preparing topology for covalent bond detection...")
+        monlib = gemmi.MonLib()
+        topology = gemmi.prepare_topology(
+            st, monlib, h_change=gemmi.HydrogenChange.Remove
+        )
+        for bond in topology.bonds:
+            atom1, atom2 = bond.atoms
+            covalently_bonded.setdefault(str(atom1), set()).add(str(atom2))
+            covalently_bonded.setdefault(str(atom2), set()).add(str(atom1))
+    except Exception as e:
+        logging.warning(
+            f"Could not prepare topology for {structure_file}. So during unrestraining,"
+            " covalently bonded atoms could be included which is not optimal."
+            f"\n{e}"
+        )
+        covalently_bonded = dict()
     for CID_residues_pair in CIDs_of_residue_pairs_master:
         CID_residue1_raw, CID_residue2_raw = CID_residues_pair
         CID_residue1 = CID_residue1_raw.split("@")[0]
@@ -361,10 +380,19 @@ def unrestrain(geometry_objects_ref, structure_file):
         sel2 = gemmi.Selection(CID_residue2)
         sel2_model = sel2.copy_model_selection(st[0])
         cra_atoms2 = list(sel2_model.all())
-        for atom1 in cra_atoms1:
-            for atom2 in cra_atoms2:
-                atom1_CID = CRA2CID(atom1)
-                atom2_CID = CRA2CID(atom2)
+        for cra1 in cra_atoms1:
+            for cra2 in cra_atoms2:
+                atom1_CID = CRA2CID(cra1)
+                atom2_CID = CRA2CID(cra2)
+                if covalently_bonded:
+                    if str(cra2.atom) in covalently_bonded.get(
+                        str(cra1.atom), set()
+                    ) or str(cra1.atom) in covalently_bonded.get(str(cra2.atom), set()):
+                        restraints_lines.append(
+                            "# Skipping covalent bond between"
+                            f" {atom1_CID} and {atom2_CID}"
+                        )
+                        continue  # skip covalently bonded atoms
                 if CID_residue1_symm or CID_residue2_symm:
                     if len(CID_residue1_raw.split("@")) > 1:
                         atom2_CID += f"@{CID_residue1_symm}"
@@ -379,16 +407,14 @@ def unrestrain(geometry_objects_ref, structure_file):
                 }
                 unrestrained_distances.append(unrestrained_distance)
 
-    restraints_lines = []
-
     for unrestrained_distance in unrestrained_distances:
         restraint = CID2RefmacRestraint(unrestrained_distance)
         restraints_lines.append(restraint)
 
     for geometry_object in geometry_objects_ref:
         assert len(geometry_object["values"]) == 1
-        if geometry_object["type"] == "distance":
-            continue  # already processed above
+        # if geometry_object["type"] == "distance":
+        #     continue  # already processed above except of covalent bonds and hydrogens
         restraint = CID2RefmacRestraint(geometry_object)
         restraints_lines.append(restraint)
 
