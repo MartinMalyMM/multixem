@@ -147,44 +147,108 @@ def create_parser():
         help="show version and exit",
     )
 
-    # Create subparsers
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
+    # Parent parser for common options
+    common_parent = argparse.ArgumentParser(add_help=False)
+    common_parent.add_argument(
+        "--n_bins",
+        type=positive_int,
+        default=20,
+        help="Number of resolution bins. Must be a positive integer.",
+    )
+    common_parent.add_argument(
+        "-p", "--prefix", type=str, help="Prefix for the output files."
+    )
+    common_parent.add_argument(
+        "--n_proc",
+        type=positive_int,
+        default=4,
+        help="Number of processes to use for parallelisation."
+        + " Must be a positive integer.",
+    )
+    common_parent.add_argument(
+        "--geometry_cids",
+        type=existing_file,
+        help=(
+            "Input file with atomic CIDs defining bonds, angles or torsions to be"
+            " analysed while performing bootstrap."
+        ),
+    )
+
+    common_refinement_parent = argparse.ArgumentParser(add_help=False)
+    common_refinement_parent.add_argument(
+        "--servalcat_args",
+        type=str,
+        default=[],
+        help="Command line arguments for Servalcat (quoted)."
+        + " Do not use options -s, --source and --hout here.",
+    )
+    common_refinement_parent.add_argument(
+        "--model",
+        type=existing_file,
+        nargs="+",
+        help="Input atomic structure model file(s).",
+    )
+    # TODO more files
+    common_refinement_parent.add_argument(
+        "--hklin",
+        type=existing_file,
+        nargs="+",
+        help="Input merged diffraction data file(s).",
+    )
+    common_refinement_parent.add_argument(
+        "--hklin_free", type=existing_file, help="Input MTZ file for test flags."
+    )
+    common_refinement_parent.add_argument(
+        "--amplitude",
+        action="store_true",
+        help="Use amplitude rather than intensities (not recommended).",
+    )
+    common_refinement_parent.add_argument(
+        "--model_dir",
+        type=existing_directory,
+        help=(
+            "Directory containing multiple input atomic structure model files"
+            " for bootstrap."
+        ),
+    )
+    common_refinement_parent.add_argument(
+        "--unre",
+        type=positive_int,
+        default=0,
+        help="Number of cycles for prior unrestrained refinement during bootstrap.",
+    )
+    common_refinement_parent.add_argument(
+        "--quick",
+        action="store_true",
+        help="Quick run (only for development).",
+    )
+    # TODO: if input has Friedel pairs but a user wants to merge them
+    common_refinement_parent.add_argument(
+        "-s",
+        "--source",
+        type=str,
+        default="xray",
+        choices=["xray", "electron", "neutron"],
+        help="Radiation source, xray or electron or neutron.",
+    )
+
     # Main pipeline subcommand (default behavior)
-    main_parser = subparsers.add_parser(
+    pipeline_parser = subparsers.add_parser(
         "pipeline",
+        parents=[common_parent, common_refinement_parent],
         help="Run the main refinement pipeline",
         formatter_class=ArgumentDefaultsHelpFormatterCustom,
     )
-
-    # Add all existing arguments to the main parser
-    main_parser.add_argument(
-        "-p", "--prefix", type=str, help="Prefix for the output files."
-    )
-    main_parser.add_argument(
+    pipeline_parser.add_argument(
         "-u",
         "--hklin_unmerged",
         type=existing_file,
         nargs="+",
         help="Input unmerged diffraction data file(s).",
     )
-    # TODO more files
-    main_parser.add_argument(
-        "--hklin_free", type=existing_file, help="Input MTZ file for test flags."
-    )
-    main_parser.add_argument(
-        "--hklin",
-        type=existing_file,
-        nargs="+",
-        help="Input merged diffraction data file(s).",
-    )
-    main_parser.add_argument(
-        "--model",
-        type=existing_file,
-        nargs="+",
-        help="Input atomic structure model file(s).",
-    )
-    main_parser.add_argument(
+    pipeline_parser.add_argument(
         "--n_batches",
         type=positive_int,
         nargs="+",
@@ -193,50 +257,17 @@ def create_parser():
         + " where to split the data."
         + " Must be a positive integer or space-separated list of positive integers.",
     )
-    main_parser.add_argument(
+    pipeline_parser.add_argument(
         "--merge_whole_file",
         action="store_true",
         help="Merge all the batches in the input unmerged file(s).",
     )
-    main_parser.add_argument(
-        "--n_bins",
-        type=positive_int,
-        default=20,
-        help="Number of resolution bins. Must be a positive integer.",
-    )
-    main_parser.add_argument(
-        "--servalcat_args",
-        type=str,
-        default=[],
-        help="Command line arguments for Servalcat, recommend to put them"
-        + " between apostrophes. Do not use options -s, --source and --hout here.",
-    )
-    main_parser.add_argument(
-        "-s",
-        "--source",
-        type=str,
-        default="xray",
-        choices=["xray", "electron", "neutron"],
-        help="Radiation source, xray or electron or neutron.",
-    )
-    main_parser.add_argument(
-        "--n_proc",
-        type=positive_int,
-        default=4,
-        help="Number of processes to use for parallelisation."
-        + " Must be a positive integer.",
-    )
-    main_parser.add_argument(
-        "--amplitude",
-        action="store_true",
-        help="Use amplitude rather than intensities (not recommended).",
-    )
-    main_parser.add_argument(
+    pipeline_parser.add_argument(
         "--molrep",
         action="store_true",
         help="Run MolRep for molecular replacement before structure refinement.",
     )
-    main_parser.add_argument(
+    pipeline_parser.add_argument(
         "--unify_cell",
         action="store_true",
         help=(
@@ -244,45 +275,20 @@ def create_parser():
             "based on the first dataset."
         ),
     )
-    main_parser.add_argument(
+    pipeline_parser.add_argument(
         "--bootstrap",
         type=positive_int,
         default=0,
-        help="No. of bootstrapped sub data sets to be created and used for refinement."
-        + " Must be a positive integer higher than 1.",
-    )
-    main_parser.add_argument(
-        "--geometry_cids",
-        type=existing_file,
         help=(
-            "Input file with atomic CIDs defining bonds, angles or torsions to be"
-            " analysed while performing bootstrap."
+            "No. of bootstrap resampled sub data sets to be created and"
+            " used for refinement. Must be a positive integer higher than 1."
         ),
     )
-    main_parser.add_argument(
-        "--model_dir",
-        type=existing_directory,
-        help=(
-            "Directory containing multiple input atomic structure model files"
-            " for bootstrap."
-        ),
-    )
-    main_parser.add_argument(
-        "--unre",
-        type=positive_int,
-        default=0,
-        help="Number of cycles for prior unrestrained refinement during bootstrap.",
-    )
-    main_parser.add_argument(
-        "--quick",
-        action="store_true",
-        help="Quick run (only for development).",
-    )
-    # TODO: if input has Friedel pairs but a user wants to merge them
 
-    # Bootstrap mean map subcommand
+    # mean subcommand - mean and std for statistics, model and maps
     mean_parser = subparsers.add_parser(
         "mean",
+        parents=[common_parent],
         help="Calculate mean maps from bootstrapped refinement results",
         formatter_class=ArgumentDefaultsHelpFormatterCustom,
     )
@@ -295,50 +301,61 @@ def create_parser():
         ),
     )
     mean_parser.add_argument(
-        "--prefix", type=str, help="Prefix for the output filename"
-    )
-    mean_parser.add_argument(
-        "--n_bins",
-        type=positive_int,
-        default=20,
-        help="Number of resolution bins. Must be a positive integer.",
-    )
-    mean_parser.add_argument(
         "--cif",
         type=existing_file,
         help="Path to a small molecule CIF file.",
     )
-    mean_parser.add_argument(
-        "--geometry_cids",
-        type=existing_file,
+
+    # Bootstrap subcommand (optional new command)
+    bootstrap_parser = subparsers.add_parser(
+        "bootstrap",
+        parents=[common_parent, common_refinement_parent],
+        help="Run multiple refinement against bootstrap sub data sets",
+        formatter_class=ArgumentDefaultsHelpFormatterCustom,
+    )
+    bootstrap_parser.add_argument(
+        "n_samples",
+        type=positive_int,
+        default=5000,
         help=(
-            "Input file with atomic CIDs defining bonds, angles or torsions to be"
-            " analysed while performing bootstrap."
+            "No. of bootstrap resampled sub data sets to be created and"
+            " used for refinement. Must be a positive integer higher than 1."
         ),
     )
-    mean_parser.add_argument(
-        "--n_proc",
-        type=positive_int,
-        default=4,
-        help="Number of processes to use for parallelisation."
-        + " Must be a positive integer.",
-    )
 
-    def validate_args(args):
+    def validate_common(args):
+        if args.n_proc <= 0:
+            parser.error("--n_proc must be positive")
+
+    def validate_model_dir(args, n_required):
+        if not args.model_dir:
+            return
+        model_files = []
+        for pattern in ["*.pdb", "*.cif", "*.mmcif"]:
+            model_files.extend(glob.glob(os.path.join(args.model_dir, pattern)))
+
+        if len(model_files) < n_required:
+            parser.error(
+                f"--model_dir contains {len(model_files)} structure model files, "
+                f"but at least {n_required} are required."
+            )
+        args.models = sorted(model_files)[:n_required]
+
+    def validate_pipeline(args):
+        validate_common(args)
         if args.n_batches and not args.hklin_unmerged:
             parser.error("--n_batches requires --hklin_unmerged to be provided.")
         if args.merge_whole_file and not args.hklin_unmerged:
             parser.error("--merge_whole_file requires --hklin_unmerged to be provided.")
         if args.hklin_unmerged and not args.n_batches and not args.merge_whole_file:
-            args.n_batches = [60]  # Default to 60 batches if not specified
+            args.n_batches = [60]  # Default
         if args.model and len(args.model) > 1:
             if len(args.model or []) < (
                 len(args.hklin or []) + len(args.hklin_unmerged or [])
             ):
                 parser.error(
-                    "Just a single model can be provided for multiple data sets,"
-                    " or the number of input structure models must match the number"
-                    " of provided data sets."
+                    "Just a single model can be provided for multiple data sets, "
+                    "or the number of models must match the number of data sets."
                 )
         if args.bootstrap and args.bootstrap < 2:
             parser.error("--bootstrap must be at least 2.")
@@ -347,19 +364,34 @@ def create_parser():
         if args.unre and not args.bootstrap:
             parser.error("--unre requires --bootstrap to be provided.")
         if args.bootstrap and args.model_dir:
+            validate_model_dir(args, args.bootstrap)
+
+    def validate_mean(args):
+        validate_common(args)
+
+    def validate_bootstrap(args):
+        validate_common(args)
+        # TODO
+        # if not args.hklin or not args.model:
+        #     parser.error("--hklin and --model are required for bootstrap.")
+        if args.n_samples < 2:
+            parser.error("Number of samples must be at least 2.")
+        if args.model_dir:
             model_files = glob.glob(os.path.join(args.model_dir, "*.pdb"))
             model_files += glob.glob(os.path.join(args.model_dir, "*.cif"))
             model_files += glob.glob(os.path.join(args.model_dir, "*.mmcif"))
-            if len(model_files) < args.bootstrap:
+            if len(model_files) < args.n_samples:
                 parser.error(
                     f"--model_dir contains {len(model_files)} model files, "
-                    f"but --bootstrap expects at least {args.bootstrap}. "
-                    "The number of model files must be at least the bootstrap count."
+                    f"but at least {args.n_samples} are required."
                 )
-            # Store the found models for later use
-            args.models = sorted(model_files)[: args.bootstrap]
+            args.models = sorted(model_files)[: args.n_samples]
+        if args.model_dir:
+            validate_model_dir(args, args.n_samples)
 
-    main_parser.set_defaults(func=validate_args)
+    pipeline_parser.set_defaults(func=validate_pipeline)
+    mean_parser.set_defaults(func=validate_mean)
+    bootstrap_parser.set_defaults(func=validate_bootstrap)
 
     return parser
 
@@ -1448,12 +1480,12 @@ def main():
             )
         return
 
-    elif args.command != "pipeline" and args.command is not None:
+    elif args.command not in ["pipeline", "bootstrap"] and args.command is not None:
         parser.print_help()
         return
 
-    # subcommand pipeline
-    # elif args.command == 'pipeline' or args.command is None:
+    # subcommand pipeline or bootstrap
+    # elif args.command in ["pipeline", "bootstrap"] or args.command is None:
 
     if args.prefix:
         prefix = args.prefix
@@ -1488,7 +1520,7 @@ def main():
     n_expected_list = []
     binner_master = None
 
-    if args.hklin_unmerged:
+    if args.command == "pipeline" and args.hklin_unmerged:
         logging.info(f"Unmerged diffraction data files: {args.hklin_unmerged}")
         n_groups = 0
         mtz_groups_i = []
@@ -1645,7 +1677,7 @@ def main():
             mtzs_i, binner_master, bin_stats_matrix, n_expected_list
         )
 
-    if args.unify_cell:
+    if args.command == "pipeline" and args.unify_cell:
         for i, mtz_i in enumerate(mtzs_i):
             if i == 0:
                 continue
@@ -1653,7 +1685,7 @@ def main():
 
     models = []
     if args.model:
-        if args.molrep:
+        if args.command == "pipeline" and args.molrep:
             models_molrep = []
             for model, mtz_i in zip(args.model, mtzs_i):
                 logging.info(
@@ -1681,7 +1713,14 @@ def main():
             bin_stats_matrix = compute_difference_maps(
                 refined_mtzs, binner_master, bin_stats_matrix
             )
-        if args.bootstrap:
+        if args.command == "bootstrap" or (
+            args.command == "pipeline" and args.bootstrap
+        ):
+            n_samples = (
+                args.bootstrap
+                if (args.command == "pipeline" and args.bootstrap)
+                else args.n_samples
+            )
             # TODO: some features assume only single model...
             mtzs_in = mtzs_i
             for i_mtz, (mtz_in, labin, model) in enumerate(
@@ -1701,7 +1740,7 @@ def main():
                 mtzs_bootstrap = bootstrap_dataset(
                     mtz_in,
                     binner_master,
-                    seeds=range(1001, 1001 + args.bootstrap),
+                    seeds=range(1001, 1001 + n_samples),
                     labin=labin,
                 )
                 if args.model_dir and args.models:
