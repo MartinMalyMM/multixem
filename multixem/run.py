@@ -1526,7 +1526,7 @@ def main():
     # parse servalcat args preserving quoted groups
     servalcat_args = shlex.split(args.servalcat_args) if args.servalcat_args else []
 
-    mtzs_i = []
+    mtzs_merged = []
     labins = []
     bin_stats_lists = []
     n_expected_list = []
@@ -1534,11 +1534,9 @@ def main():
 
     if args.command == "pipeline" and args.hklin_unmerged:
         logging.info(f"Unmerged diffraction data files: {args.hklin_unmerged}")
-        bin_stats_lists = []
-        mtzs_fi = []
+        n_groups = 0
+        mtz_groups_i = []
         for i, hklin_unmerged in enumerate(args.hklin_unmerged):
-            n_groups = 0
-            mtz_groups_i = []
             logging.info("")
             logging.info(f"Unmerged diffraction data file: {hklin_unmerged}")
             if args.merge_whole_file:
@@ -1555,7 +1553,6 @@ def main():
                         i_group_prefix=n_groups,
                     )
                 )
-            # TODO: select automatically the number of batches in group (now default 60)
             elif len(args.n_batches) == 1:
                 n_batches_per_group = args.n_batches[0]
                 logging.info(
@@ -1582,22 +1579,26 @@ def main():
                         i_group_prefix=n_groups,
                     )
                 )
+            print(_mtz_groups_i)
             mtz_groups_i.extend(_mtz_groups_i)
-            n_groups = len(mtz_groups_i)
+            n_groups += len(_mtz_groups_i)
+            n_groups_this_file = len(_mtz_groups_i)
             bin_stats_lists.extend(_bin_stats_lists)
             n_expected_list.extend(_n_expected_list)
             if i == 0:
                 binner_master = _binner_master
             if args.amplitude:
-                _mtzs_fi = run_servalcat_fwt(_mtz_groups_i, prefix, n_proc)
-                mtzs_fi.extend(_mtzs_fi)
-                labins.extend(["FMEAN,SIGFMEAN"] * n_groups)
+                _mtzs_fwt = run_servalcat_fwt(_mtz_groups_i, prefix, n_proc)
+                mtzs_merged.extend(_mtzs_fwt)
+                labins.extend(["F,SIGF"] * n_groups_this_file)
             else:
-                mtzs_i.extend(mtz_groups_i)
-                labins.extend(["IMEAN,SIGIMEAN"] * n_groups)
+                mtzs_merged.extend(_mtz_groups_i)
+                labins.extend(["IMEAN,SIGIMEAN"] * n_groups_this_file)
             # TODO: free reflections if not given
             # TODO: check that input files have FI(R?)
             # TODO: mmCIF
+        print(mtzs_merged)
+        print(labins)
 
     if args.hklin:
         logging.info(f"Merged diffraction data files: {args.hklin}")
@@ -1618,7 +1619,7 @@ def main():
                         f"{os.path.splitext(os.path.basename(hklin_i))[0]}.mtz"
                     )
                     mtz.write_to_file(mtz_filename)
-                    mtzs_i.append(mtz_filename)
+                    mtzs_merged.append(mtz_filename)
                 else:
                     try:
                         from servalcat import utils as servalcat_utils
@@ -1631,7 +1632,7 @@ def main():
                         f"{os.path.splitext(os.path.basename(hklin_i))[0]}.mtz"
                     )
                     mtz.write_to_file(mtz_filename)
-                    mtzs_i.append(mtz_filename)
+                    mtzs_merged.append(mtz_filename)
                 else:
                     raise RuntimeError(
                         f"Could not recognise format of diffraction data file {hklin_i}"
@@ -1642,10 +1643,10 @@ def main():
                 mtz = servalcat_utils.fileio.read_smcif_hkl(hklin_i)
                 mtz_filename = f"{os.path.splitext(os.path.basename(hklin_i))[0]}.mtz"
                 mtz.write_to_file(mtz_filename)
-                mtzs_i.append(mtz_filename)
+                mtzs_merged.append(mtz_filename)
             else:
                 mtz = gemmi.read_mtz_file(hklin_i)
-                mtzs_i.append(hklin_i)
+                mtzs_merged.append(hklin_i)
             dmax = mtz.resolution_high()
             dmin = mtz.resolution_low()
             # Check for None or nan values and recalculate if necessary
@@ -1683,27 +1684,29 @@ def main():
                     mtz.make_1_d2_array(),
                     mtz.get_cell(),
                 )
-    assert len(mtzs_i) == len(labins)
+    assert len(mtzs_merged) == len(labins)
 
-    bin_stats_matrix = len(mtzs_i) * [len(mtzs_i) * [None]]
-    for i in range(len(mtzs_i)):
+    bin_stats_matrix = len(mtzs_merged) * [len(mtzs_merged) * [None]]
+    for i in range(len(mtzs_merged)):
         bin_stats_matrix[i][i] = bin_stats_lists[i]
-    if len(mtzs_i) >= 2:
+
+    # TODO what if dealing with amplitudes?
+    if len(mtzs_merged) >= 2 and not args.amplitude:
         bin_stats_matrix, n_refl_matrix, ratio_refl_matrix = compare_mtzs_fi(
-            mtzs_i, binner_master, bin_stats_matrix, n_expected_list
+            mtzs_merged, binner_master, bin_stats_matrix, n_expected_list
         )
 
     if args.command == "pipeline" and args.unify_cell:
-        for i, mtz_i in enumerate(mtzs_i):
+        for i, mtz in enumerate(mtzs_merged):
             if i == 0:
                 continue
-            mtzs_i[i] = copy_cell_mtz(mtzs_i[i], mtzs_i[0])
+            mtzs_merged[i] = copy_cell_mtz(mtzs_merged[i], mtzs_merged[0])
 
     models = []
     if args.model:
         if args.command == "pipeline" and args.molrep:
             models_molrep = []
-            for model, mtz_i in zip(args.model, mtzs_i):
+            for model, mtz_i in zip(args.model, mtzs_merged):
                 logging.info(
                     "Running MolRep to generate a model from the input structure."
                 )
@@ -1713,7 +1716,7 @@ def main():
         else:
             models = args.model
         refined_mmcifs, refined_mtzs, refined_jsons = run_servalcat_refine(
-            mtzs_i,
+            mtzs_merged,
             labins,
             models,
             mtzs_free=[args.hklin_free],
@@ -1738,9 +1741,8 @@ def main():
                 else args.n_samples
             )
             # TODO: some features assume only single model...
-            mtzs_in = mtzs_i
             for i_mtz, (mtz_in, labin, model) in enumerate(
-                zip(mtzs_in, labins, models)
+                zip(mtzs_merged, labins, models)
             ):
                 geometry_objects_ref = []
                 restraints_file = ""
