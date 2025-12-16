@@ -189,6 +189,7 @@ def create_parser():
         type=existing_file,
         nargs="+",
         help="Input atomic structure model file(s).",
+        required=False,
     )
     # TODO more files
     common_refinement_parent.add_argument(
@@ -372,8 +373,8 @@ def create_parser():
     def validate_bootstrap(args):
         validate_common(args)
         # TODO
-        # if not args.hklin or not args.model:
-        #     parser.error("--hklin and --model are required for bootstrap.")
+        if not args.hklin:
+            parser.error("--hklin is required for bootstrap.")
         if args.n_samples < 2:
             parser.error("Number of samples must be at least 2.")
         if args.model_dir:
