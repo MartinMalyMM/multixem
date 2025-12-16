@@ -1534,11 +1534,11 @@ def main():
 
     if args.command == "pipeline" and args.hklin_unmerged:
         logging.info(f"Unmerged diffraction data files: {args.hklin_unmerged}")
-        n_groups = 0
-        mtz_groups_i = []
         bin_stats_lists = []
         mtzs_fi = []
         for i, hklin_unmerged in enumerate(args.hklin_unmerged):
+            n_groups = 0
+            mtz_groups_i = []
             logging.info("")
             logging.info(f"Unmerged diffraction data file: {hklin_unmerged}")
             if args.merge_whole_file:
@@ -1593,11 +1593,11 @@ def main():
                 mtzs_fi.extend(_mtzs_fi)
                 labins.extend(["FMEAN,SIGFMEAN"] * n_groups)
             else:
+                mtzs_i.extend(mtz_groups_i)
                 labins.extend(["IMEAN,SIGIMEAN"] * n_groups)
             # TODO: free reflections if not given
             # TODO: check that input files have FI(R?)
             # TODO: mmCIF
-        mtzs_i = mtz_groups_i
 
     if args.hklin:
         logging.info(f"Merged diffraction data files: {args.hklin}")
