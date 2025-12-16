@@ -394,6 +394,17 @@ def create_parser():
     mean_parser.set_defaults(func=validate_mean)
     bootstrap_parser.set_defaults(func=validate_bootstrap)
 
+    # Parse and validate immediately
+    original_parse_args = parser.parse_args
+
+    def parse_and_validate(cmd_args=None):
+        args = original_parse_args(cmd_args)
+        if hasattr(args, "func"):
+            args.func(args)
+        return args
+
+    parser.parse_args = parse_and_validate
+
     return parser
 
 
@@ -1603,7 +1614,11 @@ def main():
                         mtz = Convert.convert_block_to_mtz(rblock)
                         break
                 if mtz:
-                    mtzs_i.append(hklin_i)
+                    mtz_filename = (
+                        f"{os.path.splitext(os.path.basename(hklin_i))[0]}.mtz"
+                    )
+                    mtz.write_to_file(mtz_filename)
+                    mtzs_i.append(mtz_filename)
                 else:
                     try:
                         from servalcat import utils as servalcat_utils
