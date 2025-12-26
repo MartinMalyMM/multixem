@@ -1019,9 +1019,8 @@ def run_servalcat_refine(
         )
     elif not mtzs_free:
         # refinement after merging, no free set provided
-        params = zip(
-            mtzs_fi, labins, [None] * len(mtzs_fi), models_list, [prefix] * len(mtzs_fi)
-        )
+        prefixes = [f"{prefix}group{i_mtz + 1}_" for i_mtz in range(len(mtzs_fi))]
+        params = zip(mtzs_fi, labins, [None] * len(mtzs_fi), models_list, prefixes)
     elif len(mtzs_free) == 1:
         # refinement after merging, single free set provided
         prefixes = [f"{prefix}group{i_mtz + 1}_" for i_mtz in range(len(mtzs_fi))]
