@@ -1024,12 +1024,13 @@ def run_servalcat_refine(
         )
     elif len(mtzs_free) == 1:
         # refinement after merging, single free set provided
+        prefixes = [f"{prefix}group{i_mtz + 1}_" for i_mtz in range(len(mtzs_fi))]
         params = zip(
             mtzs_fi,
             labins,
             mtzs_free * len(mtzs_fi),
             models_list,
-            [prefix] * len(mtzs_fi),
+            prefixes,
         )
     else:
         # unexpected case, should not happen
