@@ -1525,8 +1525,10 @@ def bootstrap_analyse_structures(
     # std_coords_norm = sqrt(σ_x² + σ_y² + σ_z² + 2 * (σ_xy + σ_xz + σ_yz))
     # Calculate joint sigma of coordinates, assuming correlation between x, y, z
     std_coords_norm = numpy.zeros(len(st_first_cras))
+    cov_coords = numpy.zeros((len(st_first_cras), 3))  # shape: (n_atoms, 3)
     for i in range(len(st_first_cras)):
         cov = numpy.cov(coords[i, :, :])
+        cov_coords[i] = (cov[0, 1], cov[0, 2], cov[1, 2])  # σ_xy, σ_xz, σ_yz
         std_coords_norm[i] = numpy.sqrt(
             numpy.trace(cov) + 2 * (cov[0, 1] + cov[0, 2] + cov[1, 2])
         )
@@ -1569,6 +1571,9 @@ def bootstrap_analyse_structures(
                 "sigma_x": std_coords[i][0],
                 "sigma_y": std_coords[i][1],
                 "sigma_z": std_coords[i][2],
+                "sigma_xy": cov_coords[i][0],
+                "sigma_xz": cov_coords[i][1],
+                "sigma_yz": cov_coords[i][2],
                 "sigma_coord": std_coords_norm[i],
                 "mean_b": mean_b_values[i],
                 "sigma_b": std_b_values[i],
