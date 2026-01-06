@@ -1224,6 +1224,7 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
             and len(bin_stats_list2) == n_bins + 1
         ):
             # Add CC* from bin_stats_list1 and bin_stats_list2 if available
+            # TODO: fix bug - CC*1 CC*2 CC12true are now available only for i==0 j==1
             for b in range(n_bins):
                 bins_stats[b]["CC*1"] = bin_stats_list1[b]["CC*"]
                 bins_stats[b]["CC*2"] = bin_stats_list2[b]["CC*"]
