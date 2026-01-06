@@ -1684,14 +1684,19 @@ def main():
                     mtz.make_1_d2_array(),
                     mtz.get_cell(),
                 )
-    assert len(mtzs_merged) == len(labins)
+    n_mtzs_merged = len(mtzs_merged)
+    assert n_mtzs_merged == len(labins)
 
-    bin_stats_matrix = len(mtzs_merged) * [len(mtzs_merged) * [None]]
-    for i in range(len(mtzs_merged)):
-        bin_stats_matrix[i][i] = bin_stats_lists[i]
+    # Avoid shared inner-list aliasing by creating separate lists
+    bin_stats_matrix = [
+        [[] for _ in range(n_mtzs_merged)] for _ in range(n_mtzs_merged)
+    ]
+    for i in range(n_mtzs_merged):
+        if i < len(bin_stats_lists) and bin_stats_lists[i]:
+            bin_stats_matrix[i][i] = bin_stats_lists[i]
 
     # TODO what if dealing with amplitudes?
-    if len(mtzs_merged) >= 2 and not args.amplitude:
+    if n_mtzs_merged >= 2 and not args.amplitude:
         bin_stats_matrix, n_refl_matrix, ratio_refl_matrix = compare_mtzs_fi(
             mtzs_merged, binner_master, bin_stats_matrix, n_expected_list
         )
