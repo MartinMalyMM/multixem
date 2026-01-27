@@ -45,13 +45,13 @@ def real_insulin_paths():
     base = DEFAULT_INSULIN_DIR
     return {
         "base": base,
-        "cow_unmerged": base / "cow_unmerged_reindex.mtz",
-        "pig_unmerged": base / "pig_unmerged_reindex.mtz",
-        "people_unmerged": base / "people_unmerged_reindex.mtz",
-        "free": base / "cow_reindex.mtz",
-        "model_cow": base / "refinement" / "insulin_cow_mm04_serval.pdb",
-        "model_pig": base / "refinement" / "insulin_pig_mm03_serval.pdb",
-        "model_people": base / "refinement" / "insulin_people_mm02_serval.pdb",
+        "cow_unmerged": base / "insulin_cow_unmerged_reindex.mtz",
+        "pig_unmerged": base / "insulin_pig_unmerged_reindex.mtz",
+        "people_unmerged": base / "insulin_people_unmerged_reindex.mtz",
+        "free": base / "insulin_cow_reindex.mtz",
+        "model_cow": base / "insulin_cow_mm04_serval.pdb",
+        "model_pig": base / "insulin_pig_mm03_serval.pdb",
+        "model_people": base / "insulin_people_mm02_serval.pdb",
     }
 
 
@@ -82,11 +82,6 @@ def bootstrap_cli_1pgj_args(real_1pgj_paths):
         # "--unre", "2",
         # "--quick",
     ]
-
-
-def have_files(paths):
-    """Check if all paths exist."""
-    return all(Path(p).exists() for p in paths)
 
 
 def adjust_bootstrap_cmd(cmd, overrides=None):

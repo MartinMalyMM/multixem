@@ -16,3 +16,15 @@ _________________
 _________________
 
 **multixem** Refinement pipeline for multiple data sets in structure biology
+
+
+Tests
+=====
+
+Automatic tests are implemented using `pytest`. They can be run using the following command:
+
+```bash
+python -m pytest -s -v
+```
+
+The integration tests use data from 6-phosphogluconate dehydrogenase (PDB [1PGJ](https://www.rcsb.org/structure/1PGJ), [manuscript](https://doi.org/10.1006/jmbi.1998.2059)) and human, porcine, and bovine insulin ([manuscript](https://doi.org/10.1107/S2059798325004589), [raw data (DOI 10.5281/zenodo.13890874)](https://doi.org/10.5281/zenodo.13890874)).

@@ -2,7 +2,7 @@ import subprocess
 import shutil
 import pytest
 from pathlib import Path
-from .conftest import have_files, adjust_bootstrap_cmd
+from .conftest import adjust_bootstrap_cmd
 
 
 def run_multixem_and_cleanup(cmd, work: Path):
@@ -37,7 +37,7 @@ def test_bootstrap_1pgj_integration(bootstrap_cli_1pgj_args):
         overrides={"--prefix": "1PGJ_test_slow_run", "--servalcat_args": "--ncycle 1"},
     )
 
-    work = Path.cwd() / "tmp_bootstrap_run"
+    work = Path.cwd() / "tmp_multixem_bootstrap_run"
 
     run_multixem_and_cleanup(cmd, work)
 
@@ -45,17 +45,6 @@ def test_bootstrap_1pgj_integration(bootstrap_cli_1pgj_args):
 @pytest.mark.slow
 def test_pipeline_insulin_integration(real_insulin_paths):
     """Integration test for pipeline command."""
-    files = [
-        real_insulin_paths["cow_unmerged"],
-        real_insulin_paths["pig_unmerged"],
-        real_insulin_paths["people_unmerged"],
-        real_insulin_paths["free"],
-        real_insulin_paths["model_cow"],
-        real_insulin_paths["model_pig"],
-        real_insulin_paths["model_people"],
-    ]
-    if not have_files(files):
-        pytest.skip("Real input files not available")
 
     cmd = [
         "pipeline",
@@ -81,6 +70,6 @@ def test_pipeline_insulin_integration(real_insulin_paths):
         "--quick",
     ]
 
-    work = Path.cwd() / "tmp_pipeline_run"
+    work = Path.cwd() / "tmp_multixem_pipeline_run"
 
     run_multixem_and_cleanup(cmd, work)
