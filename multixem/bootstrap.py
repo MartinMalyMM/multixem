@@ -944,6 +944,295 @@ def get_pos_from_cid(st, cid, pos_reference=None):
     return pos
 
 
+def get_smcif_tables(smcif_block):
+    """Extract relevant tables from a small molecule CIF block and their columns."""
+
+    def get_table_and_columns(smcif_block, col_names):
+        table = smcif_block.find(col_names)
+        if not table:
+            logging.warning(f"Table not found in small molecule CIF block. {col_names}")
+            return None, []
+        columns = []
+        for col in col_names:
+            col = col.strip("?")  # Remove '?' prefix if present
+            try:
+                column = table.find_column(col)
+                columns.append(column)
+            except (RuntimeError, IndexError):
+                if "symmetry" in col:
+                    columns.append([None] * len(table))
+                else:
+                    logging.warning(
+                        f"Column not found in small" f" molecule CIF block: {col}"
+                    )
+        return table, columns
+
+    coords_cols = [
+        "_atom_site_label",
+        # "_atom_site_type_symbol",
+        "_atom_site_fract_x",
+        "_atom_site_fract_y",
+        "_atom_site_fract_z",
+        # "_atom_site_occupancy",
+        "_atom_site_U_iso_or_equiv",
+    ]
+    u_aniso_cols = [
+        "_atom_site_aniso_label",
+        "_atom_site_aniso_U_11",
+        "_atom_site_aniso_U_22",
+        "_atom_site_aniso_U_33",
+        "_atom_site_aniso_U_12",
+        "_atom_site_aniso_U_13",
+        "_atom_site_aniso_U_23",
+    ]
+    bond_cols = [
+        "_geom_bond_atom_site_label_1",
+        "_geom_bond_atom_site_label_2",
+        "_geom_bond_distance",
+        "?_geom_bond_site_symmetry_2",
+    ]
+    angle_cols = [
+        "_geom_angle_atom_site_label_1",
+        "_geom_angle_atom_site_label_2",
+        "_geom_angle_atom_site_label_3",
+        "_geom_angle",
+        "?_geom_angle_site_symmetry_1",
+        "?_geom_angle_site_symmetry_3",
+    ]
+    torsion_cols = [
+        "_geom_torsion_atom_site_label_1",
+        "_geom_torsion_atom_site_label_2",
+        "_geom_torsion_atom_site_label_3",
+        "_geom_torsion_atom_site_label_4",
+        "_geom_torsion",
+        "?_geom_torsion_site_symmetry_1",
+        "?_geom_torsion_site_symmetry_2",
+        "?_geom_torsion_site_symmetry_3",
+        "?_geom_torsion_site_symmetry_4",
+    ]
+
+    coords_table, coords_columns = get_table_and_columns(smcif_block, coords_cols)
+    u_aniso_table, u_aniso_columns = get_table_and_columns(smcif_block, u_aniso_cols)
+    bond_table, bond_columns = get_table_and_columns(smcif_block, bond_cols)
+    angle_table, angle_columns = get_table_and_columns(smcif_block, angle_cols)
+    torsion_table, torsion_columns = get_table_and_columns(smcif_block, torsion_cols)
+
+    return (
+        (coords_table, coords_columns),
+        (u_aniso_table, u_aniso_columns),
+        (bond_table, bond_columns),
+        (angle_table, angle_columns),
+        (torsion_table, torsion_columns),
+    )
+
+
+def extract_value_and_stdev(value):
+    """
+    Extract base value and standard deviation from
+    e.g. '-0.1234(5)' -> (-0.1234, 0.0005)
+    """
+    match = re.match(r"(-?[0-9.]+)\((\d+)\)", value)
+    if match:
+        base, sigma_digits = match.groups()
+        base_value = float(base)
+
+        # Calculate decimal places for scaling of sigma
+        base_parts = base.split(".")
+        decimal_places = len(base_parts[1]) if len(base_parts) > 1 else 0
+        stdev = float(sigma_digits) * (10**-decimal_places)
+
+        return base_value, stdev
+    else:
+        return float(re.sub(r"\(.*\)", "", value)), None
+
+
+def collect_geometry_lists(
+    table,
+    atom_cols,
+    symmetry_cols=[],
+    value_sigma_cols=[],
+    value_sigma_cols_names=[],
+):
+    """Collect atom lists (for bonds, angles, torsions).
+    Do not include atoms from symmetry-related molecules.
+
+    Args:
+        table: CIF table to process.
+        atom_cols: List of columns with atom labels.
+        symmetry_cols: List of columns with symmetry information (optional).
+        value_sigma_cols: List of columns with values and standard deviations (optional)
+        value_sigma_cols_names: List of base names for value/sigma columns (optional).
+    Returns:
+        List of dicts with geometry information.
+    """
+    j_idx_filtered = [
+        j
+        for j in range(len(table))
+        if not symmetry_cols or all(col[j] in [".", None] for col in symmetry_cols)
+    ]
+    geom_list = [
+        {f"atom{i + 1}": atom_cols[i][j_idx] for i in range(len(atom_cols))}
+        for j_idx in j_idx_filtered
+    ]
+
+    if value_sigma_cols:
+        for entry, j_idx in zip(geom_list, j_idx_filtered):
+            for i in range(len(value_sigma_cols)):
+                value, sigma = extract_value_and_stdev(value_sigma_cols[i][j_idx])
+                entry[f"{value_sigma_cols_names[i]}_deposit"] = value
+                entry[f"sigma_{value_sigma_cols_names[i]}_deposit"] = sigma
+
+    return geom_list
+
+
+def collect_values_smcif(smcif):
+    """
+    Collect values about geometry from a small molecule CIF file from SHELX.
+
+    Args:
+        smcif (str): Path to the small molecule CIF file.
+
+    Returns:
+        tuple: (atoms_list, u_aniso_list, bonds_list, angles_list, torsions_list)
+            where each list contains dicts with geometry information.
+    """
+    smcif_block = gemmi.cif.read(smcif).sole_block()
+    value_shelx_res_file = smcif_block.find_value("_shelx_res_file")
+    value_computing_structure_refinement = smcif_block.find_value(
+        "_computing_structure_refinement"
+    )
+    atoms_list = bonds_list = u_aniso_list = angles_list = torsions_list = []
+
+    if value_shelx_res_file or (
+        value_computing_structure_refinement
+        and "shelx" in value_computing_structure_refinement.lower()
+    ):
+        (
+            (table_coords, coords_cols),
+            (table_u_aniso, u_aniso_cols),
+            (table_bond, bond_columns),
+            (table_angle, angle_columns),
+            (table_torsion, torsion_columns),
+        ) = get_smcif_tables(smcif_block)
+
+        atom_col, x_fract_col, y_fract_col, z_fract_col, u_iso_col = coords_cols
+        atoms_list = collect_geometry_lists(
+            table_coords,
+            [atom_col],
+            [],
+            [x_fract_col, y_fract_col, z_fract_col, u_iso_col],
+            ["x_frac", "y_frac", "z_frac", "u_iso"],
+        )
+
+        st = gemmi.read_small_structure(smcif)
+        for i in range(len(atoms_list)):
+            # Convert x y z to Cartesian coordinates
+            frac = gemmi.Fractional(
+                atoms_list[i]["x_frac_deposit"],
+                atoms_list[i]["y_frac_deposit"],
+                atoms_list[i]["z_frac_deposit"],
+            )
+            cart = st.cell.orthogonalize(frac)
+            atoms_list[i]["x_deposit"] = cart.x
+            atoms_list[i]["y_deposit"] = cart.y
+            atoms_list[i]["z_deposit"] = cart.z
+            atoms_list[i]["sigma_x_deposit"] = (
+                st.cell.a * atoms_list[i]["sigma_x_frac_deposit"]
+                if atoms_list[i]["sigma_x_frac_deposit"] is not None
+                else None
+            )
+            atoms_list[i]["sigma_y_deposit"] = (
+                st.cell.b * atoms_list[i]["sigma_y_frac_deposit"]
+                if atoms_list[i]["sigma_y_frac_deposit"] is not None
+                else None
+            )
+            atoms_list[i]["sigma_z_deposit"] = (
+                st.cell.c * atoms_list[i]["sigma_z_frac_deposit"]
+                if atoms_list[i]["sigma_z_frac_deposit"] is not None
+                else None
+            )
+
+            # Compute B_iso and sigma_B_iso:  B = 8 pi^2 U
+            atoms_list[i]["b_iso_deposit"] = (
+                8 * numpy.pi**2 * atoms_list[i]["u_iso_deposit"]
+            )
+            atoms_list[i]["sigma_b_iso_deposit"] = (
+                8 * numpy.pi**2 * atoms_list[i]["sigma_u_iso_deposit"]
+                if atoms_list[i]["sigma_u_iso_deposit"] is not None
+                else None
+            )
+
+        if u_aniso_cols:
+            (
+                u_aniso_atom_col,
+                u11_col,
+                u22_col,
+                u33_col,
+                u12_col,
+                u13_col,
+                u23_col,
+            ) = u_aniso_cols
+            u_aniso_list = collect_geometry_lists(
+                table_u_aniso,
+                [u_aniso_atom_col],
+                [],
+                [u11_col, u22_col, u33_col, u12_col, u13_col, u23_col],
+                ["u11", "u22", "u33", "u12", "u13", "u23"],
+            )
+            for i in range(len(u_aniso_list)):
+                u_aniso_list[i]["u_aniso_atom"] = u_aniso_atom_col[i]
+        else:
+            u_aniso_list = []
+
+        atom1_col, atom2_col, value_sigma_col, symmetry2_col = bond_columns
+        bonds_list = collect_geometry_lists(
+            table_bond,
+            [atom1_col, atom2_col],
+            [symmetry2_col],
+            [value_sigma_col],
+            ["bond"],
+        )
+
+        if angle_columns:
+            (
+                atom1_col,
+                atom2_col,
+                atom3_col,
+                value_sigma_col,
+                symmetry1_col,
+                symmetry3_col,
+            ) = angle_columns
+            angles_list = collect_geometry_lists(
+                table_angle,
+                [atom1_col, atom2_col, atom3_col],
+                [symmetry1_col, symmetry3_col],
+                [value_sigma_col],
+                ["angle"],
+            )
+
+        if torsion_columns:
+            (
+                atom1_col,
+                atom2_col,
+                atom3_col,
+                atom4_col,
+                value_sigma_col,
+                symmetry1_col,
+                symmetry2_col,
+                symmetry3_col,
+                symmetry4_col,
+            ) = torsion_columns
+            torsions_list = collect_geometry_lists(
+                table_torsion,
+                [atom1_col, atom2_col, atom3_col, atom4_col],
+                [symmetry1_col, symmetry2_col, symmetry3_col, symmetry4_col],
+                [value_sigma_col],
+                ["torsion"],
+            )
+
+    return atoms_list, u_aniso_list, bonds_list, angles_list, torsions_list
+
+
 def bootstrap_analyse_structures(
     refined_mmcifs,
     mmcif_ref,
@@ -973,280 +1262,6 @@ def bootstrap_analyse_structures(
               the mean structure to '{prefix}group{idx}_bootstrap_mean_structure.mmcif'
               where 1000 * sigma_coordinate is saved as B-value.
     """
-
-    def get_smcif_tables(smcif_block):
-        """Extract relevant tables from a small molecule CIF block and their columns."""
-
-        def get_table_and_columns(smcif_block, col_names):
-            table = smcif_block.find(col_names)
-            if not table:
-                logging.warning(
-                    f"Table not found in small molecule CIF block. {col_names}"
-                )
-                return None, []
-            columns = []
-            for col in col_names:
-                col = col.strip("?")  # Remove '?' prefix if present
-                try:
-                    column = table.find_column(col)
-                    columns.append(column)
-                except (RuntimeError, IndexError):
-                    if "symmetry" in col:
-                        columns.append([None] * len(table))
-                    else:
-                        logging.warning(
-                            f"Column not found in small" f" molecule CIF block: {col}"
-                        )
-            return table, columns
-
-        coords_cols = [
-            "_atom_site_label",
-            # "_atom_site_type_symbol",
-            "_atom_site_fract_x",
-            "_atom_site_fract_y",
-            "_atom_site_fract_z",
-            # "_atom_site_occupancy",
-            "_atom_site_U_iso_or_equiv",
-        ]
-        u_aniso_cols = [
-            "_atom_site_aniso_label",
-            "_atom_site_aniso_U_11",
-            "_atom_site_aniso_U_22",
-            "_atom_site_aniso_U_33",
-            "_atom_site_aniso_U_12",
-            "_atom_site_aniso_U_13",
-            "_atom_site_aniso_U_23",
-        ]
-        bond_cols = [
-            "_geom_bond_atom_site_label_1",
-            "_geom_bond_atom_site_label_2",
-            "_geom_bond_distance",
-            "?_geom_bond_site_symmetry_2",
-        ]
-        angle_cols = [
-            "_geom_angle_atom_site_label_1",
-            "_geom_angle_atom_site_label_2",
-            "_geom_angle_atom_site_label_3",
-            "_geom_angle",
-            "?_geom_angle_site_symmetry_1",
-            "?_geom_angle_site_symmetry_3",
-        ]
-        torsion_cols = [
-            "_geom_torsion_atom_site_label_1",
-            "_geom_torsion_atom_site_label_2",
-            "_geom_torsion_atom_site_label_3",
-            "_geom_torsion_atom_site_label_4",
-            "_geom_torsion",
-            "?_geom_torsion_site_symmetry_1",
-            "?_geom_torsion_site_symmetry_2",
-            "?_geom_torsion_site_symmetry_3",
-            "?_geom_torsion_site_symmetry_4",
-        ]
-
-        coords_table, coords_columns = get_table_and_columns(smcif_block, coords_cols)
-        u_aniso_table, u_aniso_columns = get_table_and_columns(
-            smcif_block, u_aniso_cols
-        )
-        bond_table, bond_columns = get_table_and_columns(smcif_block, bond_cols)
-        angle_table, angle_columns = get_table_and_columns(smcif_block, angle_cols)
-        torsion_table, torsion_columns = get_table_and_columns(
-            smcif_block, torsion_cols
-        )
-
-        return (
-            (coords_table, coords_columns),
-            (u_aniso_table, u_aniso_columns),
-            (bond_table, bond_columns),
-            (angle_table, angle_columns),
-            (torsion_table, torsion_columns),
-        )
-
-    def extract_value_and_stdev(value):
-        """
-        Extract base value and standard deviation from
-        e.g. '-0.1234(5)' -> (-0.1234, 0.0005)
-        """
-        match = re.match(r"(-?[0-9.]+)\((\d+)\)", value)
-        if match:
-            base, sigma_digits = match.groups()
-            base_value = float(base)
-
-            # Calculate decimal places for scaling of sigma
-            base_parts = base.split(".")
-            decimal_places = len(base_parts[1]) if len(base_parts) > 1 else 0
-            stdev = float(sigma_digits) * (10**-decimal_places)
-
-            return base_value, stdev
-        else:
-            return float(re.sub(r"\(.*\)", "", value)), None
-
-    def collect_geometry_lists(
-        table,
-        atom_cols,
-        symmetry_cols=[],
-        value_sigma_cols=[],
-        value_sigma_cols_names=[],
-    ):
-        """Collect atom lists (for bonds, angles, torsions).
-        Do not include atoms from symmetry-related molecules."""
-        j_idx_filtered = [
-            j
-            for j in range(len(table))
-            if not symmetry_cols or all(col[j] in [".", None] for col in symmetry_cols)
-        ]
-        geom_list = [
-            {f"atom{i + 1}": atom_cols[i][j_idx] for i in range(len(atom_cols))}
-            for j_idx in j_idx_filtered
-        ]
-
-        if value_sigma_cols:
-            for entry, j_idx in zip(geom_list, j_idx_filtered):
-                for i in range(len(value_sigma_cols)):
-                    value, sigma = extract_value_and_stdev(value_sigma_cols[i][j_idx])
-                    entry[f"{value_sigma_cols_names[i]}_deposit"] = value
-                    entry[f"sigma_{value_sigma_cols_names[i]}_deposit"] = sigma
-
-        return geom_list
-
-    def collect_values_smcif(smcif):
-        """
-        Collect values about geometry from a small molecule CIF file from SHELX.
-        """
-        smcif_block = gemmi.cif.read(smcif).sole_block()
-        value_shelx_res_file = smcif_block.find_value("_shelx_res_file")
-        value_computing_structure_refinement = smcif_block.find_value(
-            "_computing_structure_refinement"
-        )
-        atoms_list = bonds_list = u_aniso_list = angles_list = torsions_list = []
-
-        if value_shelx_res_file or (
-            value_computing_structure_refinement
-            and "shelx" in value_computing_structure_refinement.lower()
-        ):
-            (
-                (table_coords, coords_cols),
-                (table_u_aniso, u_aniso_cols),
-                (table_bond, bond_columns),
-                (table_angle, angle_columns),
-                (table_torsion, torsion_columns),
-            ) = get_smcif_tables(smcif_block)
-
-            atom_col, x_fract_col, y_fract_col, z_fract_col, u_iso_col = coords_cols
-            atoms_list = collect_geometry_lists(
-                table_coords,
-                [atom_col],
-                [],
-                [x_fract_col, y_fract_col, z_fract_col, u_iso_col],
-                ["x_frac", "y_frac", "z_frac", "u_iso"],
-            )
-
-            st = gemmi.read_small_structure(smcif)
-            for i in range(len(atoms_list)):
-                # Convert x y z to Cartesian coordinates
-                frac = gemmi.Fractional(
-                    atoms_list[i]["x_frac_deposit"],
-                    atoms_list[i]["y_frac_deposit"],
-                    atoms_list[i]["z_frac_deposit"],
-                )
-                cart = st.cell.orthogonalize(frac)
-                atoms_list[i]["x_deposit"] = cart.x
-                atoms_list[i]["y_deposit"] = cart.y
-                atoms_list[i]["z_deposit"] = cart.z
-                atoms_list[i]["sigma_x_deposit"] = (
-                    st.cell.a * atoms_list[i]["sigma_x_frac_deposit"]
-                    if atoms_list[i]["sigma_x_frac_deposit"] is not None
-                    else None
-                )
-                atoms_list[i]["sigma_y_deposit"] = (
-                    st.cell.b * atoms_list[i]["sigma_y_frac_deposit"]
-                    if atoms_list[i]["sigma_y_frac_deposit"] is not None
-                    else None
-                )
-                atoms_list[i]["sigma_z_deposit"] = (
-                    st.cell.c * atoms_list[i]["sigma_z_frac_deposit"]
-                    if atoms_list[i]["sigma_z_frac_deposit"] is not None
-                    else None
-                )
-
-                # Compute B_iso and sigma_B_iso:  B = 8 pi^2 U
-                atoms_list[i]["b_iso_deposit"] = (
-                    8 * numpy.pi**2 * atoms_list[i]["u_iso_deposit"]
-                )
-                atoms_list[i]["sigma_b_iso_deposit"] = (
-                    8 * numpy.pi**2 * atoms_list[i]["sigma_u_iso_deposit"]
-                    if atoms_list[i]["sigma_u_iso_deposit"] is not None
-                    else None
-                )
-
-            if u_aniso_cols:
-                (
-                    u_aniso_atom_col,
-                    u11_col,
-                    u22_col,
-                    u33_col,
-                    u12_col,
-                    u13_col,
-                    u23_col,
-                ) = u_aniso_cols
-                u_aniso_list = collect_geometry_lists(
-                    table_u_aniso,
-                    [u_aniso_atom_col],
-                    [],
-                    [u11_col, u22_col, u33_col, u12_col, u13_col, u23_col],
-                    ["u11", "u22", "u33", "u12", "u13", "u23"],
-                )
-                for i in range(len(u_aniso_list)):
-                    u_aniso_list[i]["u_aniso_atom"] = u_aniso_atom_col[i]
-            else:
-                u_aniso_list = []
-
-            atom1_col, atom2_col, value_sigma_col, symmetry2_col = bond_columns
-            bonds_list = collect_geometry_lists(
-                table_bond,
-                [atom1_col, atom2_col],
-                [symmetry2_col],
-                [value_sigma_col],
-                ["bond"],
-            )
-
-            if angle_columns:
-                (
-                    atom1_col,
-                    atom2_col,
-                    atom3_col,
-                    value_sigma_col,
-                    symmetry1_col,
-                    symmetry3_col,
-                ) = angle_columns
-                angles_list = collect_geometry_lists(
-                    table_angle,
-                    [atom1_col, atom2_col, atom3_col],
-                    [symmetry1_col, symmetry3_col],
-                    [value_sigma_col],
-                    ["angle"],
-                )
-
-            if torsion_columns:
-                (
-                    atom1_col,
-                    atom2_col,
-                    atom3_col,
-                    atom4_col,
-                    value_sigma_col,
-                    symmetry1_col,
-                    symmetry2_col,
-                    symmetry3_col,
-                    symmetry4_col,
-                ) = torsion_columns
-                torsions_list = collect_geometry_lists(
-                    table_torsion,
-                    [atom1_col, atom2_col, atom3_col, atom4_col],
-                    [symmetry1_col, symmetry2_col, symmetry3_col, symmetry4_col],
-                    [value_sigma_col],
-                    ["torsion"],
-                )
-
-        return atoms_list, u_aniso_list, bonds_list, angles_list, torsions_list
 
     # numpy.set_printoptions(threshold=numpy.inf)
     st_first = gemmi.read_structure(refined_mmcifs[0])
