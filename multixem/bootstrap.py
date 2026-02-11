@@ -326,8 +326,11 @@ def unrestrain(geometry_objects_ref, structure_file):
     from itertools import combinations
 
     logging.info("Creating unrestrained geometry for Servalcat...")
+    geometry_objects_ref_unre = [
+        g for g in geometry_objects_ref if g["type"] != "occupancy"
+    ]
     CIDs_of_residue_pairs_master = set()  # set of lists of 2or3or4 residues
-    for geometry_object in geometry_objects_ref:
+    for geometry_object in geometry_objects_ref_unre:
         assert len(geometry_object["values"]) == 1
         CIDs_of_residues = select_CIDs_of_residues(geometry_object)
         assert len(CIDs_of_residues) >= 2, f"Invalid geometry object: {geometry_object}"
@@ -411,7 +414,7 @@ def unrestrain(geometry_objects_ref, structure_file):
         restraint = CID2RefmacRestraint(unrestrained_distance)
         restraints_lines.append(restraint)
 
-    for geometry_object in geometry_objects_ref:
+    for geometry_object in geometry_objects_ref_unre:
         assert len(geometry_object["values"]) == 1
         # if geometry_object["type"] == "distance":
         #     continue  # already processed above except of covalent bonds and hydrogens
@@ -816,13 +819,15 @@ def select_cids_for_geometry_analysis(geometry_cids_file):
     Read a file with atom CIDs for geometry analysis.
 
     Example file content:
+    //AAA/401/O3
     //AAA/401/O3 //AAA/228/NE2
     //AAA/401/N2 //AAA/228/OE1
     //AAA/401/O2 //AAA/57/OG1@2665
     //AAA/401/O1 //AAA/401/O2 //AAA/254/ND2
     //AAA/176/NE //AAA/176/CZ //AAA/176/NH2 //AAA/401/O4
 
-    Each line has 2, 3, or 4 atom CIDs for bond, angle, or torsion analysis.
+    Each line has 1, 2, 3, or 4 atom CIDs for
+    occupancy, bond, angle, or torsion analysis.
     The CID format is extended to allow specifying symmetry mates (e.g. @2665)
 
     Returns:
@@ -836,23 +841,29 @@ def select_cids_for_geometry_analysis(geometry_cids_file):
                     continue
                 cids = line.split()
                 assert len(cids) in [
+                    1,
                     2,
                     3,
                     4,
                 ], f"Invalid line in {geometry_cids_file}: {line}"
                 object_geom = {}
-                object_geom["atom1"] = cids[0]
-                object_geom["atom2"] = cids[1]
                 object_geom["values"] = []
-                if len(cids) == 2:
-                    object_geom["atom3"] = ""
-                    object_geom["atom4"] = ""
+                object_geom["atom1"] = cids[0]
+                object_geom["atom2"] = ""
+                object_geom["atom3"] = ""
+                object_geom["atom4"] = ""
+                if len(cids) == 1:
+                    object_geom["type"] = "occupancy"
+                elif len(cids) == 2:
+                    object_geom["atom2"] = cids[1]
                     object_geom["type"] = "distance"
                 elif len(cids) == 3:
+                    object_geom["atom2"] = cids[1]
                     object_geom["atom3"] = cids[2]
                     object_geom["atom4"] = ""
                     object_geom["type"] = "angle"
                 elif len(cids) == 4:
+                    object_geom["atom2"] = cids[1]
                     object_geom["atom3"] = cids[2]
                     object_geom["atom4"] = cids[3]
                     object_geom["type"] = "torsion"
@@ -871,6 +882,18 @@ def geometry_analysis_load(st, objects_cids):
     """
 
     for object_geom in objects_cids:
+
+        if object_geom["type"] == "occupancy":
+            sel = gemmi.Selection(f"{object_geom['atom1'].split('@')[0]}")
+            sel_model = sel.copy_model_selection(st[0])
+            assert sel_model.count_atom_sites() == 1, (
+                f"{object_geom['atom1']} does not select exactly one atom but"
+                f" {sel_model.count_atom_sites()} atoms."
+            )
+            occ = sel.first(st)[1].atom.occ
+            object_geom["values"].append(occ)
+            continue
+
         pos1 = get_pos_from_cid(st, object_geom["atom1"])
         pos2 = get_pos_from_cid(st, object_geom["atom2"], pos1)
 
@@ -1401,15 +1424,26 @@ def bootstrap_analyse_structures(
                         )
 
     if geometry_cids_file and geometry_objects:
+        geometry_analysis_occs = [
+            obj for obj in geometry_objects if obj["type"] == "occupancy"
+        ]
         geometry_analysis_bonds = [
             obj for obj in geometry_objects if obj["type"] == "distance"
         ]
         geometry_analysis_angles_torsions = [
             obj for obj in geometry_objects if obj["type"] in ["angle", "torsion"]
         ]
+        obj_occ_refs = [{}] * len(geometry_analysis_occs)
         obj_bond_refs = [{}] * len(geometry_analysis_bonds)
         obj_angle_torsion_refs = [{}] * len(geometry_analysis_angles_torsions)
         if mmcif_ref and os.path.isfile(mmcif_ref):
+            geometry_analysis_occs_ref = [
+                obj for obj in geometry_objects_ref if obj["type"] == "occupancy"
+            ]
+            assert len(geometry_analysis_occs) == len(geometry_analysis_occs_ref)
+            for i, obj in enumerate(geometry_analysis_occs_ref):
+                assert len(obj["values"]) == 1
+                obj_occ_refs[i] = {"occupancy": obj["values"][0]}
             geometry_analysis_bonds_ref = [
                 obj for obj in geometry_objects_ref if obj["type"] == "distance"
             ]
@@ -1428,6 +1462,19 @@ def bootstrap_analyse_structures(
             for i, obj in enumerate(geometry_analysis_angles_torsions_ref):
                 assert len(obj["values"]) == 1
                 obj_angle_torsion_refs[i] = {obj["type"]: obj["values"][0]}
+
+        for i, obj in enumerate(geometry_analysis_occs):
+            obj["values"] = numpy.array(obj["values"])
+            obj["mean"] = numpy.nanmean(obj["values"])
+            obj["std"] = numpy.nanstd(obj["values"], ddof=1)
+            plot_histogram(
+                obj["values"],
+                f"occupancy {obj['atom1']}",
+                obj_occ_refs[i],
+                idx,
+                prefix,
+            )
+            del obj["values"]
 
         for i, obj in enumerate(geometry_analysis_bonds):
             obj["values"] = numpy.array(obj["values"])
@@ -1465,7 +1512,9 @@ def bootstrap_analyse_structures(
                 )
             del obj["values"]
         df = pandas.DataFrame(
-            geometry_analysis_bonds + geometry_analysis_angles_torsions
+            geometry_analysis_occs
+            + geometry_analysis_bonds
+            + geometry_analysis_angles_torsions
         )
         filename = (
             f"{prefix}group{idx}_mean_geometry_stats.txt"
