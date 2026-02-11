@@ -198,10 +198,19 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003], labin=""):
     mtz = gemmi.read_mtz_file(mtz_file)
     df = pandas.DataFrame(data=mtz.array, columns=mtz.column_labels())
     df = df.astype({name: "int32" for name in ["H", "K", "L"]})
+    columns_dict = {
+        col.label: col.type for col in mtz.columns if col.label not in ["H", "K", "L"]
+    }
 
     # i_col = "IMEAN"  # can be just "I" after servalcat fw or sigmaa, or IMEAN?
+    # dropping reflections can cause problems, let's save the filtered dataset as MTZ
     if labin and labin.split(",")[0] in df.columns:
         df = df.dropna(subset=[labin.split(",")[0]])
+        # Save the filtered dataset as MTZ, preserving all original columns
+        mtz_filtered_name = (
+            f"{os.path.splitext(os.path.basename(mtz_file))[0]}_filtered.mtz"
+        )
+        write_mtz_from_df(df, mtz, columns=columns_dict, filename=mtz_filtered_name)
     else:
         warnings.warn(
             f"Column {labin} not found in MTZ file {mtz_file}. "
