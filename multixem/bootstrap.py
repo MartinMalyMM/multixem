@@ -517,7 +517,7 @@ def plot_histogram(values, xlabel, ref={}, idx=0, prefix=""):
     plt.close()
     logging.info(f"Saved histogram to {png_filename}")
 
-    df_values = pandas.DataFrame({values})
+    df_values = pandas.DataFrame(values)
     df_values.to_csv(csv_values_filename, index=False)
     logging.info(f"Saved raw values to {csv_values_filename}")
 
