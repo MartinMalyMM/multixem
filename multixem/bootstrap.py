@@ -453,6 +453,13 @@ def plot_histogram(values, xlabel, ref={}, idx=0, prefix=""):
     mean = numpy.mean(values)
     stdev = numpy.std(values, ddof=1)
     median = numpy.median(values)
+    q1 = numpy.percentile(values, 25)
+    q3 = numpy.percentile(values, 75)
+    iqr = q3 - q1
+    outliers_high_dict = {i: values[i] for i in numpy.where(values > q3 + 1.1 * iqr)[0]}
+    outliers_high = pandas.DataFrame(
+        list(outliers_high_dict.items()), columns=["index", "value"]
+    )
     # MAD to be consistent with stdev for normal distribution
     mad = numpy.median(numpy.abs(values - median)) * 1.4826
     min_val = numpy.min(values)
@@ -496,11 +503,39 @@ def plot_histogram(values, xlabel, ref={}, idx=0, prefix=""):
     plt.tight_layout()
     plt.legend()
     png_filename = filename_replace_char(f"histogram_{xlabel}.png")
+    csv_values_filename = filename_replace_char(f"histogram_{xlabel}_values.csv")
+    csv_histogram_filename = filename_replace_char(f"histogram_{xlabel}.csv")
+    csv_outliers_filename = filename_replace_char(f"histogram_{xlabel}_outliers.csv")
     if idx:
         png_filename = f"{prefix}group{idx}_bootstrap_{png_filename}"
+        csv_values_filename = f"{prefix}group{idx}_bootstrap_{csv_values_filename}"
+        csv_histogram_filename = (
+            f"{prefix}group{idx}_bootstrap_{csv_histogram_filename}"
+        )
+        csv_outliers_filename = f"{prefix}group{idx}_bootstrap_{csv_outliers_filename}"
     plt.savefig(png_filename)
     plt.close()
     logging.info(f"Saved histogram to {png_filename}")
+
+    df_values = pandas.DataFrame({values})
+    df_values.to_csv(csv_values_filename, index=False)
+    logging.info(f"Saved raw values to {csv_values_filename}")
+
+    bin_centers = (bins[:-1] + bins[1:]) / 2
+    df_histogram = pandas.DataFrame(
+        {
+            "bin_start": bins[:-1],
+            "bin_center": bin_centers,
+            "bin_end": bins[1:],
+            "count": counts,
+        }
+    )
+    df_histogram.to_csv(csv_histogram_filename, index=False)
+    logging.info(f"Saved histogram bins and counts to {csv_histogram_filename}")
+
+    if not outliers_high.empty:
+        outliers_high.to_csv(csv_outliers_filename, index=False)
+        logging.info(f"Saved {len(outliers_high)} outliers to {csv_outliers_filename}")
 
 
 def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix=""):
@@ -524,6 +559,13 @@ def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix=""):
     median = numpy.median(x)
     # MAD to be consistent with stdev for normal distribution
     mad = numpy.median(numpy.abs(x - median)) * 1.4826
+    q1 = numpy.percentile(x, 25)
+    q3 = numpy.percentile(x, 75)
+    iqr = q3 - q1
+    outliers_high_dict = {i: x[i] for i in numpy.where(x > q3 + 1.1 * iqr)[0]}
+    outliers_high = pandas.DataFrame(
+        list(outliers_high_dict.items()), columns=["index", "value"]
+    )
 
     min_val = min(min(x), min(y))
     max_val = max(max(x), max(y))
@@ -597,10 +639,41 @@ def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix=""):
     ax_histx.legend()
 
     png_filename = filename_replace_char(f"scatter_histogram_{label}.png")
+    csv_values_filename = filename_replace_char(f"scatter_histogram_{label}_values.csv")
+    csv_histogram_filename = filename_replace_char(f"scatter_histogram_{label}.csv")
+    csv_outliers_filename = filename_replace_char(
+        f"scatter_histogram_{label}_outliers.csv"
+    )
     if idx:
         png_filename = f"{prefix}group{idx}_bootstrap_{png_filename}"
+        csv_values_filename = f"{prefix}group{idx}_bootstrap_{csv_values_filename}"
+        csv_histogram_filename = (
+            f"{prefix}group{idx}_bootstrap_{csv_histogram_filename}"
+        )
+        csv_outliers_filename = f"{prefix}group{idx}_bootstrap_{csv_outliers_filename}"
     fig.savefig(png_filename)
     logging.info(f"Saved scatter plot with histogram to {png_filename}")
+    plt.close(fig)
+
+    df_values = pandas.DataFrame({f"refined_{label}": x, f"initial_{label}": y})
+    df_values.to_csv(csv_values_filename, index=False)
+    logging.info(f"Saved raw values to {csv_values_filename}")
+
+    bin_centers = (bins[:-1] + bins[1:]) / 2
+    df_histogram = pandas.DataFrame(
+        {
+            "bin_start": bins[:-1],
+            "bin_center": bin_centers,
+            "bin_end": bins[1:],
+            "count": counts,
+        }
+    )
+    df_histogram.to_csv(csv_histogram_filename, index=False)
+    logging.info(f"Saved histogram bins and counts to {csv_histogram_filename}")
+
+    if not outliers_high.empty:
+        outliers_high.to_csv(csv_outliers_filename, index=False)
+        logging.info(f"Saved {len(outliers_high)} outliers to {csv_outliers_filename}")
 
 
 def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
