@@ -112,6 +112,34 @@ def sort_llweight_files(file_list):
     return sorted(file_list, key=extract_llweight_number)
 
 
+def filter_out_refined_files(mmcif_files, llweights):
+    """
+    Filter out refined mmcif files corresponding to outliers in R1 values.
+
+    Args:
+        mmcif_files: List of refined mmcif file paths.
+        llweights: List of llweight numbers to exclude.
+
+    Returns:
+        Filtered list of mmcif file paths.
+    """
+    if not llweights:
+        return mmcif_files
+    filtered_files = []
+    for file in mmcif_files:
+        match = re.search(r"_llweight(\d+)_", file)
+        if match:
+            llweight_num = int(match.group(1))
+            if llweight_num not in llweights:
+                filtered_files.append(file)
+        else:
+            logging.warning(
+                f"Could not get llweight number from {file}, including it by default."
+            )
+            filtered_files.append(file)
+    return filtered_files
+
+
 def create_parser():
     """
     Create the argument parser for the command-line interface.
@@ -1447,7 +1475,9 @@ def main():
             else None
         )
         if refined_jsons:
-            bootstrap_analyse_stats(refined_jsons, refined_json_ref, 1, prefix)
+            data_overall_dict, llweight_R1_outliers = bootstrap_analyse_stats(
+                refined_jsons, refined_json_ref, 1, prefix
+            )
 
         refined_mmcif_ref_candidate = f"{args.file_name_template}_refine.mmcif"
         refined_mmcif_ref = (
@@ -1470,10 +1500,11 @@ def main():
         refined_mmcifs = sort_llweight_files(
             glob.glob(f"{args.file_name_template}_llweight*_refine.mmcif")
         )
-        refined_mmcifs2 = sort_llweight_files(
-            glob.glob(f"{args.file_name_template}_llweight*_refine.cif")
-        )
-        refined_mmcifs = refined_mmcifs + refined_mmcifs2
+        # refined_mmcifs2 = sort_llweight_files(
+        #     glob.glob(f"{args.file_name_template}_llweight*_refine.cif")
+        # )
+        # refined_mmcifs = refined_mmcifs + refined_mmcifs2
+        refined_mmcifs = filter_out_refined_files(refined_mmcifs, llweight_R1_outliers)
 
         if refined_mmcifs:
             geometry_objects_ref = []
@@ -1503,6 +1534,7 @@ def main():
         refined_mtzs = sort_llweight_files(
             glob.glob(f"{args.file_name_template}_llweight*_refine.mtz")
         )
+        refined_mtzs = filter_out_refined_files(refined_mtzs, llweight_R1_outliers)
         if not args.calculate_mean_map:
             logging.info("Skipping mean map calculation.")
             return
@@ -1854,9 +1886,19 @@ def main():
                     quick=args.quick,
                     n_proc=n_proc,
                 )
-                bootstrap_analyse_stats(
+                data_overall_dict, llweight_R1_outliers = bootstrap_analyse_stats(
                     refined_jsons_bootstrap, refined_jsons[i_mtz], 1, prefix
                 )
+
+                if llweight_R1_outliers is not None:
+                    # Filter out the outliers
+                    refined_mmcifs_bootstrap = filter_out_refined_files(
+                        refined_mmcifs_bootstrap, llweight_R1_outliers
+                    )
+                    refined_mtzs_bootstrap = filter_out_refined_files(
+                        refined_mtzs_bootstrap, llweight_R1_outliers
+                    )
+
                 if os.path.splitext(model)[1] == ".cif":
                     bootstrap_analyse_structures(
                         refined_mmcifs_bootstrap,

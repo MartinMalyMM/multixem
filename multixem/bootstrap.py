@@ -451,9 +451,11 @@ def analyse_distribution(values, xlabel, outlier_factor=2.0, idx=0, prefix=""):
     Returns:
         dict: A dictionary containing summary statistics,
               including histogram bins and counts.
+        pandas.DataFrame or None: A DataFrame containing outliers with their
+                                  indices and values, or None if there are no outliers.
     """
     if len(values) == 0:
-        return {}
+        return {}, None
     counts, bins = numpy.histogram(values, bins="auto")
     mean = numpy.mean(values)
     stdev = numpy.std(values, ddof=1)
@@ -538,7 +540,7 @@ def analyse_distribution(values, xlabel, outlier_factor=2.0, idx=0, prefix=""):
         "max": max_val,
         "bins": bins,
         "counts": counts.astype(int),
-    }
+    }, outliers
 
 
 def plot_histogram(values, xlabel, ref={}, idx=0, prefix=""):
@@ -552,7 +554,7 @@ def plot_histogram(values, xlabel, ref={}, idx=0, prefix=""):
         idx (int): Index for naming the output file (applies if not set to 0).
         prefix (str): Prefix for the output filename.
     """
-    distr = analyse_distribution(values, xlabel, idx=idx, prefix=prefix)
+    distr, _ = analyse_distribution(values, xlabel, idx=idx, prefix=prefix)
     min_val = distr["min"]
     max_val = distr["max"]
     if ref:
@@ -629,7 +631,7 @@ def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix=""):
     if len(x) != len(y):
         raise ValueError("x and y must have the same length.")
 
-    distr = analyse_distribution(x, label, idx=idx, prefix=prefix)
+    distr, outliers = analyse_distribution(x, label, idx=idx, prefix=prefix)
     min_val = min(min(x), min(y))
     max_val = max(max(x), max(y))
     if stat_ref:
@@ -720,6 +722,8 @@ def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix=""):
     fig.savefig(png_filename)
     logging.info(f"Saved scatter plot with histogram to {png_filename}")
     plt.close(fig)
+
+    return outliers
 
 
 def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
@@ -822,6 +826,7 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
             f"Reference file with statistics not found {json_ref if json_ref else ''}"
         )
 
+    llweight_R1_outliers = []
     # for stat in list(stats_avail) + stats_additional:
     for stat in stats_avail:
         stat_ref = {}
@@ -837,7 +842,7 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
                     stats_ref_equivalents[stat], None
                 )
             }
-        scatter_plot_histogram(
+        llweight_outliers = scatter_plot_histogram(
             data_overall_dict[stat],
             data_overall_init_dict[stat],
             stat,
@@ -845,8 +850,18 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
             idx,
             prefix,
         )
+        if stat == "R1":
+            if llweight_outliers is not None:
+                llweight_R1_outliers = llweight_outliers["index"].tolist()
+            else:
+                llweight_R1_outliers = []
+            logging.info(
+                f"Identified {len(llweight_R1_outliers) if llweight_R1_outliers else 0}"
+                " R1 value outliers which will be exluded from the following analysis\n"
+                f" {llweight_R1_outliers if llweight_R1_outliers else ''}"
+            )
 
-    return data_overall_dict
+    return data_overall_dict, llweight_R1_outliers
 
 
 def calculate_angle(atom1_pos, atom2_pos, atom3_pos, degrees=True):
