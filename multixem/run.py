@@ -323,6 +323,12 @@ def create_parser():
         ),
     )
     mean_parser.add_argument(
+        "--calculate_mean_map",
+        type=bool,
+        default=False,
+        help="Calculate mean maps.",
+    )
+    mean_parser.add_argument(
         "--cif",
         type=existing_file,
         help="Path to a small molecule CIF file.",
@@ -1497,6 +1503,9 @@ def main():
         refined_mtzs = sort_llweight_files(
             glob.glob(f"{args.file_name_template}_llweight*_refine.mtz")
         )
+        if not args.calculate_mean_map:
+            logging.info("Skipping mean map calculation.")
+            return
         if refined_mtzs:
             if refined_mtz_ref:
                 m = gemmi.read_mtz_file(refined_mtz_ref)
