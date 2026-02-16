@@ -438,17 +438,22 @@ def unrestrain(geometry_objects_ref, structure_file):
     return restraints_filename
 
 
-def plot_histogram(values, xlabel, ref={}, idx=0, prefix=""):
+def analyse_distribution(values, xlabel, outlier_factor=1.1, idx=0, prefix=""):
     """
-    Plot a histogram of the data and save as PNG.
+    Analyse a distribution of values and return summary statistics.
 
     Args:
-        data (list or numpy array): Data to plot.
-        xlabel (str): Label for the x-axis and the output file.
-        ref (dict): Reference values for the plot {label: value}.
-        idx (int): Index for naming the output file (applies if not set to 0).
-        prefix (str): Prefix for the output filename.
+        values (list or numpy array): The values to be analysed.
+        xlabel (str): The label for the x-axis of the histogram.
+        outlier_factor (float): The factor to determine outliers based on IQR.
+        idx (int): Index for naming the output files (applies if not set to 0).
+        prefix (str): Prefix for the output filenames.
+    Returns:
+        dict: A dictionary containing summary statistics,
+              including histogram bins and counts.
     """
+    if len(values) == 0:
+        return {}
     counts, bins = numpy.histogram(values, bins="auto")
     mean = numpy.mean(values)
     stdev = numpy.std(values, ddof=1)
@@ -456,69 +461,45 @@ def plot_histogram(values, xlabel, ref={}, idx=0, prefix=""):
     q1 = numpy.percentile(values, 25)
     q3 = numpy.percentile(values, 75)
     iqr = q3 - q1
-    outliers_high_dict = {i: values[i] for i in numpy.where(values > q3 + 1.1 * iqr)[0]}
-    outliers_high = pandas.DataFrame(
-        list(outliers_high_dict.items()), columns=["index", "value"]
-    )
     # MAD to be consistent with stdev for normal distribution
     mad = numpy.median(numpy.abs(values - median)) * 1.4826
     min_val = numpy.min(values)
     max_val = numpy.max(values)
-    if ref:
-        for ref_value in ref.values():
-            min_val = min(min_val, ref_value)
-            max_val = max(max_val, ref_value)
 
-    plt.figure(figsize=(8, 6))
-    plt.bar(
-        bins[:-1], counts.astype(int), width=numpy.diff(bins), align="edge", alpha=0.7
+    # Outliers are defined as values outside of 1.1*IQR from the quartiles
+    outliers_low_dict = {
+        i: values[i] for i in numpy.where(values < q1 - outlier_factor * iqr)[0]
+    }
+    outliers_low = pandas.DataFrame(
+        list(outliers_low_dict.items()), columns=["index", "value"]
     )
-    plt.xlabel(xlabel)
-    plt.ylabel("Frequency")
-    plt.gca().yaxis.set_major_locator(
-        ticker.MaxNLocator(integer=True)
-    )  # Ensure integer y-axis labels
-    buffer = (max_val - min_val) * 0.05  # 5% buffer around the data range
-    plt.xlim(min_val - buffer, max_val + buffer)
-    plt.axvline(
-        mean,
-        color="blue",
-        linestyle="--",
-        label=f"Mean ± St.Dev. = {match_sigfigs(mean, stdev)} ± {stdev:.2g}",
+    outliers_high_dict = {
+        i: values[i] for i in numpy.where(values > q3 + outlier_factor * iqr)[0]
+    }
+    outliers_high = pandas.DataFrame(
+        list(outliers_high_dict.items()), columns=["index", "value"]
     )
-    plt.axvline(
-        median,
-        color="green",
-        linestyle="--",
-        label=f"Median ± MAD = {match_sigfigs(median, mad)} ± {mad:.2g}",
-    )
-    for stat_ref_label, stat_value in ref.items():
-        plt.axvline(
-            stat_value,
-            color="orange",
-            linestyle="--",
-            label=f"reference {stat_ref_label} = {match_sigfigs(stat_value, stdev)}",
-        )
-    plt.grid(axis="y", alpha=0.75)
-    plt.tight_layout()
-    plt.legend()
-    png_filename = filename_replace_char(f"histogram_{xlabel}.png")
+
+    # Combine outliers, handling empty DataFrames to avoid FutureWarning
+    if outliers_low.empty and outliers_high.empty:
+        outliers = None
+    elif outliers_low.empty:
+        outliers = outliers_high
+    elif outliers_high.empty:
+        outliers = outliers_low
+    else:
+        outliers = pandas.concat([outliers_low, outliers_high], ignore_index=True)
+
     csv_values_filename = filename_replace_char(f"histogram_{xlabel}_values.csv")
     csv_histogram_filename = filename_replace_char(f"histogram_{xlabel}.csv")
-    csv_outliers_filename = filename_replace_char(f"histogram_{xlabel}_outliers.csv")
     if idx:
-        png_filename = f"{prefix}group{idx}_bootstrap_{png_filename}"
         csv_values_filename = f"{prefix}group{idx}_bootstrap_{csv_values_filename}"
         csv_histogram_filename = (
             f"{prefix}group{idx}_bootstrap_{csv_histogram_filename}"
         )
-        csv_outliers_filename = f"{prefix}group{idx}_bootstrap_{csv_outliers_filename}"
-    plt.savefig(png_filename)
-    plt.close()
-    logging.info(f"Saved histogram to {png_filename}")
 
     df_values = pandas.DataFrame(values)
-    df_values.to_csv(csv_values_filename, index=False)
+    df_values.to_csv(csv_values_filename, index=False, header=False)
     logging.info(f"Saved raw values to {csv_values_filename}")
 
     bin_centers = (bins[:-1] + bins[1:]) / 2
@@ -530,12 +511,106 @@ def plot_histogram(values, xlabel, ref={}, idx=0, prefix=""):
             "count": counts,
         }
     )
-    df_histogram.to_csv(csv_histogram_filename, index=False)
+    df_histogram.to_csv(csv_histogram_filename, index=False, header=False)
     logging.info(f"Saved histogram bins and counts to {csv_histogram_filename}")
 
-    if not outliers_high.empty:
-        outliers_high.to_csv(csv_outliers_filename, index=False)
-        logging.info(f"Saved {len(outliers_high)} outliers to {csv_outliers_filename}")
+    if outliers is not None:
+        csv_outliers_filename = filename_replace_char(
+            f"histogram_{xlabel}_outliers.csv"
+        )
+        if idx:
+            csv_outliers_filename = (
+                f"{prefix}group{idx}_bootstrap_{csv_outliers_filename}"
+            )
+        outliers.to_csv(csv_outliers_filename, index=False, header=False)
+        logging.info(f"Saved {len(outliers)} outliers to {csv_outliers_filename}")
+
+    return {
+        "mean": mean,
+        "stdev": stdev,
+        "median": median,
+        "q1": q1,
+        "q3": q3,
+        "iqr": iqr,
+        "mad": mad,
+        "min": min_val,
+        "max": max_val,
+        "bins": bins,
+        "counts": counts.astype(int),
+    }
+
+
+def plot_histogram(values, xlabel, ref={}, idx=0, prefix=""):
+    """
+    Plot a histogram of the data and save as PNG.
+
+    Args:
+        data (list or numpy array): Data to plot.
+        xlabel (str): Label for the x-axis and the output file.
+        ref (dict): Reference values for the plot {label: value}.
+        idx (int): Index for naming the output file (applies if not set to 0).
+        prefix (str): Prefix for the output filename.
+    """
+    distr = analyse_distribution(values, xlabel, idx, prefix)
+    min_val = distr["min"]
+    max_val = distr["max"]
+    if ref:
+        for ref_value in ref.values():
+            min_val = min(min_val, ref_value)
+            max_val = max(max_val, ref_value)
+
+    plt.figure(figsize=(8, 6))
+    plt.bar(
+        distr["bins"][:-1],
+        distr["counts"],
+        width=numpy.diff(distr["bins"]),
+        align="edge",
+        alpha=0.7,
+    )
+    plt.xlabel(xlabel)
+    plt.ylabel("Frequency")
+    plt.gca().yaxis.set_major_locator(
+        ticker.MaxNLocator(integer=True)
+    )  # Ensure integer y-axis labels
+    buffer = (max_val - min_val) * 0.05  # 5% buffer around the data range
+    plt.xlim(min_val - buffer, max_val + buffer)
+    plt.axvline(
+        distr["mean"],
+        color="blue",
+        linestyle="--",
+        label=(
+            "Mean ± St.Dev. ="
+            f" {match_sigfigs(distr['mean'], distr['stdev'])} ± {distr['stdev']:.2g}"
+        ),
+    )
+    plt.axvline(
+        distr["median"],
+        color="green",
+        linestyle="--",
+        label=(
+            "Median ± MAD ="
+            f" {match_sigfigs(distr['median'], distr['mad'])} ± {distr['mad']:.2g}"
+        ),
+    )
+    for stat_ref_label, stat_value in ref.items():
+        plt.axvline(
+            stat_value,
+            color="orange",
+            linestyle="--",
+            label=(
+                "From single refinement:"
+                f" {stat_ref_label} = {match_sigfigs(stat_value, distr['stdev'])}"
+            ),
+        )
+    plt.grid(axis="y", alpha=0.75)
+    plt.tight_layout()
+    plt.legend()
+    png_filename = filename_replace_char(f"histogram_{xlabel}.png")
+    if idx:
+        png_filename = f"{prefix}group{idx}_bootstrap_{png_filename}"
+    plt.savefig(png_filename)
+    plt.close()
+    logging.info(f"Saved histogram to {png_filename}")
 
 
 def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix=""):
@@ -553,20 +628,7 @@ def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix=""):
     if len(x) != len(y):
         raise ValueError("x and y must have the same length.")
 
-    counts, bins = numpy.histogram(x, bins="auto")
-    mean = numpy.mean(x)
-    stdev = numpy.std(x, ddof=1)
-    median = numpy.median(x)
-    # MAD to be consistent with stdev for normal distribution
-    mad = numpy.median(numpy.abs(x - median)) * 1.4826
-    q1 = numpy.percentile(x, 25)
-    q3 = numpy.percentile(x, 75)
-    iqr = q3 - q1
-    outliers_high_dict = {i: x[i] for i in numpy.where(x > q3 + 1.1 * iqr)[0]}
-    outliers_high = pandas.DataFrame(
-        list(outliers_high_dict.items()), columns=["index", "value"]
-    )
-
+    distr = analyse_distribution(x, label, idx, prefix)
     min_val = min(min(x), min(y))
     max_val = max(max(x), max(y))
     if stat_ref:
@@ -608,7 +670,11 @@ def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix=""):
     ax.grid(True)
 
     ax_histx.bar(
-        bins[:-1], counts.astype(int), width=numpy.diff(bins), align="edge", alpha=0.7
+        distr["bins"][:-1],
+        distr["counts"],
+        width=numpy.diff(distr["bins"]),
+        align="edge",
+        alpha=0.7,
     )
     ax_histx.tick_params(axis="x", labelbottom=False)
     ax_histx.set_ylabel("Frequency")
@@ -617,63 +683,42 @@ def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix=""):
         ticker.MaxNLocator(integer=True)
     )  # Ensure integer y-axis labels
     ax_histx.axvline(
-        mean,
+        distr["mean"],
         color="blue",
         linestyle="--",
-        label=f"Mean ± St.Dev. = {match_sigfigs(mean, stdev)} ± {stdev:.2g}",
+        label=(
+            "Mean ± St.Dev. ="
+            f" {match_sigfigs(distr['mean'], distr['stdev'])} ± {distr['stdev']:.2g}",
+        ),
     )
     ax_histx.axvline(
-        median,
+        distr["median"],
         color="green",
         linestyle="--",
-        label=f"Median ± MAD = {match_sigfigs(median, mad)} ± {mad:.2g}",
+        label=(
+            "Median ± MAD ="
+            f" {match_sigfigs(distr['median'], distr['mad'])} ± {distr['mad']:.2g}"
+        ),
     )
     for stat_ref_label, stat_value in stat_ref.items():
         ax_histx.axvline(
             stat_value,
             color="orange",
             linestyle="--",
-            label=f"reference {stat_ref_label} = {match_sigfigs(stat_value, stdev)}",
+            label=(
+                "From single refinement"
+                f" {stat_ref_label} = {match_sigfigs(stat_value, distr['stdev'])}"
+            ),
         )
     ax_histx.grid(axis="y", alpha=0.75)
     ax_histx.legend()
 
     png_filename = filename_replace_char(f"scatter_histogram_{label}.png")
-    csv_values_filename = filename_replace_char(f"scatter_histogram_{label}_values.csv")
-    csv_histogram_filename = filename_replace_char(f"scatter_histogram_{label}.csv")
-    csv_outliers_filename = filename_replace_char(
-        f"scatter_histogram_{label}_outliers.csv"
-    )
     if idx:
         png_filename = f"{prefix}group{idx}_bootstrap_{png_filename}"
-        csv_values_filename = f"{prefix}group{idx}_bootstrap_{csv_values_filename}"
-        csv_histogram_filename = (
-            f"{prefix}group{idx}_bootstrap_{csv_histogram_filename}"
-        )
-        csv_outliers_filename = f"{prefix}group{idx}_bootstrap_{csv_outliers_filename}"
     fig.savefig(png_filename)
     logging.info(f"Saved scatter plot with histogram to {png_filename}")
     plt.close(fig)
-
-    df_values = pandas.DataFrame({f"refined_{label}": x, f"initial_{label}": y})
-    df_values.to_csv(csv_values_filename, index=False)
-    logging.info(f"Saved raw values to {csv_values_filename}")
-
-    bin_centers = (bins[:-1] + bins[1:]) / 2
-    df_histogram = pandas.DataFrame(
-        {
-            "bin_start": bins[:-1],
-            "bin_center": bin_centers,
-            "bin_end": bins[1:],
-            "count": counts,
-        }
-    )
-    df_histogram.to_csv(csv_histogram_filename, index=False)
-    logging.info(f"Saved histogram bins and counts to {csv_histogram_filename}")
-
-    if not outliers_high.empty:
-        outliers_high.to_csv(csv_outliers_filename, index=False)
-        logging.info(f"Saved {len(outliers_high)} outliers to {csv_outliers_filename}")
 
 
 def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
