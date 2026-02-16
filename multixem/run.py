@@ -12,6 +12,7 @@ import logging
 import json
 import shlex
 import glob
+import re
 from collections import Counter
 import concurrent.futures
 from . import __version__
@@ -89,6 +90,26 @@ def setup_logging():
     sys.excepthook = handle_exception
 
     return logger
+
+
+def sort_llweight_files(file_list):
+    """
+    Sort files containing '_llweight<number>_' by the numerical value.
+
+    Args:
+        file_list: List of file paths containing '_llweight<number>_'
+
+    Returns:
+        Sorted list of file paths
+    """
+
+    def extract_llweight_number(filepath):
+        match = re.search(r"_llweight(\d+)_", filepath)
+        if match:
+            return int(match.group(1))
+        return -1  # Files without llweight number will be sorted first
+
+    return sorted(file_list, key=extract_llweight_number)
 
 
 def create_parser():
@@ -1408,8 +1429,8 @@ def main():
         if prefix[-1] != "_":
             prefix += "_"
 
-        refined_jsons = glob.glob(
-            f"{args.file_name_template}_llweight*_refine_stats.json"
+        refined_jsons = sort_llweight_files(
+            glob.glob(f"{args.file_name_template}_llweight*_refine_stats.json")
         )
         refined_json_ref_candidate = f"{args.file_name_template}_refine_stats.json"
         refined_json_ref = (
@@ -1438,8 +1459,12 @@ def main():
             if f:
                 logging.info(f"Reference file found: {f}")
 
-        refined_mmcifs = glob.glob(f"{args.file_name_template}_llweight*_refine.mmcif")
-        refined_mmcifs2 = glob.glob(f"{args.file_name_template}_llweight*_refine.cif")
+        refined_mmcifs = sort_llweight_files(
+            glob.glob(f"{args.file_name_template}_llweight*_refine.mmcif")
+        )
+        refined_mmcifs2 = sort_llweight_files(
+            glob.glob(f"{args.file_name_template}_llweight*_refine.cif")
+        )
         refined_mmcifs = refined_mmcifs + refined_mmcifs2
 
         if refined_mmcifs:
@@ -1467,7 +1492,9 @@ def main():
                 f"No refined mmCIF files found with a filename template"
                 f" {args.file_name_template}_llweight*_refine.mmcif"
             )
-        refined_mtzs = glob.glob(f"{args.file_name_template}_llweight*_refine.mtz")
+        refined_mtzs = sort_llweight_files(
+            glob.glob(f"{args.file_name_template}_llweight*_refine.mtz")
+        )
         if refined_mtzs:
             if refined_mtz_ref:
                 m = gemmi.read_mtz_file(refined_mtz_ref)
@@ -1489,7 +1516,7 @@ def main():
         else:
             logging.warning(
                 f"No refined MTZ files found with a filename template"
-                f"{args.file_name_template}_llweight*_refine.mtz"
+                f" {args.file_name_template}_llweight*_refine.mtz"
             )
         return
 

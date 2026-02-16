@@ -780,7 +780,10 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
     for stat in stats_avail:
         stat_ref = {}
         if (
-            stat in stats_ref_equivalents.keys()
+            json_ref
+            and os.path.isfile(json_ref)
+            and data_ref
+            and stat in stats_ref_equivalents.keys()
             and data_ref.get(stats_ref_equivalents[stat], None) is not None
         ):
             stat_ref = {
