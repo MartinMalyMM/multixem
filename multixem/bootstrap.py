@@ -438,7 +438,7 @@ def unrestrain(geometry_objects_ref, structure_file):
     return restraints_filename
 
 
-def analyse_distribution(values, xlabel, outlier_factor=1.1, idx=0, prefix=""):
+def analyse_distribution(values, xlabel, outlier_factor=1.5, idx=0, prefix=""):
     """
     Analyse a distribution of values and return summary statistics.
 
@@ -466,16 +466,14 @@ def analyse_distribution(values, xlabel, outlier_factor=1.1, idx=0, prefix=""):
     min_val = numpy.min(values)
     max_val = numpy.max(values)
 
-    # Outliers are defined as values outside of 1.1*IQR from the quartiles
-    outliers_low_dict = {
-        i: values[i] for i in numpy.where(values < q1 - outlier_factor * iqr)[0]
-    }
+    # Outliers are defined as values outside of outlier_factor*IQR from the quartiles
+    threshold_low = q1 - outlier_factor * iqr
+    outliers_low_dict = {i: values[i] for i in numpy.where(values < threshold_low)[0]}
     outliers_low = pandas.DataFrame(
         list(outliers_low_dict.items()), columns=["index", "value"]
     )
-    outliers_high_dict = {
-        i: values[i] for i in numpy.where(values > q3 + outlier_factor * iqr)[0]
-    }
+    threshold_high = q3 + outlier_factor * iqr
+    outliers_high_dict = {i: values[i] for i in numpy.where(values > threshold_high)[0]}
     outliers_high = pandas.DataFrame(
         list(outliers_high_dict.items()), columns=["index", "value"]
     )
@@ -523,7 +521,10 @@ def analyse_distribution(values, xlabel, outlier_factor=1.1, idx=0, prefix=""):
                 f"{prefix}group{idx}_bootstrap_{csv_outliers_filename}"
             )
         outliers.to_csv(csv_outliers_filename, index=False, header=False)
-        logging.info(f"Saved {len(outliers)} outliers to {csv_outliers_filename}")
+        logging.info(
+            f"Saved {len(outliers)} outliers outside the interval"
+            f" [{threshold_low:.4f}, {threshold_high:.4f}] to {csv_outliers_filename}"
+        )
 
     return {
         "mean": mean,
