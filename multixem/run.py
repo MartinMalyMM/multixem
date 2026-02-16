@@ -1426,6 +1426,8 @@ def main():
             prefix = args.prefix
         else:
             prefix = args.file_name_template
+            # Remove trailing _group{number}_ pattern to avoid duplication
+            prefix = re.sub(r"_group\d+$", "", prefix)
         if prefix[-1] != "_":
             prefix += "_"
 
