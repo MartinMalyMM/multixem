@@ -438,7 +438,7 @@ def unrestrain(geometry_objects_ref, structure_file):
     return restraints_filename
 
 
-def analyse_distribution(values, xlabel, outlier_factor=1.5, idx=0, prefix=""):
+def analyse_distribution(values, xlabel, outlier_factor=2.0, idx=0, prefix=""):
     """
     Analyse a distribution of values and return summary statistics.
 
@@ -552,7 +552,7 @@ def plot_histogram(values, xlabel, ref={}, idx=0, prefix=""):
         idx (int): Index for naming the output file (applies if not set to 0).
         prefix (str): Prefix for the output filename.
     """
-    distr = analyse_distribution(values, xlabel, idx, prefix)
+    distr = analyse_distribution(values, xlabel, idx=idx, prefix=prefix)
     min_val = distr["min"]
     max_val = distr["max"]
     if ref:
@@ -629,7 +629,7 @@ def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix=""):
     if len(x) != len(y):
         raise ValueError("x and y must have the same length.")
 
-    distr = analyse_distribution(x, label, idx, prefix)
+    distr = analyse_distribution(x, label, idx=idx, prefix=prefix)
     min_val = min(min(x), min(y))
     max_val = max(max(x), max(y))
     if stat_ref:
@@ -689,7 +689,7 @@ def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix=""):
         linestyle="--",
         label=(
             "Mean ± St.Dev. ="
-            f" {match_sigfigs(distr['mean'], distr['stdev'])} ± {distr['stdev']:.2g}",
+            f" {match_sigfigs(distr['mean'], distr['stdev'])} ± {distr['stdev']:.2g}"
         ),
     )
     ax_histx.axvline(
