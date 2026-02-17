@@ -452,7 +452,7 @@ def analyse_distribution(
         prefix (str): Prefix for the output filenames.
         filtered (bool): Whether the values are already filtered,
                           which will be reflected in the output filenames.
-            save (bool): Whether to save the histogram and outliers to CSV files.
+        save (bool): Whether to save the histogram and outliers to CSV files.
     Returns:
         dict: A dictionary containing summary statistics,
               including histogram bins and counts.
@@ -661,7 +661,7 @@ def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix="", filtered=
         x, label, idx=idx, prefix=prefix, filtered=filtered
     )
     distr_init, _, _ = analyse_distribution(
-        y, label, idx=idx, prefix=prefix, filtered=filtered
+        y, label, idx=idx, prefix=prefix, filtered=filtered, save=False
     )
     min_val = min(min(x), min(y))
     max_val = max(max(x), max(y))
