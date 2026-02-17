@@ -1483,7 +1483,7 @@ def main():
         llweight_R1_outliers = []
         if refined_jsons:
             llweight_R1_outliers = bootstrap_analyse_stats(
-                refined_jsons, refined_json_ref, 1, prefix
+                refined_jsons, refined_json_ref, idx=0, prefix=prefix
             )
 
         refined_mmcif_ref_candidate = f"{args.file_name_template}_refine.mmcif"
