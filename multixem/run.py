@@ -1074,11 +1074,17 @@ def run_servalcat_refine(
         )
     elif not mtzs_free:
         # refinement after merging, no free set provided
-        prefixes = [f"{prefix}group{i_mtz + 1}_" for i_mtz in range(len(mtzs_fi))]
+        if len(mtzs_fi) == 1 and "group" not in prefix:
+            prefixes = [prefix] * len(mtzs_fi)
+        else:
+            prefixes = [f"{prefix}group{i_mtz + 1}_" for i_mtz in range(len(mtzs_fi))]
         params = zip(mtzs_fi, labins, [None] * len(mtzs_fi), models_list, prefixes)
     elif len(mtzs_free) == 1:
         # refinement after merging, single free set provided
-        prefixes = [f"{prefix}group{i_mtz + 1}_" for i_mtz in range(len(mtzs_fi))]
+        if len(mtzs_fi) == 1 and "group" not in prefix:
+            prefixes = [prefix] * len(mtzs_fi)
+        else:
+            prefixes = [f"{prefix}group{i_mtz + 1}_" for i_mtz in range(len(mtzs_fi))]
         params = zip(
             mtzs_fi,
             labins,
@@ -1475,7 +1481,7 @@ def main():
             else None
         )
         if refined_jsons:
-            data_overall_dict, llweight_R1_outliers = bootstrap_analyse_stats(
+            llweight_R1_outliers = bootstrap_analyse_stats(
                 refined_jsons, refined_json_ref, 1, prefix
             )
 
@@ -1820,6 +1826,12 @@ def main():
             for i_mtz, (mtz_in, labin, model) in enumerate(
                 zip(mtzs_merged, labins, models)
             ):
+                if args.command == "bootstrap":
+                    idx = 0
+                    prefix_servalcat = prefix
+                else:
+                    idx = i_mtz + 1
+                    prefix_servalcat = f"{prefix}group{idx}_"
                 geometry_objects_ref = []
                 restraints_file = ""
                 if args.geometry_cids:
@@ -1851,7 +1863,7 @@ def main():
                         [labin],
                         input_model_s,
                         mtzs_free=mtzs_bootstrap,
-                        prefix=f"{prefix}group{i_mtz + 1}_",
+                        prefix=prefix_servalcat,
                         source=args.source,
                         keyword_file="",
                         arguments=servalcat_args
@@ -1878,7 +1890,7 @@ def main():
                     [labin],
                     input_model_s,
                     mtzs_free=mtzs_bootstrap,
-                    prefix=f"{prefix}group{i_mtz + 1}_",
+                    prefix=prefix_servalcat,
                     source=args.source,
                     keyword_file=restraints_file,
                     arguments=servalcat_args + ["--labin_llweight", "llweight"],
@@ -1886,7 +1898,7 @@ def main():
                     quick=args.quick,
                     n_proc=n_proc,
                 )
-                data_overall_dict, llweight_R1_outliers = bootstrap_analyse_stats(
+                llweight_R1_outliers = bootstrap_analyse_stats(
                     refined_jsons_bootstrap, refined_jsons[i_mtz], 1, prefix
                 )
 
@@ -1903,7 +1915,7 @@ def main():
                     bootstrap_analyse_structures(
                         refined_mmcifs_bootstrap,
                         refined_mmcifs[i_mtz],
-                        idx=i_mtz + 1,
+                        idx=idx,
                         prefix=prefix,
                         skip_hydrogen=True,
                         smcif=model,
@@ -1914,7 +1926,7 @@ def main():
                     bootstrap_analyse_structures(
                         refined_mmcifs_bootstrap,
                         refined_mmcifs[i_mtz],
-                        idx=i_mtz + 1,
+                        idx=idx,
                         prefix=prefix,
                         skip_hydrogen=True,
                         smcif="",
@@ -1923,7 +1935,7 @@ def main():
                     )
                 bootstrap_mean_map(
                     refined_mtzs_bootstrap,
-                    idx=i_mtz + 1,
+                    idx=idx,
                     prefix=prefix,
                     binner=binner_master,
                     mtz_ref=refined_mtzs[i_mtz],
