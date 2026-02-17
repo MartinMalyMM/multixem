@@ -986,7 +986,7 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
         logging.info(f"Saved filtered statistics to {json_filename_filtered}")
 
     logging.info("")
-    return data_overall_filtered_dict, llweight_R1_outliers
+    return llweight_R1_outliers
 
 
 def calculate_angle(atom1_pos, atom2_pos, atom3_pos, degrees=True):
