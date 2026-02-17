@@ -1480,6 +1480,7 @@ def main():
             if os.path.isfile(refined_json_ref_candidate)
             else None
         )
+        llweight_R1_outliers = []
         if refined_jsons:
             llweight_R1_outliers = bootstrap_analyse_stats(
                 refined_jsons, refined_json_ref, 1, prefix
@@ -1510,7 +1511,10 @@ def main():
         #     glob.glob(f"{args.file_name_template}_llweight*_refine.cif")
         # )
         # refined_mmcifs = refined_mmcifs + refined_mmcifs2
-        refined_mmcifs = filter_out_refined_files(refined_mmcifs, llweight_R1_outliers)
+        if llweight_R1_outliers:
+            refined_mmcifs = filter_out_refined_files(
+                refined_mmcifs, llweight_R1_outliers
+            )
 
         if refined_mmcifs:
             geometry_objects_ref = []
@@ -1540,7 +1544,8 @@ def main():
         refined_mtzs = sort_llweight_files(
             glob.glob(f"{args.file_name_template}_llweight*_refine.mtz")
         )
-        refined_mtzs = filter_out_refined_files(refined_mtzs, llweight_R1_outliers)
+        if llweight_R1_outliers:
+            refined_mtzs = filter_out_refined_files(refined_mtzs, llweight_R1_outliers)
         if not args.calculate_mean_map:
             logging.info("Skipping mean map calculation.")
             return
