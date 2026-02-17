@@ -438,7 +438,9 @@ def unrestrain(geometry_objects_ref, structure_file):
     return restraints_filename
 
 
-def analyse_distribution(values, xlabel, outlier_factor=2.0, idx=0, prefix=""):
+def analyse_distribution(
+    values, xlabel, outlier_factor=2.0, idx=0, prefix="", filtered=False
+):
     """
     Analyse a distribution of values and return summary statistics.
 
@@ -448,6 +450,8 @@ def analyse_distribution(values, xlabel, outlier_factor=2.0, idx=0, prefix=""):
         outlier_factor (float): The factor to determine outliers based on IQR.
         idx (int): Index for naming the output files (applies if not set to 0).
         prefix (str): Prefix for the output filenames.
+        filtered (bool): Whether the values are already filtered,
+                          which will be reflected in the output filenames.
     Returns:
         dict: A dictionary containing summary statistics,
               including histogram bins and counts.
@@ -492,6 +496,13 @@ def analyse_distribution(values, xlabel, outlier_factor=2.0, idx=0, prefix=""):
 
     csv_values_filename = filename_replace_char(f"histogram_{xlabel}_values.csv")
     csv_histogram_filename = filename_replace_char(f"histogram_{xlabel}.csv")
+    if filtered:
+        csv_values_filename = csv_values_filename.replace(
+            "histogram", "histogram_filtered"
+        )
+        csv_histogram_filename = csv_histogram_filename.replace(
+            "histogram", "histogram_filtered"
+        )
     if idx:
         csv_values_filename = f"{prefix}group{idx}_bootstrap_{csv_values_filename}"
         csv_histogram_filename = (
@@ -514,7 +525,7 @@ def analyse_distribution(values, xlabel, outlier_factor=2.0, idx=0, prefix=""):
     df_histogram.to_csv(csv_histogram_filename, index=False, header=False)
     logging.info(f"Saved histogram bins and counts to {csv_histogram_filename}")
 
-    if outliers is not None:
+    if outliers is not None and not filtered:
         csv_outliers_filename = filename_replace_char(
             f"histogram_{xlabel}_outliers.csv"
         )
@@ -605,9 +616,9 @@ def plot_histogram(values, xlabel, ref={}, idx=0, prefix=""):
                 f" {stat_ref_label} = {match_sigfigs(stat_value, distr['stdev'])}"
             ),
         )
-    plt.grid(axis="y", alpha=0.75)
+    plt.grid(axis="y", alpha=0.7)
     plt.tight_layout()
-    plt.legend()
+    plt.legend(title=f"n = {len(values)}")
     png_filename = filename_replace_char(f"histogram_{xlabel}.png")
     if idx:
         png_filename = f"{prefix}group{idx}_bootstrap_{png_filename}"
@@ -616,7 +627,7 @@ def plot_histogram(values, xlabel, ref={}, idx=0, prefix=""):
     logging.info(f"Saved histogram to {png_filename}")
 
 
-def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix=""):
+def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix="", filtered=True):
     """
     Plot a scatter plot of x vs y including histograms and save as PNG.
 
@@ -627,11 +638,14 @@ def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix=""):
         label (str): Label for the axes and the output file.
         idx (int): Index for naming the output file (applies if not set to 0).
         prefix (str): Prefix for the output filename.
+        filtered (bool): Whether the values are already filtered.
     """
     if len(x) != len(y):
         raise ValueError("x and y must have the same length.")
 
-    distr, outliers = analyse_distribution(x, label, idx=idx, prefix=prefix)
+    distr, outliers = analyse_distribution(
+        x, label, idx=idx, prefix=prefix, filtered=filtered
+    )
     min_val = min(min(x), min(y))
     max_val = max(max(x), max(y))
     if stat_ref:
@@ -665,12 +679,42 @@ def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix=""):
         [min_val - buffer, max_val + buffer],
         color="gray",
         linestyle="--",
+        alpha=0.7,
     )
+    ax.axvline(
+        distr["mean"],
+        color="blue",
+        linestyle="--",
+        label=(
+            "Mean ± St.Dev. ="
+            f" {match_sigfigs(distr['mean'], distr['stdev'])} ± {distr['stdev']:.2g}"
+        ),
+    )
+    ax.axvline(
+        distr["median"],
+        color="green",
+        linestyle="--",
+        label=(
+            "Median ± MAD ="
+            f" {match_sigfigs(distr['median'], distr['mad'])} ± {distr['mad']:.2g}"
+        ),
+    )
+    for stat_ref_label, stat_value in stat_ref.items():
+        ax.axvline(
+            stat_value,
+            color="orange",
+            linestyle="--",
+            label=(
+                "From single refinement:"
+                f" {stat_ref_label} = {match_sigfigs(stat_value, distr['stdev'])}"
+            ),
+        )
     ax.set_xlabel(f"Refined {label}")
     ax.set_ylabel(f"Initial {label}")
     ax.set_xlim(min_val - buffer, max_val + buffer)
     ax.set_ylim(min_val - buffer, max_val + buffer)
-    ax.grid(True)
+    ax.grid(True, alpha=0.7)
+    ax.legend(title=f"n = {len(x)}")
 
     ax_histx.bar(
         distr["bins"][:-1],
@@ -709,16 +753,18 @@ def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix=""):
             color="orange",
             linestyle="--",
             label=(
-                "From single refinement"
+                "From single refinement:"
                 f" {stat_ref_label} = {match_sigfigs(stat_value, distr['stdev'])}"
             ),
         )
-    ax_histx.grid(axis="y", alpha=0.75)
-    ax_histx.legend()
+    ax_histx.grid(axis="y", alpha=0.7)
 
-    png_filename = filename_replace_char(f"scatter_histogram_{label}.png")
+    png_filename_base = filename_replace_char(f"scatter_histogram_{label}")
     if idx:
-        png_filename = f"{prefix}group{idx}_bootstrap_{png_filename}"
+        png_filename_base = f"{prefix}group{idx}_bootstrap_{png_filename_base}"
+    if filtered:
+        png_filename_base = f"{png_filename_base}_filtered"
+    png_filename = f"{png_filename_base}.png"
     fig.savefig(png_filename)
     logging.info(f"Saved scatter plot with histogram to {png_filename}")
     plt.close(fig)
@@ -849,19 +895,58 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
             stat_ref,
             idx,
             prefix,
+            filtered=False,
         )
         if stat == "R1":
             if llweight_outliers is not None:
                 llweight_R1_outliers = llweight_outliers["index"].tolist()
             else:
                 llweight_R1_outliers = []
-            logging.info(
-                f"Identified {len(llweight_R1_outliers) if llweight_R1_outliers else 0}"
-                " R1 value outliers which will be exluded from the following analysis\n"
-                f" {llweight_R1_outliers if llweight_R1_outliers else ''}"
+
+    if llweight_R1_outliers is not None:
+        data_overall_filtered_dict = {}
+        data_overall_init_filtered_dict = {}
+        logging.info(
+            f"\nIdentified {len(llweight_R1_outliers) if llweight_R1_outliers else 0}"
+            " R1 value outliers which will be exluded from the following analysis\n"
+            f" {llweight_R1_outliers if llweight_R1_outliers else ''}"
+        )
+        for stat in stats_avail:
+            data_overall_filtered_dict[stat] = [
+                val
+                for i, val in enumerate(data_overall_dict[stat])
+                if i not in llweight_R1_outliers
+            ]
+            data_overall_init_filtered_dict[stat] = [
+                val
+                for i, val in enumerate(data_overall_init_dict[stat])
+                if i not in llweight_R1_outliers
+            ]
+            if (
+                json_ref
+                and os.path.isfile(json_ref)
+                and data_ref
+                and stat in stats_ref_equivalents.keys()
+                and data_ref.get(stats_ref_equivalents[stat], None) is not None
+            ):
+                stat_ref = {
+                    stats_ref_equivalents[stat]: data_ref.get(
+                        stats_ref_equivalents[stat], None
+                    )
+                }
+            scatter_plot_histogram(
+                data_overall_filtered_dict[stat],
+                data_overall_init_filtered_dict[stat],
+                stat,
+                stat_ref,
+                idx,
+                prefix,
+                filtered=True,
             )
 
-    return data_overall_dict, llweight_R1_outliers
+        return data_overall_filtered_dict, llweight_R1_outliers
+    else:
+        return data_overall_dict, []
 
 
 def calculate_angle(atom1_pos, atom2_pos, atom3_pos, degrees=True):
