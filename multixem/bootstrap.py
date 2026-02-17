@@ -527,6 +527,9 @@ def analyse_distribution(
         csv_histogram_filename = (
             f"{prefix}group{idx}_bootstrap_{csv_histogram_filename}"
         )
+    else:
+        csv_values_filename = f"{prefix}{csv_values_filename}"
+        csv_histogram_filename = f"{prefix}{csv_histogram_filename}"
 
     df_values = pandas.DataFrame(values)
     df_values.to_csv(csv_values_filename, index=False, header=False)
@@ -552,6 +555,8 @@ def analyse_distribution(
             csv_outliers_filename = (
                 f"{prefix}group{idx}_bootstrap_{csv_outliers_filename}"
             )
+        else:
+            csv_outliers_filename = f"{prefix}{csv_outliers_filename}"
         outliers.to_csv(csv_outliers_filename, index=False, header=False)
         logging.info(
             f"Saved {len(outliers)} outliers outside the interval"
@@ -636,6 +641,8 @@ def plot_histogram(values, xlabel, ref={}, idx=0, prefix=""):
     png_filename = filename_replace_char(f"histogram_{xlabel}.png")
     if idx:
         png_filename = f"{prefix}group{idx}_bootstrap_{png_filename}"
+    else:
+        png_filename = f"{prefix}{png_filename}"
     plt.savefig(png_filename)
     plt.close()
     logging.info(f"Saved histogram to {png_filename}")
@@ -779,6 +786,8 @@ def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix="", filtered=
     png_filename_base = filename_replace_char(f"scatter_histogram_{label}")
     if idx:
         png_filename_base = f"{prefix}group{idx}_bootstrap_{png_filename_base}"
+    else:
+        png_filename_base = f"{prefix}{png_filename_base}"
     if filtered:
         png_filename_base = f"{png_filename_base}_filtered"
     png_filename = f"{png_filename_base}.png"
@@ -926,7 +935,7 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
     json_filename = (
         f"{prefix}group{idx}_bootstrap_statistics.json"
         if idx
-        else "bootstrap_statistics.json"
+        else f"{prefix}bootstrap_statistics.json"
     )
     with open(json_filename, "w") as f:
         json.dump(distrs, f, indent=2, default=json_numpy_converter)
@@ -979,7 +988,7 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
         json_filename_filtered = (
             f"{prefix}group{idx}_bootstrap_statistics_filtered.json"
             if idx
-            else "bootstrap_statistics_filtered.json"
+            else f"{prefix}bootstrap_statistics_filtered.json"
         )
         with open(json_filename_filtered, "w") as f:
             json.dump(distrs_filtered, f, indent=2, default=json_numpy_converter)
@@ -1790,7 +1799,7 @@ def bootstrap_analyse_structures(
         filename = (
             f"{prefix}group{idx}_mean_geometry_stats.txt"
             if idx
-            else "mean_geometry_stats.txt"
+            else f"{prefix}mean_geometry_stats.txt"
         )
         df.to_string(filename, index=False, na_rep="")
         logging.info(f"Saved geometry statistics to {filename}")
@@ -1806,7 +1815,7 @@ def bootstrap_analyse_structures(
             csv_filename_bonds = (
                 f"{prefix}group{idx}_mean_bonds_stats.csv"
                 if idx
-                else "mean_bonds_stats.csv"
+                else f"{prefix}mean_bonds_stats.csv"
             )
             df_bonds = df_bonds.round(6)
             df_bonds.to_csv(csv_filename_bonds, index=False)
@@ -1824,7 +1833,7 @@ def bootstrap_analyse_structures(
             csv_filename_angles = (
                 f"{prefix}group{idx}_mean_angles_stats.csv"
                 if idx
-                else "mean_angles_stats.csv"
+                else f"{prefix}mean_angles_stats.csv"
             )
             df_angles = df_angles.round(6)
             df_angles.to_csv(csv_filename_angles, index=False)
@@ -1842,7 +1851,7 @@ def bootstrap_analyse_structures(
             csv_filename_torsions = (
                 f"{prefix}group{idx}_mean_torsions_stats.csv"
                 if idx
-                else "mean_torsions_stats.csv"
+                else f"{prefix}mean_torsions_stats.csv"
             )
             df_torsions = df_torsions.round(6)
             df_torsions.to_csv(csv_filename_torsions, index=False)
@@ -1955,7 +1964,7 @@ def bootstrap_analyse_structures(
     csv_filename = (
         f"{prefix}group{idx}_bootstrap_mean_stats.csv"
         if idx
-        else "bootstrap_mean_stats.csv"
+        else f"{prefix}bootstrap_mean_stats.csv"
     )
     df_csv.to_csv(csv_filename, index=False)
     logging.info(f"Mean structure statistics written to {csv_filename}.")
@@ -1965,7 +1974,7 @@ def bootstrap_analyse_structures(
         png_filename = (
             f"{prefix}group{idx}_bootstrap_mean_stats_plot_xyzb.png"
             if idx
-            else "bootstrap_mean_stats_plot_xyzb.png"
+            else f"{prefix}bootstrap_mean_stats_plot_xyzb.png"
         )
         df_scatter_plot(
             df_csv,
@@ -1981,7 +1990,7 @@ def bootstrap_analyse_structures(
         png_filename_per_element = (
             f"{prefix}group{idx}_bootstrap_mean_stats_plot_xyzb_per_element.png"
             if idx
-            else "bootstrap_mean_stats_plot_xyzb_per_element.png"
+            else f"{prefix}bootstrap_mean_stats_plot_xyzb_per_element.png"
         )
         df_scatter_plot(
             df_csv,
@@ -2006,7 +2015,7 @@ def bootstrap_analyse_structures(
     mean_structure_prefix = (
         f"{prefix}group{idx}_bootstrap_mean_structure"
         if idx
-        else "bootstrap_mean_structure"
+        else f"{prefix}bootstrap_mean_structure"
     )
     st_first.make_mmcif_document().write_file(f"{mean_structure_prefix}.mmcif")
     logging.info(f"Mean structure saved as {mean_structure_prefix}.mmcif")

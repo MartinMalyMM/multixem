@@ -1904,7 +1904,10 @@ def main():
                     n_proc=n_proc,
                 )
                 llweight_R1_outliers = bootstrap_analyse_stats(
-                    refined_jsons_bootstrap, refined_jsons[i_mtz], 1, prefix
+                    refined_jsons_bootstrap,
+                    refined_jsons[i_mtz],
+                    idx=idx,
+                    prefix=prefix,
                 )
 
                 if llweight_R1_outliers is not None:
