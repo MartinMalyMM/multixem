@@ -1519,7 +1519,7 @@ def main():
             bootstrap_analyse_structures(
                 refined_mmcifs,
                 refined_mmcif_ref,
-                idx=1,
+                idx=0,
                 prefix=prefix,
                 skip_hydrogen=True,
                 smcif=args.cif,
@@ -1550,7 +1550,7 @@ def main():
                 )
                 bootstrap_mean_map(
                     refined_mtzs,
-                    idx=1,
+                    idx=0,
                     prefix=prefix,
                     binner=binner,
                     mtz_ref=refined_mtz_ref,
