@@ -1491,6 +1491,7 @@ def collect_values_smcif(smcif, skip_hydrogen=True):
             )
 
         if occ_col:
+            st.change_occupancies_to_crystallographic()
             occ_list = collect_geometry_lists(
                 table_coords, [occ_col], [], [], ["occupancy"]
             )
