@@ -1493,9 +1493,17 @@ def collect_values_smcif(smcif, skip_hydrogen=True):
         if occ_col:
             st.change_occupancies_to_crystallographic()
             occ_list = collect_geometry_lists(
-                table_coords, [occ_col], [], [], ["occupancy"]
+                table_coords,
+                [atom_col],
+                [],
+                [occ_col],
+                ["occupancy"],
+                elem_col=elem_col,
             )
-
+            assert len(occ_list) == len(atoms_list), (
+                f"Number of atoms in occupancy table ({len(occ_list)}) does not match"
+                f" number of atoms in coordinates table ({len(atoms_list)})"
+            )
         if u_aniso_cols:
             (
                 u_aniso_atom_col,
@@ -1982,7 +1990,7 @@ def bootstrap_analyse_structures(
             ]:
                 csv_data[i][f"{key}_deposit"] = atoms_list[i][f"{key}_deposit"]
             if occ_list:
-                csv_data[i]["occupancy_deposit"] = occ_list[i]["occupancy"]
+                csv_data[i]["occupancy_deposit"] = occ_list[i]["occupancy_deposit"]
             for key in keys_u_aniso:
                 csv_data[i][f"{key}_deposit"] = None
             for i_aniso in range(len(u_aniso_list)):
