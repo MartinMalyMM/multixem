@@ -1406,15 +1406,16 @@ def collect_values_smcif(smcif, skip_hydrogen=True):
         smcif (str): Path to the small molecule CIF file.
 
     Returns:
-        tuple: (atoms_list, u_aniso_list, bonds_list, angles_list, torsions_list)
-            where each list contains dicts with geometry information.
+        tuple: (atoms_list, occ_list,
+               u_aniso_list, bonds_list, angles_list, torsions_list)
+               where each list contains dicts with geometry information.
     """
     smcif_block = gemmi.cif.read(smcif).sole_block()
     value_shelx_res_file = smcif_block.find_value("_shelx_res_file")
     value_computing_structure_refinement = smcif_block.find_value(
         "_computing_structure_refinement"
     )
-    atoms_list = bonds_list = u_aniso_list = angles_list = torsions_list = []
+    atoms_list = occ_list = bonds_list = u_aniso_list = angles_list = torsions_list = []
 
     if value_shelx_res_file or (
         value_computing_structure_refinement
@@ -1494,6 +1495,11 @@ def collect_values_smcif(smcif, skip_hydrogen=True):
                 else None
             )
 
+        if occ_col:
+            occ_list = collect_geometry_lists(
+                table_coords, [occ_col], [], [], ["occupancy"]
+            )
+
         if u_aniso_cols:
             (
                 u_aniso_atom_col,
@@ -1562,7 +1568,7 @@ def collect_values_smcif(smcif, skip_hydrogen=True):
                 ["torsion"],
             )
 
-    return atoms_list, u_aniso_list, bonds_list, angles_list, torsions_list
+    return atoms_list, occ_list, u_aniso_list, bonds_list, angles_list, torsions_list
 
 
 def bootstrap_analyse_structures(
@@ -1655,7 +1661,7 @@ def bootstrap_analyse_structures(
         geometry_objects = select_cids_for_geometry_analysis(geometry_cids_file)
 
     if smcif:
-        atoms_list, u_aniso_list, bonds_list, angles_list, torsions_list = (
+        atoms_list, occ_list, u_aniso_list, bonds_list, angles_list, torsions_list = (
             collect_values_smcif(smcif)
         )
         bonds = numpy.full(
@@ -1979,6 +1985,8 @@ def bootstrap_analyse_structures(
                 "sigma_b_iso",
             ]:
                 csv_data[i][f"{key}_deposit"] = atoms_list[i][f"{key}_deposit"]
+            if occ_list:
+                csv_data[i]["occupancy_deposit"] = occ_list[i]["occupancy_deposit"]
             for key in keys_u_aniso:
                 csv_data[i][f"{key}_deposit"] = None
             for i_aniso in range(len(u_aniso_list)):
