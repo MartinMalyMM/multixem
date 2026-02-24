@@ -1374,15 +1374,11 @@ def collect_geometry_lists(
     j_idx_filtered = [
         j
         for j in range(len(table))
-        if not symmetry_cols or all(col[j] in [".", None] for col in symmetry_cols)
+        if (
+            (not symmetry_cols or all(col[j] in [".", None] for col in symmetry_cols))
+            and (not elem_col or elem_col[j] != "H")
+        )
     ]
-    if elem_col:
-        j_idx_filtered = [
-            j
-            for j in j_idx_filtered
-            if table.find_column(elem_col)[j] is not None
-            and not table.find_column(elem_col)[j] == "H"
-        ]
     geom_list = [
         {f"atom{i + 1}": atom_cols[i][j_idx] for i in range(len(atom_cols))}
         for j_idx in j_idx_filtered
