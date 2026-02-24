@@ -1272,12 +1272,12 @@ def get_smcif_tables(smcif_block):
 
     coords_cols = [
         "_atom_site_label",
-        # "_atom_site_type_symbol",
         "_atom_site_fract_x",
         "_atom_site_fract_y",
         "_atom_site_fract_z",
-        # "_atom_site_occupancy",
         "_atom_site_U_iso_or_equiv",
+        "?_atom_site_type_symbol",
+        "?_atom_site_occupancy",
     ]
     u_aniso_cols = [
         "_atom_site_aniso_label",
@@ -1355,9 +1355,11 @@ def collect_geometry_lists(
     symmetry_cols=[],
     value_sigma_cols=[],
     value_sigma_cols_names=[],
+    elem_col="",
 ):
     """Collect atom lists (for bonds, angles, torsions).
     Do not include atoms from symmetry-related molecules.
+    If elem_col is provided, hydrogen atoms will be excluded from the analysis.
 
     Args:
         table: CIF table to process.
@@ -1365,6 +1367,7 @@ def collect_geometry_lists(
         symmetry_cols: List of columns with symmetry information (optional).
         value_sigma_cols: List of columns with values and standard deviations (optional)
         value_sigma_cols_names: List of base names for value/sigma columns (optional).
+        elem_col: Column with chmemical element (optional).
     Returns:
         List of dicts with geometry information.
     """
@@ -1373,6 +1376,13 @@ def collect_geometry_lists(
         for j in range(len(table))
         if not symmetry_cols or all(col[j] in [".", None] for col in symmetry_cols)
     ]
+    if elem_col:
+        j_idx_filtered = [
+            j
+            for j in j_idx_filtered
+            if table.find_column(elem_col)[j] is not None
+            and not table.find_column(elem_col)[j] == "H"
+        ]
     geom_list = [
         {f"atom{i + 1}": atom_cols[i][j_idx] for i in range(len(atom_cols))}
         for j_idx in j_idx_filtered
@@ -1388,7 +1398,7 @@ def collect_geometry_lists(
     return geom_list
 
 
-def collect_values_smcif(smcif):
+def collect_values_smcif(smcif, skip_hydrogen=True):
     """
     Collect values about geometry from a small molecule CIF file from SHELX.
 
@@ -1418,16 +1428,35 @@ def collect_values_smcif(smcif):
             (table_torsion, torsion_columns),
         ) = get_smcif_tables(smcif_block)
 
-        atom_col, x_fract_col, y_fract_col, z_fract_col, u_iso_col = coords_cols
+        (
+            atom_col,
+            x_fract_col,
+            y_fract_col,
+            z_fract_col,
+            u_iso_col,
+            elem_col,
+            occ_col,
+        ) = coords_cols
+        if not skip_hydrogen:
+            elem_col = ""
         atoms_list = collect_geometry_lists(
             table_coords,
             [atom_col],
             [],
             [x_fract_col, y_fract_col, z_fract_col, u_iso_col],
             ["x_frac", "y_frac", "z_frac", "u_iso"],
+            elem_col=elem_col,  # exclude hydrogens
         )
 
         st = gemmi.read_small_structure(smcif)
+        st_smcif_cras = [
+            cra for cra in st[0].all() if not (skip_hydrogen and cra.atom.is_hydrogen())
+        ]
+        assert len(atoms_list) == len(st_smcif_cras), (
+            f"Number of atoms in coordinates table ({len(atoms_list)}) does not match"
+            f" number of atoms in structure {smcif} ({len(st_smcif_cras)})"
+            f" while hydrogens are {'excluded' if skip_hydrogen else 'included'}."
+        )
         for i in range(len(atoms_list)):
             # Convert x y z to Cartesian coordinates
             frac = gemmi.Fractional(
