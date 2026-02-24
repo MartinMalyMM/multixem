@@ -1446,12 +1446,11 @@ def collect_values_smcif(smcif, skip_hydrogen=True):
         )
 
         st = gemmi.read_small_structure(smcif)
-        st_smcif_cras = [
-            cra for cra in st[0].all() if not (skip_hydrogen and cra.atom.is_hydrogen())
-        ]
-        assert len(atoms_list) == len(st_smcif_cras), (
+        if skip_hydrogen:
+            st.remove_hydrogens()
+        assert len(atoms_list) == len(st.sites), (
             f"Number of atoms in coordinates table ({len(atoms_list)}) does not match"
-            f" number of atoms in structure {smcif} ({len(st_smcif_cras)})"
+            f" number of atoms in structure {smcif} ({len(st.sites)})"
             f" while hydrogens are {'excluded' if skip_hydrogen else 'included'}."
         )
         for i in range(len(atoms_list)):
