@@ -1982,7 +1982,7 @@ def bootstrap_analyse_structures(
             ]:
                 csv_data[i][f"{key}_deposit"] = atoms_list[i][f"{key}_deposit"]
             if occ_list:
-                csv_data[i]["occupancy_deposit"] = occ_list[i]["occupancy_deposit"]
+                csv_data[i]["occupancy_deposit"] = occ_list[i]["occupancy"]
             for key in keys_u_aniso:
                 csv_data[i][f"{key}_deposit"] = None
             for i_aniso in range(len(u_aniso_list)):
