@@ -1262,7 +1262,10 @@ def get_smcif_tables(smcif_block):
                 column = table.find_column(col)
                 columns.append(column)
             except (RuntimeError, IndexError):
-                if "symmetry" in col:
+                if col in [
+                    "symmetry",
+                    "disorder",
+                ]:  # optional columns, add None if not found
                     columns.append([None] * len(table))
                 else:
                     logging.warning(
@@ -1278,6 +1281,8 @@ def get_smcif_tables(smcif_block):
         "_atom_site_U_iso_or_equiv",
         "?_atom_site_type_symbol",
         "?_atom_site_occupancy",
+        "?_atom_site_disorder_assembly",
+        "?_atom_site_disorder_group",
     ]
     u_aniso_cols = [
         "_atom_site_aniso_label",
@@ -1358,16 +1363,20 @@ def collect_geometry_lists(
     elem_col="",
 ):
     """Collect atom lists (for bonds, angles, torsions).
-    Do not include atoms from symmetry-related molecules.
-    If elem_col is provided, hydrogen atoms will be excluded from the analysis.
+    Do not include atoms from symmetry-related molecules specified in symmetry_cols.
+    If elem_col is provided, hydrogen atoms will be excluded.
 
     Args:
         table: CIF table to process.
         atom_cols: List of columns with atom labels.
         symmetry_cols: List of columns with symmetry information (optional).
+                       Atoms with non-empty values in these columns will be excluded.
         value_sigma_cols: List of columns with values and standard deviations (optional)
         value_sigma_cols_names: List of base names for value/sigma columns (optional).
-        elem_col: Column with chmemical element (optional).
+                                If "disorder" is in the name,
+                                    only the value will be extracted without sigma.
+        elem_col: Column with chemical element (optional).
+                  Hydrogen atoms (with elem_col value "H") will be excluded.
     Returns:
         List of dicts with geometry information.
     """
@@ -1387,9 +1396,12 @@ def collect_geometry_lists(
     if value_sigma_cols:
         for entry, j_idx in zip(geom_list, j_idx_filtered):
             for i in range(len(value_sigma_cols)):
-                value, sigma = extract_value_and_stdev(value_sigma_cols[i][j_idx])
-                entry[f"{value_sigma_cols_names[i]}_deposit"] = value
-                entry[f"sigma_{value_sigma_cols_names[i]}_deposit"] = sigma
+                if "disorder" in value_sigma_cols_names[i].lower():
+                    entry[f"{value_sigma_cols_names[i]}"] = value_sigma_cols[i][j_idx]
+                else:
+                    value, sigma = extract_value_and_stdev(value_sigma_cols[i][j_idx])
+                    entry[f"{value_sigma_cols_names[i]}_deposit"] = value
+                    entry[f"sigma_{value_sigma_cols_names[i]}_deposit"] = sigma
 
     return geom_list
 
@@ -1433,6 +1445,8 @@ def collect_values_smcif(smcif, skip_hydrogen=True):
             u_iso_col,
             elem_col,
             occ_col,
+            disorder_assembly_col,
+            disorder_group_col,
         ) = coords_cols
         if not skip_hydrogen:
             elem_col = ""
@@ -1440,8 +1454,22 @@ def collect_values_smcif(smcif, skip_hydrogen=True):
             table_coords,
             [atom_col],
             [],
-            [x_fract_col, y_fract_col, z_fract_col, u_iso_col],
-            ["x_frac", "y_frac", "z_frac", "u_iso"],
+            [
+                x_fract_col,
+                y_fract_col,
+                z_fract_col,
+                u_iso_col,
+                disorder_assembly_col,
+                disorder_group_col,
+            ],
+            [
+                "x_frac",
+                "y_frac",
+                "z_frac",
+                "u_iso",
+                "disorder_assembly",
+                "disorder_group",
+            ],
             elem_col=elem_col,  # exclude hydrogens
         )
 
@@ -1989,6 +2017,8 @@ def bootstrap_analyse_structures(
                 "sigma_b_iso",
             ]:
                 csv_data[i][f"{key}_deposit"] = atoms_list[i][f"{key}_deposit"]
+            csv_data[i]["disorder_assembly"] = atoms_list[i]["disorder_assembly"]
+            csv_data[i]["disorder_group"] = atoms_list[i]["disorder_group"]
             if occ_list:
                 csv_data[i]["occupancy_deposit"] = occ_list[i]["occupancy_deposit"]
             for key in keys_u_aniso:
@@ -2463,7 +2493,7 @@ def bootstrap_mean_map(
                         }
                     )
                 else:
-                    bin_stats_scaled.update(
+                    bin_stats_scaled[b].update(
                         {
                             "bin": b + 1,
                             "dmax": binner.dmax_of_bin(b),
