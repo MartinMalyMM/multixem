@@ -1262,10 +1262,7 @@ def get_smcif_tables(smcif_block):
                 column = table.find_column(col)
                 columns.append(column)
             except (RuntimeError, IndexError):
-                if col in [
-                    "symmetry",
-                    "disorder",
-                ]:  # optional columns, add None if not found
+                if "symmetry" in col or "disorder" in col:  # add None if not found
                     columns.append([None] * len(table))
                 else:
                     logging.warning(
@@ -1397,7 +1394,11 @@ def collect_geometry_lists(
         for entry, j_idx in zip(geom_list, j_idx_filtered):
             for i in range(len(value_sigma_cols)):
                 if "disorder" in value_sigma_cols_names[i].lower():
-                    entry[f"{value_sigma_cols_names[i]}"] = value_sigma_cols[i][j_idx]
+                    entry[f"{value_sigma_cols_names[i]}"] = (
+                        value_sigma_cols[i][j_idx]
+                        if value_sigma_cols[i][j_idx] not in [".", "?", "", None]
+                        else None
+                    )
                 else:
                     value, sigma = extract_value_and_stdev(value_sigma_cols[i][j_idx])
                     entry[f"{value_sigma_cols_names[i]}_deposit"] = value
@@ -2038,7 +2039,7 @@ def bootstrap_analyse_structures(
         else f"{prefix}bootstrap_mean_stats.csv"
     )
     df_csv.to_csv(csv_filename, index=False)
-    logging.info(f"Mean structure statistics written to {csv_filename}.")
+    logging.info(f"Mean structure statistics written to {csv_filename}")
 
     if smcif and atoms_list:
         # df_csv_noH = df_csv[~df_csv["atom_id"].str.contains("/H")]
