@@ -1060,9 +1060,7 @@ def load_fractional_coords(st: gemmi.Structure) -> numpy.ndarray:
     """
     cell = st.cell
     cras = list(st[0].all())
-    coords_frac = numpy.array(
-        [cell.fractionalize(cra.atom.pos).tolist() for cra in cras]
-    )
+    coords_frac = numpy.array([cell.fractionalize(cra.atom.pos) for cra in cras])
     return coords_frac
 
 
@@ -1120,6 +1118,12 @@ def floating_origin_shift(
     coords1_frac = load_fractional_coords(st1)
     coords2_frac = load_fractional_coords(st2)
     coords_diff_frac = coords1_frac - coords2_frac
+    coords_diff_frac = numpy.array(
+        [
+            gemmi.Fractional(d[0], d[1], d[2]).wrap_to_zero().tolist()
+            for d in coords_diff_frac
+        ]
+    )
 
     alpha_array = calculate_alpha_displacement(
         coords_diff_frac, basis_vectors, eigenindices_nonzero
