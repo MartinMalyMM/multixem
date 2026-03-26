@@ -1060,7 +1060,9 @@ def load_fractional_coords(st: gemmi.Structure) -> numpy.ndarray:
     """
     cell = st.cell
     cras = list(st[0].all())
-    coords_frac = numpy.array([cell.fractionalize(cra.atom.pos) for cra in cras])
+    coords_frac = numpy.array(
+        [cell.fractionalize(cra.atom.pos).tolist() for cra in cras], dtype=numpy.float64
+    )
     return coords_frac
 
 
@@ -1122,22 +1124,53 @@ def floating_origin_shift(
         [
             gemmi.Fractional(d[0], d[1], d[2]).wrap_to_zero().tolist()
             for d in coords_diff_frac
-        ]
+        ],
+        dtype=numpy.float64,
     )
+
+    # Scalar: mean over atoms of (dx² + dy² + dz²)
+    avg_coords_diff_frac_sq = numpy.mean(numpy.sum(coords_diff_frac**2, axis=1))
+    # z component only (also scalar)
+    avg_coords_diff_frac_sq_z = numpy.mean(numpy.sum(coords_diff_frac[:, 2] ** 2))
+    # logging.info(f"Initial average squared difference in fractional coordinates:"
+    # " {avg_coords_diff_frac_sq:.7f} {avg_coords_diff_frac_sq_z:.7f} in z")
 
     alpha_array = calculate_alpha_displacement(
         coords_diff_frac, basis_vectors, eigenindices_nonzero
     )
-    alpha_frac = gemmi.Fractional(
-        gemmi.Vec3(alpha_array[0], alpha_array[1], alpha_array[2])
-    )
-    # logging.info(f"Computed alpha (fractional coordinates): {alpha_frac}")
-    alpha_cart = numpy.array(st1.cell.orthogonalize(alpha_frac))
-    # logging.info(f"Computed alpha (Cartesian coordinates): {alpha_cart}")
+    alpha_frac = gemmi.Fractional(alpha_array[0], alpha_array[1], alpha_array[2])
+    alpha_cart = st1.cell.orthogonalize(alpha_frac)
     st2_shifted = apply_alpha_to_structure_cartesian(st2, alpha_cart)
     # Save the shifted structure ?
 
-    return st2_shifted
+    coords2_frac_shifted = load_fractional_coords(st2_shifted)
+    coords_diff_frac_shifted = coords1_frac - coords2_frac_shifted
+    coords_diff_frac_shifted = numpy.array(
+        [
+            gemmi.Fractional(d[0], d[1], d[2]).wrap_to_zero().tolist()
+            for d in coords_diff_frac_shifted
+        ]
+    )
+
+    avg_coords_diff_frac_sq_shifted = numpy.mean(
+        numpy.sum(coords_diff_frac_shifted**2, axis=1)
+    )
+    avg_coords_diff_frac_sq_shifted_z = numpy.mean(
+        numpy.sum(coords_diff_frac_shifted[:, 2] ** 2)
+    )
+    # logging.info(
+    #     f"Final   average squared difference in fractional coordinates:"
+    #     f" {avg_coords_diff_frac_sq_shifted:.7f}"
+    #     f" {avg_coords_diff_frac_sq_shifted_z:.7f} in z"
+    #     f" after shift {alpha_frac} {alpha_cart}: ")
+    avg_coords_diff_frac_sqs = (
+        avg_coords_diff_frac_sq,
+        avg_coords_diff_frac_sq_z,
+        avg_coords_diff_frac_sq_shifted,
+        avg_coords_diff_frac_sq_shifted_z,
+    )
+
+    return st2_shifted, alpha_frac, alpha_cart, avg_coords_diff_frac_sqs
 
 
 def calculate_angle(atom1_pos, atom2_pos, atom3_pos, degrees=True):
@@ -1778,7 +1811,24 @@ def bootstrap_analyse_structures(
 
     # numpy.set_printoptions(threshold=numpy.inf)
     st_first = gemmi.read_structure(refined_mmcifs[0])
+
     basis_vectors, eigenindices_nonzero = floating_origin_detect(st_first)
+    if eigenindices_nonzero:
+        alphas_frac = numpy.zeros((3, len(refined_mmcifs)), dtype=numpy.float32)
+        alphas_cart = numpy.zeros((3, len(refined_mmcifs)), dtype=numpy.float32)
+        avg_coords_diff_frac_sq = numpy.zeros(
+            (len(refined_mmcifs)), dtype=numpy.float32
+        )
+        avg_coords_diff_frac_sq_z = numpy.zeros(
+            (len(refined_mmcifs)), dtype=numpy.float32
+        )
+        avg_coords_diff_frac_sq_shifted = numpy.zeros(
+            (len(refined_mmcifs)), dtype=numpy.float32
+        )
+        avg_coords_diff_frac_sq_shifted_z = numpy.zeros(
+            (len(refined_mmcifs)), dtype=numpy.float32
+        )
+
     st_first_cras = [
         cra
         for cra in st_first[0].all()
@@ -1861,9 +1911,21 @@ def bootstrap_analyse_structures(
         # If there is a float origin problem in a point group, shift the coordinates
         # to match the first structure
         if eigenindices_nonzero:
-            st = floating_origin_shift(
+            st, alpha_frac, alpha_cart, alpha_sums = floating_origin_shift(
                 st_first, st, basis_vectors, eigenindices_nonzero
             )
+            alphas_frac[:, s] = numpy.array(
+                [alpha_frac.x, alpha_frac.y, alpha_frac.z], dtype=numpy.float32
+            )
+            alphas_cart[:, s] = numpy.array(
+                [alpha_cart.x, alpha_cart.y, alpha_cart.z], dtype=numpy.float32
+            )
+            (
+                avg_coords_diff_frac_sq[s],
+                avg_coords_diff_frac_sq_z[s],
+                avg_coords_diff_frac_sq_shifted[s],
+                avg_coords_diff_frac_sq_shifted_z[s],
+            ) = alpha_sums
 
         st_cras = [
             cra for cra in st[0].all() if not (skip_hydrogen and cra.atom.is_hydrogen())
@@ -2225,6 +2287,63 @@ def bootstrap_analyse_structures(
             ],
             filename=png_filename_per_element,
             per_element=True,
+        )
+
+    if eigenindices_nonzero:
+        # Write floating origin analysis results
+        """
+        df_floating_origin = pandas.DataFrame(
+            {
+                "alpha_frac_a": alphas_frac[0, :],
+                "alpha_frac_b": alphas_frac[1, :],
+                "alpha_frac_c": alphas_frac[2, :],
+                "alpha_cart_x": alphas_cart[0, :],
+                "alpha_cart_y": alphas_cart[1, :],
+                "alpha_cart_z": alphas_cart[2, :],
+                "avg_coords_diff_frac_sq": avg_coords_diff_frac_sq,
+                "avg_coords_diff_frac_sq_z": avg_coords_diff_frac_sq_z,
+                "avg_coords_diff_frac_sq_shifted": avg_coords_diff_frac_sq_shifted,
+                "avg_coords_diff_frac_sq_shifted_z": avg_coords_diff_frac_sq_shifted_z,
+            }
+        )
+        """
+        mean_alpha_frac = numpy.mean(alphas_frac, axis=1)
+        mean_alpha_cart = numpy.mean(alphas_cart, axis=1)
+        mean_avg_coords_diff_frac_sq = numpy.mean(avg_coords_diff_frac_sq)
+        mean_avg_coords_diff_frac_sq_z = numpy.mean(avg_coords_diff_frac_sq_z)
+        mean_avg_coords_diff_frac_sq_shifted = numpy.mean(
+            avg_coords_diff_frac_sq_shifted
+        )
+        mean_avg_coords_diff_frac_sq_shifted_z = numpy.mean(
+            avg_coords_diff_frac_sq_shifted_z
+        )
+        df_floating_origin = pandas.DataFrame(
+            {
+                "mean_alpha_frac_a": [mean_alpha_frac[0]],
+                "mean_alpha_frac_b": [mean_alpha_frac[1]],
+                "mean_alpha_frac_c": [mean_alpha_frac[2]],
+                "mean_alpha_cart_x": [mean_alpha_cart[0]],
+                "mean_alpha_cart_y": [mean_alpha_cart[1]],
+                "mean_alpha_cart_z": [mean_alpha_cart[2]],
+                "mean_avg_coords_diff_frac_sq": [mean_avg_coords_diff_frac_sq],
+                "mean_avg_coords_diff_frac_sq_z": [mean_avg_coords_diff_frac_sq_z],
+                "mean_avg_coords_diff_frac_sq_shifted": [
+                    mean_avg_coords_diff_frac_sq_shifted
+                ],
+                "mean_avg_coords_diff_frac_sq_shifted_z": [
+                    mean_avg_coords_diff_frac_sq_shifted_z
+                ],
+            }
+        )
+        floating_origin_json_filename = (
+            f"{prefix}group{idx}_bootstrap_floating_origin_analysis.json"
+            if idx
+            else f"{prefix}bootstrap_floating_origin_analysis.json"
+        )
+        df_floating_origin.to_json(floating_origin_json_filename, orient="records")
+        logging.info(
+            f"Floating origin analysis results written to"
+            f" {floating_origin_json_filename}"
         )
 
     # Write mean structure as mmCIF
