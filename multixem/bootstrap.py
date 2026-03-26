@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 import matplotlib
 import matplotlib.ticker as ticker
 import concurrent.futures
+from importlib import resources
+
 from .tools import (
     CID2RefmacRestraint,
     write_bin_stats,
@@ -998,6 +1000,142 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
     return llweight_R1_outliers
 
 
+def floating_origin_detect(st: gemmi.Structure):
+    """
+    Detect if there is a floating origin problem in the point group
+    and in which directions.
+    """
+
+    try:
+        Rrot_sum_eigen_path = resources.files("multixem.data").joinpath(
+            "Rrot_sum_eigen.json"
+        )
+        with Rrot_sum_eigen_path.open("r", encoding="utf-8") as f:
+            point_group_results = json.load(f)
+    except FileNotFoundError:
+        from multixem.scripts.Rrot_sum_eigen import get_Rrot_sum_eigen
+
+        point_group_results = get_Rrot_sum_eigen()
+    if not point_group_results:
+        logging.warning("Could not load point group results for origin shift analysis.")
+        return [], []
+
+    sg = st.find_spacegroup()
+    pg = sg.point_group_hm()
+    logging.info(
+        f"Point group: {pg}, space group: {sg.hm}, unit cell parameters: {st.cell}"
+    )
+    if point_group_results[pg]["subspace_dimension"] == 0:
+        logging.info(
+            f"In point group {pg}, the origin is well defined."
+            " No shift analysis needed."
+        )
+        return [], []
+
+    axis_dict = {0: "x", 1: "y", 2: "z"}
+    basis_vectors = [
+        numpy.array(vec) for vec in point_group_results[pg]["eigenvectors"]
+    ]
+    eigenindices_nonzero = point_group_results[pg]["eigenindices_nonzero"]
+    logging.info(
+        "There is a float origin problem. Directions in which origin can be shifted:"
+    )
+    for i, axis in axis_dict.items():
+        if i in eigenindices_nonzero:
+            logging.info(f"  {axis}: {basis_vectors[i]}")
+    logging.info(f"Orthogonalization matrix: {st.cell.orth.mat}")
+    logging.info(f"Fractionalization matrix: {st.cell.frac.mat}")
+    return basis_vectors, eigenindices_nonzero
+
+
+def load_fractional_coords(st: gemmi.Structure) -> numpy.ndarray:
+    """
+    Load a structure with Gemmi and return fractional coordinates and B-factors.
+
+    Args:
+        st (gemmi.Structure): The structure to load.
+
+    Returns:
+        coords_frac (numpy.ndarray): Array of shape (N, 3) with fractional coordinates.
+    """
+    cell = st.cell
+    cras = list(st[0].all())
+    coords_frac = numpy.array(
+        [cell.fractionalize(cra.atom.pos).tolist() for cra in cras]
+    )
+    return coords_frac
+
+
+def calculate_alpha_displacement(
+    coords_diff_frac,
+    basis_vectors: list[numpy.ndarray],
+    eigenindices_nonzero: list[int],
+) -> numpy.ndarray:
+    """
+    Compute coefficients alpha for the translation expressed in basis_vectors.
+
+        alpha_i = 1 / N * sum_j (delta_coords_j . basis_vector_i)
+    for j in all atoms and i = {x, y, z} for eigenvectors with non-zero eigenvalues.
+    N is the number of atoms, delta_coords_j is the difference in fract. coord.
+    (orthornomal system)
+
+    Args:
+        coords_diff_frac: (N, 3) array with differences in fractional coordinates
+        basis_vectors: list of k vectors, each shape (3,), with k in [0, 3]
+        eigenindices_nonzero: list of indices for which eigen vectors
+                              with non-zero eigenvalues were found
+
+    Returns:
+        alpha: (3,) array
+    """
+
+    alpha = numpy.array([0.0, 0.0, 0.0])
+    mean_disp = numpy.mean(coords_diff_frac, axis=0)
+    for i, basis_vector in enumerate(basis_vectors):
+        if i in eigenindices_nonzero:
+            alpha[i] = numpy.dot(mean_disp, basis_vector)
+
+    return alpha
+
+
+def apply_alpha_to_structure_cartesian(
+    st: gemmi.Structure,
+    alpha: numpy.ndarray,
+):
+
+    for cra in st[0].all():
+        cra.atom.pos = cra.atom.pos + alpha
+
+    return st
+
+
+def floating_origin_shift(
+    st1: gemmi.Structure, st2: gemmi.Structure, basis_vectors, eigenindices_nonzero
+):
+    """
+    Apply a shift to st2 to correct for the floating origin problem based
+    on the difference in coordinates between st1 and st2.
+    """
+
+    coords1_frac = load_fractional_coords(st1)
+    coords2_frac = load_fractional_coords(st2)
+    coords_diff_frac = coords1_frac - coords2_frac
+
+    alpha_array = calculate_alpha_displacement(
+        coords_diff_frac, basis_vectors, eigenindices_nonzero
+    )
+    alpha_frac = gemmi.Fractional(
+        gemmi.Vec3(alpha_array[0], alpha_array[1], alpha_array[2])
+    )
+    # logging.info(f"Computed alpha (fractional coordinates): {alpha_frac}")
+    alpha_cart = numpy.array(st1.cell.orthogonalize(alpha_frac))
+    # logging.info(f"Computed alpha (Cartesian coordinates): {alpha_cart}")
+    st2_shifted = apply_alpha_to_structure_cartesian(st2, alpha_cart)
+    # Save the shifted structure ?
+
+    return st2_shifted
+
+
 def calculate_angle(atom1_pos, atom2_pos, atom3_pos, degrees=True):
     """
     Calculate the angle ABC (at atom2) from gemmi.Position objects.
@@ -1636,6 +1774,7 @@ def bootstrap_analyse_structures(
 
     # numpy.set_printoptions(threshold=numpy.inf)
     st_first = gemmi.read_structure(refined_mmcifs[0])
+    basis_vectors, eigenindices_nonzero = floating_origin_detect(st_first)
     st_first_cras = [
         cra
         for cra in st_first[0].all()
@@ -1714,6 +1853,13 @@ def bootstrap_analyse_structures(
 
         if geometry_cids_file and geometry_objects:
             geometry_objects = geometry_analysis_load(st, geometry_objects)
+
+        # If there is a float origin problem in a point group, shift the coordinates
+        # to match the first structure
+        if eigenindices_nonzero:
+            st = floating_origin_shift(
+                st_first, st, basis_vectors, eigenindices_nonzero
+            )
 
         st_cras = [
             cra for cra in st[0].all() if not (skip_hydrogen and cra.atom.is_hydrogen())

@@ -1,0 +1,1627 @@
+{
+  "1": {
+    "space_group_highest": "P 1",
+    "space_group_highest_number": 1,
+    "Rrot_sum": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "eigenindices_nonzero": [
+      0,
+      1,
+      2
+    ],
+    "eigenvalues": [
+      1,
+      1,
+      1
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 3,
+    "eigenvalues_nonzero": [
+      1,
+      1,
+      1
+    ],
+    "eigenvectors_nonzero": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ]
+  },
+  "-1": {
+    "space_group_highest": "P -1",
+    "space_group_highest_number": 2,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "2": {
+    "space_group_highest": "C 1 2 1",
+    "space_group_highest_number": 5,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [
+      1
+    ],
+    "eigenvalues": [
+      0,
+      2,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 1,
+    "eigenvalues_nonzero": [
+      2
+    ],
+    "eigenvectors_nonzero": [
+      [
+        0,
+        1,
+        0
+      ]
+    ]
+  },
+  "m": {
+    "space_group_highest": "C 1 c 1",
+    "space_group_highest_number": 9,
+    "Rrot_sum": [
+      [
+        2,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        2
+      ]
+    ],
+    "eigenindices_nonzero": [
+      0,
+      2
+    ],
+    "eigenvalues": [
+      2,
+      0,
+      2
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 2,
+    "eigenvalues_nonzero": [
+      2,
+      2
+    ],
+    "eigenvectors_nonzero": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ]
+  },
+  "2/m": {
+    "space_group_highest": "C 1 2/c 1",
+    "space_group_highest_number": 15,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "222": {
+    "space_group_highest": "I 21 21 21",
+    "space_group_highest_number": 24,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "mm2": {
+    "space_group_highest": "I m a 2",
+    "space_group_highest_number": 46,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        4
+      ]
+    ],
+    "eigenindices_nonzero": [
+      2
+    ],
+    "eigenvalues": [
+      0,
+      0,
+      4
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 1,
+    "eigenvalues_nonzero": [
+      4
+    ],
+    "eigenvectors_nonzero": [
+      [
+        0,
+        0,
+        1
+      ]
+    ]
+  },
+  "mmm": {
+    "space_group_highest": "I m m a",
+    "space_group_highest_number": 74,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "4": {
+    "space_group_highest": "I 41",
+    "space_group_highest_number": 80,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        4
+      ]
+    ],
+    "eigenindices_nonzero": [
+      2
+    ],
+    "eigenvalues": [
+      0,
+      0,
+      4
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 1,
+    "eigenvalues_nonzero": [
+      4
+    ],
+    "eigenvectors_nonzero": [
+      [
+        0,
+        0,
+        1
+      ]
+    ]
+  },
+  "-4": {
+    "space_group_highest": "I -4",
+    "space_group_highest_number": 82,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "4/m": {
+    "space_group_highest": "I 41/a",
+    "space_group_highest_number": 88,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "422": {
+    "space_group_highest": "I 41 2 2",
+    "space_group_highest_number": 98,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "4mm": {
+    "space_group_highest": "I 41 c d",
+    "space_group_highest_number": 110,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        8
+      ]
+    ],
+    "eigenindices_nonzero": [
+      2
+    ],
+    "eigenvalues": [
+      0,
+      0,
+      8
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 1,
+    "eigenvalues_nonzero": [
+      8
+    ],
+    "eigenvectors_nonzero": [
+      [
+        0,
+        0,
+        1
+      ]
+    ]
+  },
+  "-42m": {
+    "space_group_highest": "I -4 2 d",
+    "space_group_highest_number": 122,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "4/mmm": {
+    "space_group_highest": "I 41/a c d",
+    "space_group_highest_number": 142,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "3": {
+    "space_group_highest": "R 3",
+    "space_group_highest_number": 146,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        3
+      ]
+    ],
+    "eigenindices_nonzero": [
+      2
+    ],
+    "eigenvalues": [
+      0,
+      0,
+      3
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 1,
+    "eigenvalues_nonzero": [
+      3
+    ],
+    "eigenvectors_nonzero": [
+      [
+        0,
+        0,
+        1
+      ]
+    ]
+  },
+  "-3": {
+    "space_group_highest": "R -3",
+    "space_group_highest_number": 148,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "32": {
+    "space_group_highest": "R 3 2",
+    "space_group_highest_number": 155,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "3m": {
+    "space_group_highest": "R 3 c",
+    "space_group_highest_number": 161,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        6
+      ]
+    ],
+    "eigenindices_nonzero": [
+      2
+    ],
+    "eigenvalues": [
+      0,
+      0,
+      6
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 1,
+    "eigenvalues_nonzero": [
+      6
+    ],
+    "eigenvectors_nonzero": [
+      [
+        0,
+        0,
+        1
+      ]
+    ]
+  },
+  "-3m": {
+    "space_group_highest": "R -3 c",
+    "space_group_highest_number": 167,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "6": {
+    "space_group_highest": "P 63",
+    "space_group_highest_number": 173,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        6
+      ]
+    ],
+    "eigenindices_nonzero": [
+      2
+    ],
+    "eigenvalues": [
+      0,
+      0,
+      6
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 1,
+    "eigenvalues_nonzero": [
+      6
+    ],
+    "eigenvectors_nonzero": [
+      [
+        0,
+        0,
+        1
+      ]
+    ]
+  },
+  "-6": {
+    "space_group_highest": "P -6",
+    "space_group_highest_number": 174,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "6/m": {
+    "space_group_highest": "P 63/m",
+    "space_group_highest_number": 176,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "622": {
+    "space_group_highest": "P 63 2 2",
+    "space_group_highest_number": 182,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "6mm": {
+    "space_group_highest": "P 63 m c",
+    "space_group_highest_number": 186,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        12
+      ]
+    ],
+    "eigenindices_nonzero": [
+      2
+    ],
+    "eigenvalues": [
+      0,
+      0,
+      12
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 1,
+    "eigenvalues_nonzero": [
+      12
+    ],
+    "eigenvectors_nonzero": [
+      [
+        0,
+        0,
+        1
+      ]
+    ]
+  },
+  "-62m": {
+    "space_group_highest": "P -6 2 c",
+    "space_group_highest_number": 190,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "6/mmm": {
+    "space_group_highest": "P 63/m m c",
+    "space_group_highest_number": 194,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "23": {
+    "space_group_highest": "I 21 3",
+    "space_group_highest_number": 199,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "m-3": {
+    "space_group_highest": "I a -3",
+    "space_group_highest_number": 206,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "432": {
+    "space_group_highest": "I 41 3 2",
+    "space_group_highest_number": 214,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "-43m": {
+    "space_group_highest": "I -4 3 d",
+    "space_group_highest_number": 220,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  },
+  "m-3m": {
+    "space_group_highest": "I a -3 d",
+    "space_group_highest_number": 230,
+    "Rrot_sum": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ],
+    "eigenindices_nonzero": [],
+    "eigenvalues": [
+      0,
+      0,
+      0
+    ],
+    "eigenvectors": [
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ],
+    "subspace_dimension": 0,
+    "eigenvalues_nonzero": [],
+    "eigenvectors_nonzero": []
+  }
+}
