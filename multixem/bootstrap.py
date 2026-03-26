@@ -1815,23 +1815,6 @@ def bootstrap_analyse_structures(
     # numpy.set_printoptions(threshold=numpy.inf)
     st_first = gemmi.read_structure(refined_mmcifs[0])
 
-    basis_vectors, eigenindices_nonzero = floating_origin_detect(st_first)
-    if eigenindices_nonzero:
-        alphas_frac = numpy.zeros((3, len(refined_mmcifs)), dtype=numpy.float32)
-        alphas_cart = numpy.zeros((3, len(refined_mmcifs)), dtype=numpy.float32)
-        avg_coords_diff_frac_sq = numpy.zeros(
-            (len(refined_mmcifs)), dtype=numpy.float32
-        )
-        avg_coords_diff_frac_sq_z = numpy.zeros(
-            (len(refined_mmcifs)), dtype=numpy.float32
-        )
-        avg_coords_diff_frac_sq_shifted = numpy.zeros(
-            (len(refined_mmcifs)), dtype=numpy.float32
-        )
-        avg_coords_diff_frac_sq_shifted_z = numpy.zeros(
-            (len(refined_mmcifs)), dtype=numpy.float32
-        )
-
     st_first_cras = [
         cra
         for cra in st_first[0].all()
@@ -1886,6 +1869,23 @@ def bootstrap_analyse_structures(
         ref_b_values = numpy.array(ref_b_values)
         ref_b_value = {"median B-value": numpy.median(ref_b_values)}
 
+        basis_vectors, eigenindices_nonzero = floating_origin_detect(st_ref)
+        if eigenindices_nonzero:
+            alphas_frac = numpy.zeros((3, len(refined_mmcifs)), dtype=numpy.float32)
+            alphas_cart = numpy.zeros((3, len(refined_mmcifs)), dtype=numpy.float32)
+            avg_coords_diff_frac_sq = numpy.zeros(
+                (len(refined_mmcifs)), dtype=numpy.float32
+            )
+            avg_coords_diff_frac_sq_z = numpy.zeros(
+                (len(refined_mmcifs)), dtype=numpy.float32
+            )
+            avg_coords_diff_frac_sq_shifted = numpy.zeros(
+                (len(refined_mmcifs)), dtype=numpy.float32
+            )
+            avg_coords_diff_frac_sq_shifted_z = numpy.zeros(
+                (len(refined_mmcifs)), dtype=numpy.float32
+            )
+
     if geometry_cids_file:
         geometry_objects = select_cids_for_geometry_analysis(geometry_cids_file)
 
@@ -1913,7 +1913,7 @@ def bootstrap_analyse_structures(
 
         # If there is a float origin problem in a point group, shift the coordinates
         # to match the first structure
-        if eigenindices_nonzero:
+        if mmcif_ref and os.path.isfile(mmcif_ref) and eigenindices_nonzero:
             st, alpha_frac, alpha_cart, alpha_sums = floating_origin_shift(
                 st_first, st, basis_vectors, eigenindices_nonzero
             )
@@ -2292,7 +2292,7 @@ def bootstrap_analyse_structures(
             per_element=True,
         )
 
-    if eigenindices_nonzero:
+    if mmcif_ref and os.path.isfile(mmcif_ref) and eigenindices_nonzero:
         # Write floating origin analysis results
         """
         df_floating_origin = pandas.DataFrame(
@@ -2338,6 +2338,9 @@ def bootstrap_analyse_structures(
                 ],
             }
         )
+        from pprint import pprint
+
+        pprint(df_floating_origin)
         floating_origin_json_filename = (
             f"{prefix}group{idx}_bootstrap_floating_origin_analysis.json"
             if idx
