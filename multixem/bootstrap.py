@@ -1131,7 +1131,9 @@ def floating_origin_shift(
     # Scalar: mean over atoms of (dx² + dy² + dz²)
     avg_coords_diff_frac_sq = numpy.mean(numpy.sum(coords_diff_frac**2, axis=1))
     # z component only (also scalar)
-    avg_coords_diff_frac_sq_z = numpy.mean(numpy.sum(coords_diff_frac[:, 2] ** 2))
+    avg_coords_diff_frac_sq_z = (
+        numpy.sum(coords_diff_frac[:, 2] ** 2) / coords_diff_frac.shape[0]
+    )
     # logging.info(f"Initial average squared difference in fractional coordinates:"
     # " {avg_coords_diff_frac_sq:.7f} {avg_coords_diff_frac_sq_z:.7f} in z")
 
@@ -1155,8 +1157,9 @@ def floating_origin_shift(
     avg_coords_diff_frac_sq_shifted = numpy.mean(
         numpy.sum(coords_diff_frac_shifted**2, axis=1)
     )
-    avg_coords_diff_frac_sq_shifted_z = numpy.mean(
+    avg_coords_diff_frac_sq_shifted_z = (
         numpy.sum(coords_diff_frac_shifted[:, 2] ** 2)
+        / coords_diff_frac_shifted.shape[0]
     )
     # logging.info(
     #     f"Final   average squared difference in fractional coordinates:"
