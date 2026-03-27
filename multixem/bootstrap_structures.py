@@ -271,9 +271,12 @@ def floating_origin_shift(
 
     # Scalar: mean over atoms of (dx² + dy² + dz²)
     sum_coords_diff_frac_sq = numpy.sum(
-        coords_diff_frac[:, 0] ** 2
-        + coords_diff_frac[:, 1] ** 2
-        + coords_diff_frac[:, 2] ** 2
+        atom_weights
+        * (
+            coords_diff_frac[:, 0] ** 2
+            + coords_diff_frac[:, 1] ** 2
+            + coords_diff_frac[:, 2] ** 2
+        )
     )
     # individual components also
     sum_coords_diff_frac_sq_xyz = numpy.sum(coords_diff_frac**2, axis=0)
@@ -298,9 +301,12 @@ def floating_origin_shift(
     )
 
     sum_coords_diff_frac_sq_shifted = numpy.sum(
-        coords_diff_frac_shifted[:, 0] ** 2
-        + coords_diff_frac_shifted[:, 1] ** 2
-        + coords_diff_frac_shifted[:, 2] ** 2
+        atom_weights
+        * (
+            coords_diff_frac_shifted[:, 0] ** 2
+            + coords_diff_frac_shifted[:, 1] ** 2
+            + coords_diff_frac_shifted[:, 2] ** 2
+        )
     )
     """
     sum_coords_diff_frac_sq_shifted_x = (
