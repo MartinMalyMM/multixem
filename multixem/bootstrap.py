@@ -1134,10 +1134,8 @@ def floating_origin_shift(
         + coords_diff_frac[:, 1] ** 2
         + coords_diff_frac[:, 2] ** 2
     )
-    # z component only (also scalar)
-    sum_coords_diff_frac_sq_z = numpy.sum(
-        coords_diff_frac[:, 2] ** 2
-    )  # / coords_diff_frac.shape[0]
+    # individual components also
+    sum_coords_diff_frac_sq_xyz = numpy.sum(coords_diff_frac**2, axis=0)
     # logging.info(f"Initial average squared difference in fractional coordinates:"
     # " {avg_coords_diff_frac_sq:.7f} {avg_coords_diff_frac_sq_z:.7f} in z")
 
@@ -1163,10 +1161,26 @@ def floating_origin_shift(
         + coords_diff_frac_shifted[:, 1] ** 2
         + coords_diff_frac_shifted[:, 2] ** 2
     )
+    """
+    sum_coords_diff_frac_sq_shifted_x = (
+        numpy.sum(coords_diff_frac_shifted[:, 0] ** 2)
+    )
+    sum_coords_diff_frac_sq_shifted_y = (
+        numpy.sum(coords_diff_frac_shifted[:, 1] ** 2)
+    )
     sum_coords_diff_frac_sq_shifted_z = (
         numpy.sum(coords_diff_frac_shifted[:, 2] ** 2)
-        #  / coords_diff_frac_shifted.shape[0]
     )
+    sum_coords_diff_frac_sq_shifted_xyz = numpy.array(
+        [
+            sum_coords_diff_frac_sq_shifted_x,
+            sum_coords_diff_frac_sq_shifted_y,
+            sum_coords_diff_frac_sq_shifted_z,
+        ]
+    )
+    """
+    sum_coords_diff_frac_sq_shifted_xyz = numpy.sum(coords_diff_frac_shifted**2, axis=0)
+
     # logging.info(
     #     f"Final   average squared difference in fractional coordinates:"
     #     f" {avg_coords_diff_frac_sq_shifted:.7f}"
@@ -1174,9 +1188,9 @@ def floating_origin_shift(
     #     f" after shift {alpha_frac} {alpha_cart}: ")
     sum_coords_diff_frac_sqs = (
         sum_coords_diff_frac_sq,
-        sum_coords_diff_frac_sq_z,
         sum_coords_diff_frac_sq_shifted,
-        sum_coords_diff_frac_sq_shifted_z,
+        sum_coords_diff_frac_sq_xyz,
+        sum_coords_diff_frac_sq_shifted_xyz,
     )
 
     return st2_shifted, alpha_frac, alpha_cart, sum_coords_diff_frac_sqs
@@ -1882,14 +1896,14 @@ def bootstrap_analyse_structures(
             sum_coords_diff_frac_sq = numpy.zeros(
                 (len(refined_mmcifs)), dtype=numpy.float32
             )
-            sum_coords_diff_frac_sq_z = numpy.zeros(
-                (len(refined_mmcifs)), dtype=numpy.float32
+            sum_coords_diff_frac_sq_xyz = numpy.zeros(
+                (3, len(refined_mmcifs)), dtype=numpy.float32
             )
             sum_coords_diff_frac_sq_shifted = numpy.zeros(
                 (len(refined_mmcifs)), dtype=numpy.float32
             )
-            sum_coords_diff_frac_sq_shifted_z = numpy.zeros(
-                (len(refined_mmcifs)), dtype=numpy.float32
+            sum_coords_diff_frac_sq_shifted_xyz = numpy.zeros(
+                (3, len(refined_mmcifs)), dtype=numpy.float32
             )
 
     if geometry_cids_file:
@@ -1931,9 +1945,9 @@ def bootstrap_analyse_structures(
             )
             (
                 sum_coords_diff_frac_sq[s],
-                sum_coords_diff_frac_sq_z[s],
                 sum_coords_diff_frac_sq_shifted[s],
-                sum_coords_diff_frac_sq_shifted_z[s],
+                sum_coords_diff_frac_sq_xyz[:, s],
+                sum_coords_diff_frac_sq_shifted_xyz[:, s],
             ) = alpha_sums
         else:
             st_shifted = st
@@ -2307,6 +2321,56 @@ def bootstrap_analyse_structures(
 
     if mmcif_ref and os.path.isfile(mmcif_ref) and eigenindices_nonzero:
         # Write floating origin analysis results
+        for d in range(3):
+            if d in eigenindices_nonzero:
+                plot_histogram(
+                    alphas_frac[d],
+                    f"mean shift, fractional coordinates ({'xyz'[d]} direction)",
+                    ref={},
+                    idx=idx,
+                    prefix=prefix,
+                )
+                plot_histogram(
+                    alphas_cart[d],
+                    f"mean shift, Cartesian coordinates ({'xyz'[d]} direction)",
+                    ref={},
+                    idx=idx,
+                    prefix=prefix,
+                )
+                plot_histogram(
+                    sum_coords_diff_frac_sq_xyz[d],
+                    "sum of coordinate differences squared,"
+                    f" calculated in fractional coordinates ({'xyz'[d]} direction)",
+                    ref={},
+                    idx=idx,
+                    prefix=prefix,
+                )
+                plot_histogram(
+                    sum_coords_diff_frac_sq_shifted_xyz[d],
+                    "sum of coordinate differences squared after shift,"
+                    f" calculated in fractional coordinates ({'xyz'[d]} direction)",
+                    ref={},
+                    idx=idx,
+                    prefix=prefix,
+                )
+        plot_histogram(
+            sum_coords_diff_frac_sq,
+            "sum of coordinate differences squared,"
+            " calculated in fractional coordinates",
+            ref={},
+            idx=idx,
+            prefix=prefix,
+        )
+        plot_histogram(
+            sum_coords_diff_frac_sq_shifted,
+            "sum of coordinate differences squared after shift,"
+            " calculated in fractional coordinates",
+            ref={},
+            idx=idx,
+            prefix=prefix,
+        )
+        sum_coords_diff_frac_sq_z = sum_coords_diff_frac_sq_xyz[:, 2]
+        sum_coords_diff_frac_sq_shifted_z = sum_coords_diff_frac_sq_shifted_xyz[:, 2]
         mean_alpha_frac = numpy.mean(alphas_frac, axis=1)
         mean_alpha_cart = numpy.mean(alphas_cart, axis=1)
         mean_sum_coords_diff_frac_sq = numpy.mean(sum_coords_diff_frac_sq)
