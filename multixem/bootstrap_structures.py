@@ -201,9 +201,11 @@ def load_fractional_coords(st: gemmi.Structure) -> numpy.ndarray:
 
 
 def calculate_alpha_displacement(
-    coords_diff_frac,
+    coords_diff_frac: numpy.ndarray,
     basis_vectors: list[numpy.ndarray],
     eigenindices_nonzero: list[int],
+    atom_weights: numpy.ndarray,
+    occs: numpy.ndarray,
 ) -> numpy.ndarray:
     """
     Compute coefficients alpha for the translation expressed in basis_vectors.
@@ -218,13 +220,16 @@ def calculate_alpha_displacement(
         basis_vectors: list of k vectors, each shape (3,), with k in [0, 3]
         eigenindices_nonzero: list of indices for which eigen vectors
                               with non-zero eigenvalues were found
+        atom_weights: (N,) array with weights for each atom
+        occs: (N,) array with occupancies for each atom
 
     Returns:
         alpha: (3,) array
     """
 
     alpha = numpy.array([0.0, 0.0, 0.0])
-    mean_disp = numpy.mean(coords_diff_frac, axis=0)
+    weights = atom_weights * occs
+    mean_disp = numpy.average(coords_diff_frac, axis=0, weights=weights)
     for i, basis_vector in enumerate(basis_vectors):
         if i in eigenindices_nonzero:
             alpha[i] = numpy.dot(mean_disp, basis_vector)
@@ -253,6 +258,8 @@ def floating_origin_shift(
 
     coords1_frac = load_fractional_coords(st1)
     coords2_frac = load_fractional_coords(st2)
+    atom_weights = numpy.array([float(cra.atom.element.weight) for cra in st1[0].all()])
+    occs = numpy.array([float(cra.atom.occ) for cra in st1[0].all()])
     coords_diff_frac = coords1_frac - coords2_frac
     coords_diff_frac = numpy.array(
         [
@@ -274,7 +281,7 @@ def floating_origin_shift(
     # " {avg_coords_diff_frac_sq:.7f} {avg_coords_diff_frac_sq_z:.7f} in z")
 
     alpha_array = calculate_alpha_displacement(
-        coords_diff_frac, basis_vectors, eigenindices_nonzero
+        coords_diff_frac, basis_vectors, eigenindices_nonzero, atom_weights, occs
     )
     alpha_frac = gemmi.Fractional(alpha_array[0], alpha_array[1], alpha_array[2])
     alpha_cart = st1.cell.orthogonalize(alpha_frac)
