@@ -224,6 +224,16 @@ def create_parser():
             " analysed while performing bootstrap."
         ),
     )
+    common_parent.add_argument(
+        "--no_origin_shift",
+        action="store_true",
+        default=False,
+        help=(
+            "In some point groups, origin is not fixed (floating origin problem)."
+            " The program automatically detects this and applies a shift to"
+            " account for it. Use this option to disable this automatic correction."
+        ),
+    )
 
     common_refinement_parent = argparse.ArgumentParser(add_help=False)
     common_refinement_parent.add_argument(
@@ -1535,6 +1545,7 @@ def main():
                 smcif=args.cif,
                 geometry_cids_file=args.geometry_cids,
                 geometry_objects_ref=geometry_objects_ref,
+                no_origin_shift=args.no_origin_shift,
             )
         else:
             logging.warning(
@@ -1929,6 +1940,7 @@ def main():
                         smcif=model,
                         geometry_cids_file=args.geometry_cids,
                         geometry_objects_ref=geometry_objects_ref,
+                        no_origin_shift=args.no_origin_shift,
                     )
                 else:
                     bootstrap_analyse_structures(
@@ -1940,6 +1952,7 @@ def main():
                         smcif="",
                         geometry_cids_file=args.geometry_cids,
                         geometry_objects_ref=geometry_objects_ref,
+                        no_origin_shift=args.no_origin_shift,
                     )
                 bootstrap_mean_map(
                     refined_mtzs_bootstrap,

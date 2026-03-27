@@ -1830,6 +1830,7 @@ def bootstrap_analyse_structures(
     smcif="",
     geometry_cids_file="",
     geometry_objects_ref=[],
+    no_origin_shift=False,
 ):
     """
     Analyse structure models (mmCIF files) to compute mean coordinates and B-factors.
@@ -1843,7 +1844,9 @@ def bootstrap_analyse_structures(
         prefix (str): Prefix for the output filenames.
         skip_hydrogen (bool): If True, skip hydrogen atoms in the analysis.
         smcif (str): Path to a corresponding small molecule CIF file.
-        geometry_atoms (str): Path to a corresponding file with list of atoms.
+        geometry_cids_file (str)
+        geometry_objects_ref (list)
+        no_origin_shift (bool): Do not perform correction for floating origin
 
     Returns:
         None: Writes the statistics in '{prefix}group{idx}_bootstrap_mean_stats.csv' and
@@ -1908,7 +1911,10 @@ def bootstrap_analyse_structures(
         ref_b_values = numpy.array(ref_b_values)
         ref_b_value = {"median B-value": numpy.median(ref_b_values)}
 
-        basis_vectors, eigenindices_nonzero = floating_origin_detect(st_ref)
+        if not no_origin_shift:
+            basis_vectors, eigenindices_nonzero = floating_origin_detect(st_ref)
+        else:
+            basis_vectors = eigenindices_nonzero = []
         if eigenindices_nonzero:
             alphas_frac = numpy.zeros((3, len(refined_mmcifs)), dtype=numpy.float32)
             alphas_cart = numpy.zeros((3, len(refined_mmcifs)), dtype=numpy.float32)
