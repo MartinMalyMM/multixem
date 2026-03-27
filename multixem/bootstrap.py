@@ -575,7 +575,7 @@ def analyse_distribution(
     )
 
 
-def plot_histogram(values, xlabel, ref={}, idx=0, prefix=""):
+def plot_histogram(values, xlabel, ref={}, idx=0, prefix="", outlier_factor=2.0):
     """
     Plot a histogram of the data and save as PNG.
 
@@ -585,8 +585,11 @@ def plot_histogram(values, xlabel, ref={}, idx=0, prefix=""):
         ref (dict): Reference values for the plot {label: value}.
         idx (int): Index for naming the output file (applies if not set to 0).
         prefix (str): Prefix for the output filename.
+        outlier_factor (float): Factor for determining outliers.
     """
-    distr, hist, _ = analyse_distribution(values, xlabel, idx=idx, prefix=prefix)
+    distr, hist, outliers = analyse_distribution(
+        values, xlabel, idx=idx, prefix=prefix, outlier_factor=outlier_factor
+    )
     min_val = distr["min"]
     max_val = distr["max"]
     if ref:
@@ -649,8 +652,12 @@ def plot_histogram(values, xlabel, ref={}, idx=0, prefix=""):
     plt.close()
     logging.info(f"Saved histogram to {png_filename}")
 
+    return distr, hist, outliers
 
-def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix="", filtered=True):
+
+def scatter_plot_histogram(
+    x, y, label, stat_ref={}, idx=0, prefix="", filtered=True, outlier_factor=2.0
+):
     """
     Plot a scatter plot of x vs y including histograms and save as PNG.
 
@@ -662,15 +669,27 @@ def scatter_plot_histogram(x, y, label, stat_ref={}, idx=0, prefix="", filtered=
         idx (int): Index for naming the output file (applies if not set to 0).
         prefix (str): Prefix for the output filename.
         filtered (bool): Whether the values are already filtered.
+        outlier_factor (float): Factor for determining outliers.
     """
     if len(x) != len(y):
         raise ValueError("x and y must have the same length.")
 
     distr, hist, outliers = analyse_distribution(
-        x, label, idx=idx, prefix=prefix, filtered=filtered
+        x,
+        label,
+        idx=idx,
+        prefix=prefix,
+        filtered=filtered,
+        outlier_factor=outlier_factor,
     )
     distr_init, _, _ = analyse_distribution(
-        y, label, idx=idx, prefix=prefix, filtered=filtered, save=False
+        y,
+        label,
+        idx=idx,
+        prefix=prefix,
+        filtered=filtered,
+        save=False,
+        outlier_factor=outlier_factor,
     )
     min_val = min(min(x), min(y))
     max_val = max(max(x), max(y))
@@ -2321,94 +2340,76 @@ def bootstrap_analyse_structures(
 
     if mmcif_ref and os.path.isfile(mmcif_ref) and eigenindices_nonzero:
         # Write floating origin analysis results
+        floating_origin_dict = dict()
         for d in range(3):
             if d in eigenindices_nonzero:
-                plot_histogram(
+                floating_origin_dict[f"alpha_frac_{'xyz'[d]}"], _, _ = plot_histogram(
                     alphas_frac[d],
                     f"mean shift, fractional coordinates ({'xyz'[d]} direction)",
                     ref={},
                     idx=idx,
                     prefix=prefix,
+                    outlier_factor=99,
                 )
-                plot_histogram(
+                floating_origin_dict[f"alpha_cart_{'xyz'[d]}"], _, _ = plot_histogram(
                     alphas_cart[d],
                     f"mean shift, Cartesian coordinates ({'xyz'[d]} direction)",
                     ref={},
                     idx=idx,
                     prefix=prefix,
+                    outlier_factor=99,
                 )
-                plot_histogram(
-                    sum_coords_diff_frac_sq_xyz[d],
-                    "sum of coordinate differences squared,"
-                    f" calculated in fractional coordinates ({'xyz'[d]} direction)",
-                    ref={},
-                    idx=idx,
-                    prefix=prefix,
+                floating_origin_dict[f"sum_coords_diff_frac_sq_{'xyz'[d]}"], _, _ = (
+                    plot_histogram(
+                        sum_coords_diff_frac_sq_xyz[d],
+                        "sum of coordinate differences squared,"
+                        f" calculated in fractional coordinates ({'xyz'[d]} direction)",
+                        ref={},
+                        idx=idx,
+                        prefix=prefix,
+                        outlier_factor=99,
+                    )
                 )
-                plot_histogram(
+                (
+                    floating_origin_dict[f"sum_coords_diff_frac_sq_shifted_{'xyz'[d]}"],
+                    _,
+                    _,
+                ) = plot_histogram(
                     sum_coords_diff_frac_sq_shifted_xyz[d],
                     "sum of coordinate differences squared after shift,"
                     f" calculated in fractional coordinates ({'xyz'[d]} direction)",
                     ref={},
                     idx=idx,
                     prefix=prefix,
+                    outlier_factor=99,
                 )
-        plot_histogram(
+        floating_origin_dict["sum_coords_diff_frac_sq"], _, _ = plot_histogram(
             sum_coords_diff_frac_sq,
             "sum of coordinate differences squared,"
             " calculated in fractional coordinates",
             ref={},
             idx=idx,
             prefix=prefix,
+            outlier_factor=99,
         )
-        plot_histogram(
+        floating_origin_dict["sum_coords_diff_frac_sq_shifted"], _, _ = plot_histogram(
             sum_coords_diff_frac_sq_shifted,
             "sum of coordinate differences squared after shift,"
             " calculated in fractional coordinates",
             ref={},
             idx=idx,
             prefix=prefix,
+            outlier_factor=99,
         )
-        sum_coords_diff_frac_sq_z = sum_coords_diff_frac_sq_xyz[:, 2]
-        sum_coords_diff_frac_sq_shifted_z = sum_coords_diff_frac_sq_shifted_xyz[:, 2]
-        mean_alpha_frac = numpy.mean(alphas_frac, axis=1)
-        mean_alpha_cart = numpy.mean(alphas_cart, axis=1)
-        mean_sum_coords_diff_frac_sq = numpy.mean(sum_coords_diff_frac_sq)
-        mean_sum_coords_diff_frac_sq_z = numpy.mean(sum_coords_diff_frac_sq_z)
-        mean_sum_coords_diff_frac_sq_shifted = numpy.mean(
-            sum_coords_diff_frac_sq_shifted
-        )
-        mean_sum_coords_diff_frac_sq_shifted_z = numpy.mean(
-            sum_coords_diff_frac_sq_shifted_z
-        )
-        floating_origin_dict = dict(
-            {
-                "mean_alpha_frac_a": mean_alpha_frac[0],
-                "mean_alpha_frac_b": mean_alpha_frac[1],
-                "mean_alpha_frac_c": mean_alpha_frac[2],
-                "mean_alpha_cart_x": mean_alpha_cart[0],
-                "mean_alpha_cart_y": mean_alpha_cart[1],
-                "mean_alpha_cart_z": mean_alpha_cart[2],
-                "mean_sum_coords_diff_frac_sq": mean_sum_coords_diff_frac_sq,
-                "mean_sum_coords_diff_frac_sq_z": mean_sum_coords_diff_frac_sq_z,
-                "mean_sum_coords_diff_frac_sq_shifted": (
-                    mean_sum_coords_diff_frac_sq_shifted
-                ),
-                "mean_sum_coords_diff_frac_sq_shifted_z": (
-                    mean_sum_coords_diff_frac_sq_shifted_z
-                ),
-            }
-        )
-        from pprint import pprint
-
-        pprint(floating_origin_dict)
-        df_floating_origin = pandas.DataFrame(floating_origin_dict, index=[0])
+        # mean_alpha_frac = numpy.mean(alphas_frac, axis=1)
+        # mean_alpha_cart = numpy.mean(alphas_cart, axis=1)
         floating_origin_json_filename = (
             f"{prefix}group{idx}_bootstrap_floating_origin_analysis.json"
             if idx
             else f"{prefix}bootstrap_floating_origin_analysis.json"
         )
-        df_floating_origin.to_json(floating_origin_json_filename, orient="records")
+        with open(floating_origin_json_filename, "w") as f:
+            json.dump(floating_origin_dict, f, indent=2, default=json_numpy_converter)
         logging.info(
             f"Floating origin analysis results written to"
             f" {floating_origin_json_filename}"
