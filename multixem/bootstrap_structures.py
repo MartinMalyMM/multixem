@@ -308,31 +308,7 @@ def floating_origin_shift(
             + coords_diff_frac_shifted[:, 2] ** 2
         )
     )
-    """
-    sum_coords_diff_frac_sq_shifted_x = (
-        numpy.sum(coords_diff_frac_shifted[:, 0] ** 2)
-    )
-    sum_coords_diff_frac_sq_shifted_y = (
-        numpy.sum(coords_diff_frac_shifted[:, 1] ** 2)
-    )
-    sum_coords_diff_frac_sq_shifted_z = (
-        numpy.sum(coords_diff_frac_shifted[:, 2] ** 2)
-    )
-    sum_coords_diff_frac_sq_shifted_xyz = numpy.array(
-        [
-            sum_coords_diff_frac_sq_shifted_x,
-            sum_coords_diff_frac_sq_shifted_y,
-            sum_coords_diff_frac_sq_shifted_z,
-        ]
-    )
-    """
     sum_coords_diff_frac_sq_shifted_xyz = numpy.sum(coords_diff_frac_shifted**2, axis=0)
-
-    # logging.info(
-    #     f"Final   average squared difference in fractional coordinates:"
-    #     f" {avg_coords_diff_frac_sq_shifted:.7f}"
-    #     f" {avg_coords_diff_frac_sq_shifted_z:.7f} in z"
-    #     f" after shift {alpha_frac} {alpha_cart}: ")
     sum_coords_diff_frac_sqs = (
         sum_coords_diff_frac_sq,
         sum_coords_diff_frac_sq_shifted,
