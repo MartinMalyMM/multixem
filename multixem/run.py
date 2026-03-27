@@ -22,15 +22,15 @@ from .analyse_refinement import (
     compute_difference_maps,
     compute_structure_differences,
 )
-from .bootstrap import (
-    bootstrap_dataset,
-    bootstrap_analyse_stats,
-    bootstrap_analyse_structures,
-    bootstrap_mean_map,
-    select_cids_for_geometry_analysis,
-    geometry_analysis_load,
+from .bootstrap_dataset import bootstrap_dataset
+from .bootstrap_statistics import bootstrap_analyse_stats
+from .bootstrap_structures import (
     unrestrain,
+    geometry_analysis_load,
+    select_cids_for_geometry_analysis,
+    bootstrap_analyse_structures,
 )
+from .bootstrap_maps import bootstrap_mean_map
 
 matplotlib.use("Agg")
 
