@@ -146,7 +146,7 @@ def df_scatter_plot(
 
 
 def analyse_distribution(
-    values, xlabel, outlier_factor=2.0, idx=0, prefix="", filtered=False, save=True
+    values, xlabel, outlier_factor=3.0, idx=0, prefix="", filtered=False, save=True
 ):
     """
     Analyse a distribution of values and return summary statistics.
@@ -280,7 +280,7 @@ def analyse_distribution(
     )
 
 
-def plot_histogram(values, xlabel, ref={}, idx=0, prefix="", outlier_factor=2.0):
+def plot_histogram(values, xlabel, ref={}, idx=0, prefix="", outlier_factor=3.0):
     """
     Plot a histogram of the data and save as PNG.
 
@@ -361,7 +361,7 @@ def plot_histogram(values, xlabel, ref={}, idx=0, prefix="", outlier_factor=2.0)
 
 
 def scatter_plot_histogram(
-    x, y, label, stat_ref={}, idx=0, prefix="", filtered=True, outlier_factor=2.0
+    x, y, label, stat_ref={}, idx=0, prefix="", filtered=True, outlier_factor=3.0
 ):
     """
     Plot a scatter plot of x vs y including histograms and save as PNG.
