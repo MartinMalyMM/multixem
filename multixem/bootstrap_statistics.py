@@ -198,27 +198,31 @@ def analyse_distribution(
 
     counts, bins = numpy.histogram(values, bins="auto")
 
-    # Outliers are defined as values outside of outlier_factor*IQR from the quartiles
-    threshold_low = q1 - outlier_factor * iqr
-    outliers_low_dict = {i: values[i] for i in numpy.where(values < threshold_low)[0]}
-    outliers_low = pandas.DataFrame(
-        list(outliers_low_dict.items()), columns=["index", "value"]
-    )
-    threshold_high = q3 + outlier_factor * iqr
-    outliers_high_dict = {i: values[i] for i in numpy.where(values > threshold_high)[0]}
-    outliers_high = pandas.DataFrame(
-        list(outliers_high_dict.items()), columns=["index", "value"]
-    )
+    values_arr = numpy.asarray(values)
 
-    # Combine outliers, handling empty DataFrames to avoid FutureWarning
-    if outliers_low.empty and outliers_high.empty:
-        outliers = None
-    elif outliers_low.empty:
-        outliers = outliers_high
-    elif outliers_high.empty:
-        outliers = outliers_low
+    # IQR-based criterion
+    threshold_low = q1 - outlier_factor * iqr
+    threshold_high = q3 + outlier_factor * iqr
+    mask_iqr = (values_arr < threshold_low) | (values_arr > threshold_high)
+
+    # Additional median-relative criterion only for R1
+    is_r1 = str(xlabel).strip().upper() == "R1"
+    if is_r1 and median > 0:
+        rel_low = 0.7 * median
+        rel_high = 1.3 * median
+        mask_rel = (values_arr < rel_low) | (values_arr > rel_high)
+
+        # Outlier must violate BOTH criteria
+        outlier_mask = mask_iqr & mask_rel
     else:
-        outliers = pandas.concat([outliers_low, outliers_high], ignore_index=True)
+        outlier_mask = mask_iqr
+
+    outlier_idx = numpy.where(outlier_mask)[0]
+    outliers = (
+        None
+        if outlier_idx.size == 0
+        else pandas.DataFrame({"index": outlier_idx, "value": values_arr[outlier_idx]})
+    )
 
     csv_values_filename = filename_replace_char(f"histogram_{xlabel}_values.csv")
     csv_histogram_filename = filename_replace_char(f"histogram_{xlabel}.csv")
