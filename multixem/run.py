@@ -236,6 +236,7 @@ def create_parser():
     )
 
     common_refinement_parent = argparse.ArgumentParser(add_help=False)
+    # TODO does not work for single command line argument
     common_refinement_parent.add_argument(
         "--servalcat_args",
         type=str,
@@ -1041,6 +1042,8 @@ def run_servalcat_refine(
                 prefix + ".mmcif",
                 "-s",
                 source,
+                "--labin",
+                labin,
                 "-o",
                 prefix + "_sigmaa",
             ]
