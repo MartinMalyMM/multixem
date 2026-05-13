@@ -1824,6 +1824,7 @@ def main():
             prefix=prefix,
             source=args.source,
             arguments=servalcat_args,
+            sigmaa=(not args.amplitude),
             quick=args.quick,
             n_proc=n_proc,
         )
@@ -1831,7 +1832,7 @@ def main():
         if len(refined_mmcifs) >= 2:
             compute_structure_differences(refined_mmcifs)
             bin_stats_matrix = compute_difference_maps(
-                refined_mtzs, binner_master, bin_stats_matrix
+                refined_mtzs, binner_master, bin_stats_matrix, args.amplitude
             )
         if args.command == "bootstrap" or (
             args.command == "pipeline" and args.bootstrap

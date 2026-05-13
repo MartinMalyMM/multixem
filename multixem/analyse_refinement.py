@@ -137,7 +137,13 @@ def adp_analysis_histograms(modelPaths, prefix=""):
     return png_filename
 
 
-def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=[]):
+def compute_difference_maps_pair(
+    mtz_file_1,
+    mtz_file_2,
+    binner,
+    bin_stats_list=[],
+    amplitude=False,
+):
     """
     Compute difference maps between two MTZ files from `servalcat refine_xtal_norefmac`
     or `servalcat sigmaa`, save the results in a new MTZ file and save the statistics
@@ -149,6 +155,10 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
         binner (gemmi.Binner): Binner object for resolution binning.
         bin_stats_list (list of dict): A list where each dictionary represents
             statistics for a resolution bin.
+        amplitude (bool): Whether to use
+                            intensities (False, e.g. MTZ files from servalcat sigmaa
+                                         so F_est column is present),
+                            or amplitudes (True)
     Returns:
         bin_stats_list (list of dict): Updated list with statistics
             for each resolution bin.
@@ -157,30 +167,35 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
     mtz1 = gemmi.read_mtz_file(mtz_file_1)
     mtz2 = gemmi.read_mtz_file(mtz_file_2)
     columns_fwt = ["FWT", "PHWT"]
-    if all(col in mtz1.column_labels() for col in ["F_est", "DFC", "PHDFC"]) and all(
-        col in mtz2.column_labels() for col in ["F_est", "DFC", "PHDFC"]
+    F_est_avail = False
+    if (
+        not amplitude
+        and all(col in mtz1.column_labels() for col in ["F_est", "DFC", "PHDFC"])
+        and all(col in mtz2.column_labels() for col in ["F_est", "DFC", "PHDFC"])
     ):
+        F_est_avail = True
+        f_col = "F_est"
         columns_fwt += ["Fcombi", "PHDFC"]
-        columns_fwt1 = [col + "1" for col in columns_fwt]
-        columns_fwt1_dict = {col: col + "1" for col in columns_fwt}
-        columns_fwt2 = [col + "2" for col in columns_fwt]
-        columns_fwt2_dict = {col: col + "2" for col in columns_fwt}
+    else:
+        f_col = "FP"
+    columns = [f_col]
+    columns_fwt1 = [col + "1" for col in columns_fwt]
+    columns_fwt1_dict = {col: col + "1" for col in columns_fwt}
+    columns_fwt2 = [col + "2" for col in columns_fwt]
+    columns_fwt2_dict = {col: col + "2" for col in columns_fwt}
 
     mtz_df1 = pandas.DataFrame(data=mtz1.array, columns=mtz1.column_labels())
     mtz_df1 = mtz_df1.astype({name: "int32" for name in ["H", "K", "L"]})
     mtz_fwt_df1 = mtz_df1.copy()
-    mtz_fwt_df1["Fcombi"] = mtz_fwt_df1["F_est"].combine_first(mtz_fwt_df1["DFC"])
+    if F_est_avail:
+        mtz_fwt_df1["Fcombi"] = mtz_fwt_df1["F_est"].combine_first(mtz_fwt_df1["DFC"])
 
     mtz_df2 = pandas.DataFrame(data=mtz2.array, columns=mtz2.column_labels())
     mtz_df2 = mtz_df2.astype({name: "int32" for name in ["H", "K", "L"]})
     mtz_fwt_df2 = mtz_df2.copy()
-    mtz_fwt_df2["Fcombi"] = mtz_fwt_df2["F_est"].combine_first(mtz_fwt_df2["DFC"])
+    if F_est_avail:
+        mtz_fwt_df2["Fcombi"] = mtz_fwt_df2["F_est"].combine_first(mtz_fwt_df2["DFC"])
 
-    if "F_est" in mtz_df1.columns and "F_est" in mtz_df2.columns:
-        f_col = "F_est"  # Use also FP?
-        columns = ["F_est"]  # Do we need SIGFP?
-    else:
-        raise ValueError("No column with amplitudes found.")
     columns += ["FWT", "PHWT", "FC", "PHFC"]
     # afterwards, rename to FP1, SIGFP1, ..., FP2, SIGFP2, ...
     # columns1 = [col + "1" for col in columns]
@@ -227,7 +242,7 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
     # + DELFOFO  or DELFESFES   SR (scaling real)
     # + DELFOFO2 or DELFESFES2  SC (scaling complex)
     # + DELFWTFWT2              SC (scaling complex)
-    # + DELFWTFWT2all           SC (scaling complex)
+    # + DELFWTFWT2all           SC (scaling complex) (if F_est is available)
 
     if not bin_stats_list:
         bin_stats_list = [
@@ -370,17 +385,27 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
     df_fwt["FWT1IM"] = df_fwt["FWT1"] * numpy.sin(numpy.deg2rad(df_fwt["PHWT1"]))
     df_fwt["FWT2RE"] = df_fwt["FWT2"] * numpy.cos(numpy.deg2rad(df_fwt["PHWT2"]))
     df_fwt["FWT2IM"] = df_fwt["FWT2"] * numpy.sin(numpy.deg2rad(df_fwt["PHWT2"]))
-    df_fwt["Fcombi1RE"] = df_fwt["Fcombi1"] * numpy.cos(numpy.deg2rad(df_fwt["PHDFC1"]))
-    df_fwt["Fcombi1IM"] = df_fwt["Fcombi1"] * numpy.sin(numpy.deg2rad(df_fwt["PHDFC1"]))
-    df_fwt["Fcombi2RE"] = df_fwt["Fcombi2"] * numpy.cos(numpy.deg2rad(df_fwt["PHDFC2"]))
-    df_fwt["Fcombi2IM"] = df_fwt["Fcombi2"] * numpy.sin(numpy.deg2rad(df_fwt["PHDFC2"]))
+    if F_est_avail:
+        df_fwt["Fcombi1RE"] = df_fwt["Fcombi1"] * numpy.cos(
+            numpy.deg2rad(df_fwt["PHDFC1"])
+        )
+        df_fwt["Fcombi1IM"] = df_fwt["Fcombi1"] * numpy.sin(
+            numpy.deg2rad(df_fwt["PHDFC1"])
+        )
+        df_fwt["Fcombi2RE"] = df_fwt["Fcombi2"] * numpy.cos(
+            numpy.deg2rad(df_fwt["PHDFC2"])
+        )
+        df_fwt["Fcombi2IM"] = df_fwt["Fcombi2"] * numpy.sin(
+            numpy.deg2rad(df_fwt["PHDFC2"])
+        )
     for b in range(len(bin_stats_list)):
         df_fwt_bin = df_fwt[df_fwt["BIN"] == b]
         scale_delfwtfwt2scall = calc_scale_complex(df_fwt_bin, "FWT")
-        scale_delfestfest2scall = calc_scale_complex(df_fwt_bin, "Fcombi")
+        if F_est_avail:
+            scale_delfestfest2scall = calc_scale_complex(df_fwt_bin, "Fcombi")
+            bin_stats_list[b]["scale_delfestfest2scall"] = scale_delfestfest2scall
         bin_stats_list[b]["scale_delfwtfwt2scall"] = scale_delfwtfwt2scall
         bin_stats_list[b]["delfwtfwt2scall_count"] = len(df_fwt_bin)
-        bin_stats_list[b]["scale_delfestfest2scall"] = scale_delfestfest2scall
         df_fwt.loc[df_fwt_bin.index, "DELFWTFWT2SCallRE"] = (
             df_fwt_bin["FWT1RE"] - scale_delfwtfwt2scall * df_fwt_bin["FWT2RE"]
         )
@@ -394,25 +419,30 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
         df_fwt.loc[df_fwt_bin.index, "PHDELFWTFWT2SCall"] = numpy.rad2deg(
             numpy.arctan2(df_fwt["DELFWTFWT2SCallIM"], df_fwt["DELFWTFWT2SCallRE"])
         )
-        df_fwt.loc[df_fwt_bin.index, "DELFestFest2SCallRE"] = (
-            df_fwt_bin["Fcombi1RE"] - scale_delfestfest2scall * df_fwt_bin["Fcombi2RE"]
-        )
-        df_fwt.loc[df_fwt_bin.index, "DELFestFest2SCallIM"] = (
-            df_fwt_bin["Fcombi1IM"] - scale_delfestfest2scall * df_fwt_bin["Fcombi2IM"]
-        )
-        df_fwt.loc[df_fwt_bin.index, "DELFestFest2SCall"] = numpy.hypot(
-            df_fwt["DELFestFest2SCallRE"].astype(numpy.float64),
-            df_fwt["DELFestFest2SCallIM"].astype(numpy.float64),
-        )
-        df_fwt.loc[df_fwt_bin.index, "PHDELFestFest2SCall"] = numpy.rad2deg(
-            numpy.arctan2(df_fwt["DELFestFest2SCallIM"], df_fwt["DELFestFest2SCallRE"])
-        )
+        if F_est_avail:
+            df_fwt.loc[df_fwt_bin.index, "DELFestFest2SCallRE"] = (
+                df_fwt_bin["Fcombi1RE"]
+                - scale_delfestfest2scall * df_fwt_bin["Fcombi2RE"]
+            )
+            df_fwt.loc[df_fwt_bin.index, "DELFestFest2SCallIM"] = (
+                df_fwt_bin["Fcombi1IM"]
+                - scale_delfestfest2scall * df_fwt_bin["Fcombi2IM"]
+            )
+            df_fwt.loc[df_fwt_bin.index, "DELFestFest2SCall"] = numpy.hypot(
+                df_fwt["DELFestFest2SCallRE"].astype(numpy.float64),
+                df_fwt["DELFestFest2SCallIM"].astype(numpy.float64),
+            )
+            df_fwt.loc[df_fwt_bin.index, "PHDELFestFest2SCall"] = numpy.rad2deg(
+                numpy.arctan2(
+                    df_fwt["DELFestFest2SCallIM"], df_fwt["DELFestFest2SCallRE"]
+                )
+            )
     columns_to_write_list = [
         "DELFWTFWT2SCall",
         "PHDELFWTFWT2SCall",
-        "DELFestFest2SCall",
-        "PHDELFestFest2SCall",
     ]
+    if F_est_avail:
+        columns_to_write_list += ["DELFestFest2SCall", "PHDELFestFest2SCall"]
     columns_to_write_dict = {
         col: ("F" if not col.startswith("PH") else "P") for col in columns_to_write_list
     }
@@ -422,7 +452,11 @@ def compute_difference_maps_pair(mtz_file_1, mtz_file_2, binner, bin_stats_list=
     return bin_stats_list
 
 
-def compute_difference_maps(refined_mtzs, binner, bin_stats_matrix=[]):
+def compute_difference_maps(refined_mtzs, binner, bin_stats_matrix=[], amplitude=False):
+    """Compute difference maps for all pairs of MTZ files in `refined_mtzs`
+    and update the `bin_stats_matrix` with the statistics
+    for each pair and each resolution bin."""
+
     for i in range(len(refined_mtzs)):
         for j in range(i + 1, len(refined_mtzs)):
             # print(i, j)
@@ -431,6 +465,7 @@ def compute_difference_maps(refined_mtzs, binner, bin_stats_matrix=[]):
                 refined_mtzs[j],
                 binner,
                 bin_stats_matrix[i][j],
+                amplitude=amplitude,
             )
             if bin_stats_matrix:
                 """print(
