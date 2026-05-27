@@ -149,6 +149,9 @@ def compute_difference_maps_pair(
     or `servalcat sigmaa`, save the results in a new MTZ file and save the statistics
     for each resolution bin in a txt file.
 
+    Data from mtz_file_2 are scaled to data in mtz_file_1. The difference maps are in
+    the pattern:   scale*data2 - data1
+
     Args:
         mtz_file_1 (str): Path to the first MTZ file.
         mtz_file_2 (str): Path to the second MTZ file.
@@ -294,10 +297,10 @@ def compute_difference_maps_pair(
 
         # DELFOFO
         df.loc[df_bin.index, "DELFOFO"] = numpy.abs(
-            df_bin[f_col + "1"] - scale_delfofo * df_bin[f_col + "2"]
+            scale_delfofo * df_bin[f_col + "2"] - df_bin[f_col + "1"]
         )
         df.loc[df_bin.index, "DELFOFOSIG"] = numpy.sign(
-            df_bin[f_col + "1"] - scale_delfofo * df_bin[f_col + "2"]
+            scale_delfofo * df_bin[f_col + "2"] - df_bin[f_col + "1"]
         )
         # If FP1 - scale * FP2 < 0, then add/subtract 180deg to phase
         df_bin_noflip = df[(df["BIN"] == b) & (df["DELFOFOSIG"] != -1)]
@@ -313,10 +316,10 @@ def compute_difference_maps_pair(
 
         # DELFOFO2SC
         df.loc[df_bin.index, "DELFOFO2SCRE"] = (
-            df_bin["FP1RE"] - scale_delfofo2sc * df_bin["FP2RE"]
+            scale_delfofo2sc * df_bin["FP2RE"] - df_bin["FP1RE"]
         )
         df.loc[df_bin.index, "DELFOFO2SCIM"] = (
-            df_bin["FP1IM"] - scale_delfofo2sc * df_bin["FP2IM"]
+            scale_delfofo2sc * df_bin["FP2IM"] - df_bin["FP1IM"]
         )
         # df.loc[df_bin.index, 'DELFWTFWT2SC'] = numpy.sqrt(
         #    (df_bin['FWT1RE'] - scale_delfwtfwt2sc*df_bin['FWT2RE'])**2 + \
@@ -331,10 +334,10 @@ def compute_difference_maps_pair(
 
         # DELFWTFWT2SC
         df.loc[df_bin.index, "DELFWTFWT2SCRE"] = (
-            df_bin["FWT1RE"] - scale_delfwtfwt2sc * df_bin["FWT2RE"]
+            scale_delfwtfwt2sc * df_bin["FWT2RE"] - df_bin["FWT1RE"]
         )
         df.loc[df_bin.index, "DELFWTFWT2SCIM"] = (
-            df_bin["FWT1IM"] - scale_delfwtfwt2sc * df_bin["FWT2IM"]
+            scale_delfwtfwt2sc * df_bin["FWT2IM"] - df_bin["FWT1IM"]
         )
         # df.loc[df_bin.index, 'DELFWTFWT2SC'] = numpy.sqrt(
         #    (df_bin['FWT1RE'] - scale_delfwtfwt2sc*df_bin['FWT2RE'])**2 + \
@@ -407,10 +410,10 @@ def compute_difference_maps_pair(
         bin_stats_list[b]["scale_delfwtfwt2scall"] = scale_delfwtfwt2scall
         bin_stats_list[b]["delfwtfwt2scall_count"] = len(df_fwt_bin)
         df_fwt.loc[df_fwt_bin.index, "DELFWTFWT2SCallRE"] = (
-            df_fwt_bin["FWT1RE"] - scale_delfwtfwt2scall * df_fwt_bin["FWT2RE"]
+            scale_delfwtfwt2scall * df_fwt_bin["FWT2RE"] - df_fwt_bin["FWT1RE"]
         )
         df_fwt.loc[df_fwt_bin.index, "DELFWTFWT2SCallIM"] = (
-            df_fwt_bin["FWT1IM"] - scale_delfwtfwt2scall * df_fwt_bin["FWT2IM"]
+            scale_delfwtfwt2scall * df_fwt_bin["FWT2IM"] - df_fwt_bin["FWT1IM"]
         )
         df_fwt.loc[df_fwt_bin.index, "DELFWTFWT2SCall"] = numpy.hypot(
             df_fwt["DELFWTFWT2SCallRE"].astype(numpy.float64),
@@ -421,12 +424,12 @@ def compute_difference_maps_pair(
         )
         if F_est_avail:
             df_fwt.loc[df_fwt_bin.index, "DELFestFest2SCallRE"] = (
-                df_fwt_bin["Fcombi1RE"]
-                - scale_delfestfest2scall * df_fwt_bin["Fcombi2RE"]
+                scale_delfestfest2scall * df_fwt_bin["Fcombi2RE"]
+                - df_fwt_bin["Fcombi1RE"]
             )
             df_fwt.loc[df_fwt_bin.index, "DELFestFest2SCallIM"] = (
-                df_fwt_bin["Fcombi1IM"]
-                - scale_delfestfest2scall * df_fwt_bin["Fcombi2IM"]
+                scale_delfestfest2scall * df_fwt_bin["Fcombi2IM"]
+                - df_fwt_bin["Fcombi1IM"]
             )
             df_fwt.loc[df_fwt_bin.index, "DELFestFest2SCall"] = numpy.hypot(
                 df_fwt["DELFestFest2SCallRE"].astype(numpy.float64),
