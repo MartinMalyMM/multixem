@@ -614,11 +614,11 @@ def write_coot_script(
             f"For {cscript_filename}, only structure models but no maps were provided."
         )
 
-    cscript = ""
+    cscript = "import coot\n"
     pdbs = [f"{os.path.splitext(mmciffile)[0]}.pdb" for mmciffile in mmcifs]
     for pdb in pdbs:
         if os.path.isfile(pdb):
-            cscript += f'read_pdb("{pdb}")\n'
+            cscript += f'coot.read_pdb("{pdb}")\n'
         else:
             logging.warning(f"File {pdb} not found for {cscript_filename}")
 
@@ -633,10 +633,10 @@ def write_coot_script(
         for i, map in enumerate(maps):
             if os.path.isfile(map):
                 cscript += (
-                    f'map_{i} = make_and_draw_map("{map}",'
+                    f'map_{i} = coot.make_and_draw_map("{map}",'
                     f' "{maps_labels[0]}", "{maps_labels[1]}", "", 0, 0)\n'
                 )
-                cscript += f"set_contour_level_in_sigma(map_{i}, 1.0)\n"
+                cscript += f"coot.set_contour_level_in_sigma(map_{i}, 1.0)\n"
             else:
                 logging.warning(f"File {map} not found for {cscript_filename}")
 
@@ -644,10 +644,10 @@ def write_coot_script(
         for i, diffmap in enumerate(diffmaps):
             if os.path.isfile(diffmap):
                 cscript += (
-                    f'diffmap_{i} = make_and_draw_map("{diffmap}",'
+                    f'diffmap_{i} = coot.make_and_draw_map("{diffmap}",'
                     f' "{diffmaps_labels[0]}", "{diffmaps_labels[1]}", "", 0, 1)\n'
                 )
-                cscript += f"set_contour_level_in_sigma(diffmap_{i}, 3.0)\n"
+                cscript += f"coot.set_contour_level_in_sigma(diffmap_{i}, 3.0)\n"
             else:
                 logging.warning(f"File {diffmap} not found for {cscript_filename}")
 
