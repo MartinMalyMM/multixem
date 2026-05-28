@@ -21,6 +21,7 @@ from .analyse_refinement import (
     adp_analysis_histograms,
     compute_difference_maps,
     compute_structure_differences,
+    write_coot_script,
 )
 from .bootstrap_dataset import bootstrap_dataset
 from .bootstrap_statistics import bootstrap_analyse_stats
@@ -1828,11 +1829,32 @@ def main():
             quick=args.quick,
             n_proc=n_proc,
         )
+        write_coot_script(
+            refined_mmcifs,
+            maps=refined_mtzs,
+            maps_labels=("FWT", "PHWT"),
+            diffmaps=refined_mtzs,
+            diffmaps_labels=("DELFWT", "PHDELWT"),
+        )
         adp_analysis_histograms(refined_mmcifs, prefix)
         if len(refined_mmcifs) >= 2:
             compute_structure_differences(refined_mmcifs)
-            bin_stats_matrix = compute_difference_maps(
+            bin_stats_matrix, diffmaps, diffmaps_fwt = compute_difference_maps(
                 refined_mtzs, binner_master, bin_stats_matrix, args.amplitude
+            )
+            write_coot_script(
+                refined_mmcifs,
+                maps=[],
+                maps_labels=(),
+                diffmaps=diffmaps,
+                diffmaps_labels=("DELFOFO", "PHDELFOFO"),
+            )
+            write_coot_script(
+                refined_mmcifs,
+                maps=[],
+                maps_labels=(),
+                diffmaps=diffmaps_fwt,
+                diffmaps_labels=("DELFWTFWTSCall", "PHDELFWTFWTSCall"),
             )
         if args.command == "bootstrap" or (
             args.command == "pipeline" and args.bootstrap

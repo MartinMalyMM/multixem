@@ -452,7 +452,7 @@ def compute_difference_maps_pair(
     write_mtz_from_df(df_fwt, mtz1, columns_to_write_dict, output_mtz_fwt)
     stats_filename = f"{mtz_fi1_base}_vs_{mtz_fi2_base}_bin_stats.txt"
     write_bin_stats(bin_stats_list, stats_filename)
-    return bin_stats_list
+    return bin_stats_list, output_mtz, output_mtz_fwt
 
 
 def compute_difference_maps(refined_mtzs, binner, bin_stats_matrix=[], amplitude=False):
@@ -460,16 +460,20 @@ def compute_difference_maps(refined_mtzs, binner, bin_stats_matrix=[], amplitude
     and update the `bin_stats_matrix` with the statistics
     for each pair and each resolution bin."""
 
+    output_mtzs = []
+    output_mtzs_fwt = []
     for i in range(len(refined_mtzs)):
         for j in range(i + 1, len(refined_mtzs)):
             # print(i, j)
-            bin_stats_diff = compute_difference_maps_pair(
+            bin_stats_diff, output_mtz, output_mtz_fwt = compute_difference_maps_pair(
                 refined_mtzs[i],
                 refined_mtzs[j],
                 binner,
                 bin_stats_matrix[i][j],
                 amplitude=amplitude,
             )
+            output_mtzs.append(output_mtz)
+            output_mtzs_fwt.append(output_mtz_fwt)
             if bin_stats_matrix:
                 """print(
                     len(bin_stats_matrix[i][j]),
@@ -488,7 +492,7 @@ def compute_difference_maps(refined_mtzs, binner, bin_stats_matrix=[], amplitude
                         )
                         break
 
-    return bin_stats_matrix
+    return bin_stats_matrix, output_mtzs, output_mtzs_fwt
 
 
 def compute_structure_differences(refined_mmcifs):
@@ -542,3 +546,111 @@ def compute_structure_differences_pair(
             f" of atoms in {structure2}."
         )
     return search(st1Cras, st2Cras, output, minCoordDev, minAdpDev)
+
+
+def write_coot_script(
+    mmcifs: list[str],
+    maps=[],
+    maps_labels=("FWT", "PHWT"),
+    diffmaps=[],
+    diffmaps_labels=("DELFWT", "PHDELWT"),
+) -> str:
+    """
+    Generate a Coot Python script for loading structure models and density maps.
+
+    The function creates a `.py` script that can be executed in Coot to:
+    - load PDB models converted from the provided mmCIF files,
+    - load density maps,
+    - load difference density maps,
+    - set default contour levels for each map type.
+
+    The generated script filename is constructed from the provided map labels.
+
+    Args:
+        mmcifs (list[str]):
+            List of input mmCIF filenames. Each filename is converted to a
+            corresponding `.pdb` filename using `os.path.splitext()`.
+
+        maps (list[str], optional):
+            List of MTZ files containing density map coefficients.
+
+        maps_labels (tuple[str], optional):
+            Two-element tuple specifying the amplitude and phase column labels
+            for maps. Defaults to ["FWT", "PHWT"].
+
+        diffmaps (list[str], optional):
+            List of MTZ files containing difference map coefficients.
+
+        diffmaps_labels (tuple[str], optional):
+            Two-element tuple specifying the amplitude and phase column labels
+            for difference maps. Defaults to ["DELFWT", "PHDELWT"].
+
+    Returns:
+        str:
+            The filename of the generated Coot script. Returns an empty string
+            if no models or maps are provided.
+
+    Notes:
+        - Maps are contoured at 1.0 sigma.
+        - Difference maps are contoured at +- 3.0 sigma.
+        - If `maps_labels` or `diffmaps_labels` do not contain exactly two
+          elements, the corresponding maps are skipped.
+    """
+    cscript_filename = "coot"
+    if maps and len(maps_labels) == 2:
+        cscript_filename += f"_{maps_labels[0]}"
+    if diffmaps and len(diffmaps_labels) == 2:
+        cscript_filename += f"_{diffmaps_labels[0]}"
+    cscript_filename += ".py"
+
+    if not mmcifs and not maps and not diffmaps:
+        logging.warning(
+            "For coot script, no structure models and maps were provided. Skipping."
+        )
+        return ""
+
+    elif not maps and not diffmaps:
+        logging.warning(
+            f"For {cscript_filename}, only structure models but no maps were provided."
+        )
+
+    cscript = ""
+    pdbs = [f"{os.path.splitext(mmciffile)[0]}.pdb" for mmciffile in mmcifs]
+    for pdb in pdbs:
+        if os.path.isfile(pdb):
+            cscript += f'read_pdb("{pdb}")\n'
+        else:
+            logging.warning(f"File {pdb} not found for {cscript_filename}")
+
+    """
+    From Coot:
+    int make_and_draw_map(const char *mtz_file_name,
+                const char *f_col, const char *phi_col,
+                const char *weight,
+                int use_weights, int is_diff_map);
+    """
+    if maps and len(maps_labels) == 2:
+        for i, map in enumerate(maps):
+            if os.path.isfile(map):
+                cscript += (
+                    f'map_{i} = make_and_draw_map("{map}",'
+                    f' "{maps_labels[0]}", "{maps_labels[1]}", "", 0, 0)\n'
+                )
+                cscript += f"set_contour_level_in_sigma(map_{i}, 1.0)\n"
+            else:
+                logging.warning(f"File {map} not found for {cscript_filename}")
+
+    if diffmaps and len(diffmaps_labels) == 2:
+        for i, diffmap in enumerate(diffmaps):
+            if os.path.isfile(diffmap):
+                cscript += (
+                    f'diffmap_{i} = make_and_draw_map("{diffmap}",'
+                    f' "{diffmaps_labels[0]}", "{diffmaps_labels[1]}", "", 0, 1)\n'
+                )
+                cscript += f"set_contour_level_in_sigma(diffmap_{i}, 3.0)\n"
+            else:
+                logging.warning(f"File {diffmap} not found for {cscript_filename}")
+
+    with open(cscript_filename, "w") as s:
+        s.write(cscript)
+    return cscript_filename
