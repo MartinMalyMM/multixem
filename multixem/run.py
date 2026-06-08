@@ -1877,19 +1877,18 @@ def main():
         config_yaml = ""
         geometry_objects_ref = []
         if args.geometry_cids or args.servalcat_config:
+            config_yaml_dict = {}
+            if args.servalcat_config:
+                with open(args.servalcat_config, "r") as f:
+                    config_yaml_dict = yaml.safe_load(f) or {}
             if args.geometry_cids:
                 geometry_objects_ref = select_cids_for_geometry_analysis(
                     args.geometry_cids
                 )
                 config_yaml_unrestrain_dict = unrestrain_yaml(geometry_objects_ref)
-            if args.servalcat_config:
-                with open(args.servalcat_config, "r") as f:
-                    config_yaml_user_dict = yaml.safe_load(f)
                 config_yaml_dict = dict_deep_merge(
-                    config_yaml_user_dict, config_yaml_unrestrain_dict
+                    config_yaml_dict, config_yaml_unrestrain_dict
                 )
-            else:
-                config_yaml_dict = config_yaml_unrestrain_dict
             config_yaml = "servalcat_config.yaml"
             with open(config_yaml, "w") as f:
                 yaml.dump(config_yaml_dict, f, sort_keys=False)
