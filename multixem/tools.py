@@ -151,6 +151,7 @@ def makeAddressStr(cra):
     return address
 
 
+'''
 def CRA2CID(cra):
     """Convert a gemmi.CRA to a CID string."""
     cid = f"//{cra.chain.name}/{cra.residue.seqid.num}"
@@ -160,6 +161,7 @@ def CRA2CID(cra):
     if cra.atom.has_altloc():
         cid += f":{cra.atom.altloc}"
     return cid
+'''
 
 
 def CID2dict(cid, atom_level=True):
@@ -231,8 +233,13 @@ def dict2CID(atom_dict):
 
 
 def select_CIDs_of_residues(geometry_object):
-    """geometry_object is a dict with keys:
-    atom1, atom2, atom3, atom4 - CIDs of the atoms involved"""
+    """
+    geometry_object is a dict with keys:
+    atom1, atom2, atom3, atom4 - CIDs of the atoms involved
+
+    Returns a list of CIDs with atom set to "*"
+    for the residues involved in the geometry object.
+    """
 
     cid_select_residues = []
     for cid in [
@@ -251,6 +258,7 @@ def select_CIDs_of_residues(geometry_object):
     return cid_select_residues
 
 
+'''
 def CID2RefmacRestraint(geometry_object):
     """geometry_object is a dict with keys:
     atom1, atom2, atom3, atom4 - CIDs of the atoms involved
@@ -311,6 +319,7 @@ def CID2RefmacRestraint(geometry_object):
         restraint += f" next {refmacAddresses[2]} next {refmacAddresses[3]}"
         restraint += f" value {ref_value:<.2f} sigma 999 type 0"
     return restraint
+'''
 
 
 def filename_replace_char(filename):

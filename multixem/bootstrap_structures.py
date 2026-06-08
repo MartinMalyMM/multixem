@@ -9,14 +9,15 @@ import numpy
 import pandas
 from .bootstrap_statistics import df_scatter_plot, plot_histogram
 from .tools import (
-    CID2RefmacRestraint,
-    CRA2CID,
+    # CID2RefmacRestraint,
+    # CRA2CID,
     makeAddressStr,
     json_numpy_converter,
     select_CIDs_of_residues,
 )
 
 
+'''
 def unrestrain(geometry_objects_ref, structure_file):
     """
     Create a restraints file with unrestrained geometry for bootstrapping.
@@ -132,6 +133,23 @@ def unrestrain(geometry_objects_ref, structure_file):
             f.write(line + "\n")
     logging.info(f"Saved unrestrained geometry to {restraints_filename}")
     return restraints_filename
+'''
+
+
+def unrestrain_yaml(geometry_objects_ref):
+    """geometry_objects_ref is a list of dicts with keys:
+    atom1, atom2, atom3, atom4 - CIDs of the atoms involved"""
+    cids = set()
+    for geometry_object in geometry_objects_ref:
+        cids.update(select_CIDs_of_residues(geometry_object))
+    return {
+        "refine": {
+            "vdw_exclusion": {
+                "selections": list(cids),
+                "pair_selections": [],
+            }
+        }
+    }
 
 
 def floating_origin_detect(st: gemmi.Structure):

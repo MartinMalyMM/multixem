@@ -13,6 +13,7 @@ import json
 import shlex
 import glob
 import re
+import yaml
 from collections import Counter
 import concurrent.futures
 from . import __version__
@@ -26,7 +27,8 @@ from .analyse_refinement import (
 from .bootstrap_dataset import bootstrap_dataset
 from .bootstrap_statistics import bootstrap_analyse_stats
 from .bootstrap_structures import (
-    unrestrain,
+    # unrestrain,
+    unrestrain_yaml,
     geometry_analysis_load,
     select_cids_for_geometry_analysis,
     bootstrap_analyse_structures,
@@ -243,7 +245,7 @@ def create_parser():
         type=str,
         default=[],
         help="Command line arguments for Servalcat (quoted)."
-        + " Do not use options -s, --source and --hout here.",
+        + " Do not use options -s, --source, --config and --hout here.",
     )
     common_refinement_parent.add_argument(
         "--model",
@@ -294,6 +296,14 @@ def create_parser():
         default="xray",
         choices=["xray", "electron", "neutron"],
         help="Radiation source, xray or electron or neutron.",
+    )
+    common_refinement_parent.add_argument(
+        "--servalcat_config",
+        type=existing_file,
+        help=(
+            "YAML configuration file for Servalcat"
+            " (e.g. to specify occupancy refinement)"
+        ),
     )
 
     # Main pipeline subcommand (default behavior)
@@ -911,6 +921,50 @@ def run_molrep(model, mtz):
     return pdb_filename
 
 
+def dict_deep_merge(base: dict, update: dict) -> dict:
+    """
+    Recursively merge `update` into `base`.
+
+    Merge rules:
+    - If both values are dictionaries, merge them recursively.
+    - If both values are lists, append items from `update` that are not
+      already present in `base` while preserving order.
+    - Otherwise, replace the value in ``base`` with the value from `update`.
+
+    Args:
+        base: dict
+            Dictionary to be updated in place.
+        update: dict
+            Dictionary containing additional or overriding values.
+
+    Returns:
+        dict
+            The merged dictionary (same object as `base`).
+
+    Examples
+    --------
+    >>> base = {"a": [1, 2], "b": {"x": 1}}
+    >>> update = {"a": [2, 3], "b": {"y": 2}}
+    >>> deep_merge(base, update)
+    {'a': [1, 2, 3], 'b': {'x': 1, 'y': 2}}
+    """
+    for key, value in update.items():
+        if key not in base:
+            base[key] = value
+        elif isinstance(base[key], dict) and isinstance(value, dict):
+            dict_deep_merge(base[key], value)
+        elif isinstance(base[key], list) and isinstance(value, list):
+            # Append new items while preserving order
+            seen = set(base[key])
+            for item in value:
+                if item not in seen:
+                    base[key].append(item)
+                    seen.add(item)
+        else:
+            base[key] = value
+    return base
+
+
 def run_servalcat_fwt(mtz_groups_i, prefix="", n_proc=1):
     """
     Run `servalcat fw` to perform French Wilson conversion of intensities
@@ -961,12 +1015,12 @@ def run_servalcat_refine(
     prefix="multixem_",
     source="xray",
     keyword_file="",
+    config_yaml="",
     arguments=[],
     sigmaa=True,
     quick=False,
     n_proc=1,
 ):
-    # TODO: --config
     refined_mmcifs = []
     refined_mtzs = []
     refined_jsons = []
@@ -1003,6 +1057,8 @@ def run_servalcat_refine(
             cmd.extend(["--hklin_free", mtz_free])
         if keyword_file:
             cmd.extend(["--keyword_file", keyword_file])
+        if config_yaml:
+            cmd.extend(["--config", config_yaml])
         if arguments:
             cmd.extend(arguments)
         if quick:
@@ -1817,6 +1873,27 @@ def main():
             models = models_molrep
         else:
             models = args.model
+
+        config_yaml = ""
+        geometry_objects_ref = []
+        if args.geometry_cids or args.servalcat_config:
+            if args.geometry_cids:
+                geometry_objects_ref = select_cids_for_geometry_analysis(
+                    args.geometry_cids
+                )
+                config_yaml_unrestrain_dict = unrestrain_yaml(geometry_objects_ref)
+            if args.servalcat_config:
+                with open(args.servalcat_config, "r") as f:
+                    config_yaml_user_dict = yaml.safe_load(f)
+                config_yaml_dict = dict_deep_merge(
+                    config_yaml_user_dict, config_yaml_unrestrain_dict
+                )
+            else:
+                config_yaml_dict = config_yaml_unrestrain_dict
+            config_yaml = "servalcat_config.yaml"
+            with open(config_yaml, "w") as f:
+                yaml.dump(config_yaml_dict, f, sort_keys=False)
+
         refined_mmcifs, refined_mtzs, refined_jsons = run_servalcat_refine(
             mtzs_merged,
             labins,
@@ -1825,6 +1902,7 @@ def main():
             prefix=prefix,
             source=args.source,
             arguments=servalcat_args,
+            config_yaml=config_yaml,
             sigmaa=(not args.amplitude),
             quick=args.quick,
             n_proc=n_proc,
@@ -1874,17 +1952,13 @@ def main():
                 else:
                     idx = i_mtz + 1
                     prefix_servalcat = f"{prefix}group{idx}_"
-                geometry_objects_ref = []
-                restraints_file = ""
-                if args.geometry_cids:
+                # restraints_file = ""
+                if args.geometry_cids and geometry_objects_ref:
                     st_ref = gemmi.read_structure(refined_mmcifs[i_mtz])
-                    geometry_objects_ref = select_cids_for_geometry_analysis(
-                        args.geometry_cids
-                    )
                     geometry_objects_ref = geometry_analysis_load(
                         st_ref, geometry_objects_ref
                     )
-                    restraints_file = unrestrain(geometry_objects_ref, model)
+                    # restraints_file = unrestrain(geometry_objects_ref, model)
                 mtzs_bootstrap = bootstrap_dataset(
                     mtz_in,
                     binner_master,
@@ -1908,6 +1982,7 @@ def main():
                         prefix=prefix_servalcat,
                         source=args.source,
                         keyword_file="",
+                        config_yaml=config_yaml,
                         arguments=servalcat_args
                         + ["--labin_llweight", "llweight"]
                         + [
@@ -1934,7 +2009,8 @@ def main():
                     mtzs_free=mtzs_bootstrap,
                     prefix=prefix_servalcat,
                     source=args.source,
-                    keyword_file=restraints_file,
+                    # keyword_file=restraints_file,
+                    config_yaml=config_yaml,
                     arguments=servalcat_args + ["--labin_llweight", "llweight"],
                     sigmaa=False,
                     quick=args.quick,

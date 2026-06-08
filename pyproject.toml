@@ -1,41 +1,46 @@
-[tool.poetry]
+[project]
 name = "multixem"
 version = "0.1"
 description = "Refinement pipeline for multiple data sets in structure biology"
-authors = ["Martin Maly <martin.maly.mm@email.cz>"]
-license = "MIT"
 readme = "README.md"
-packages = [{ include = "multixem" }]
+requires-python = ">=3.9,<4.0"
+license = { text = "MIT" }
+authors = [{ name = "Martin Maly", email = "martin.maly.mm@email.cz" }]
+dependencies = [
+    "pandas>=1.1.0",
+    "gemmi>=0.6.2",
+    "numpy>=1.15",
+    "matplotlib>=3.0.0",
+    "pyyaml>=6.0",
+]
 
-[tool.poetry.scripts]
+[project.scripts]
 multixem = "multixem.run:main"
 
-[tool.poetry.dependencies]
-python = ">=3.9,<4.0"
-pandas = ">=1.1.0"
-gemmi = ">=0.6.2"
-numpy = ">=1.15"
-matplotlib = ">=3.0.0"
+[project.optional-dependencies]
+dev = [
+    "vulture>=1.0",
+    "bandit>=1.6",
+    "safety>=1.8",
+    "isort>=5.3",
+    "flake8-bugbear>=19.8",
+    "black>=18.3a0",
+    "mypy>=0.730.0",
+    "ipython>=7.7",
+    "pytest>=5.0",
+    "pytest-cov>=2.7",
+    "pytest-mock>=1.10",
+    "pep8-naming>=0.8.2",
+    "portray>=1.3.0",
+    "cruft>=2.2",
+]
 
-[tool.poetry.group.dev.dependencies]
-vulture = ">=1.0"
-bandit = ">=1.6"
-safety = ">=1.8"
-isort = ">=5.3"
-flake8-bugbear = ">=19.8"
-black = {version = ">=18.3-alpha.0", allow-prereleases = true}
-mypy = ">=0.730.0"
-ipython = ">=7.7"
-pytest = ">=5.0"
-pytest-cov = ">=2.7"
-pytest-mock = ">=1.10"
-pep8-naming = ">=0.8.2"
-portray = ">=1.3.0"
-cruft = ">=2.2"
+[tool.setuptools.packages.find]
+include = ["multixem*"]
 
 [build-system]
-requires = ["poetry>=0.12"]
-build-backend = "poetry.masonry.api"
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [tool.black]
 line-length = 88
