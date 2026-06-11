@@ -141,7 +141,9 @@ def unrestrain_yaml(geometry_objects_ref):
     atom1, atom2, atom3, atom4 - CIDs of the atoms involved"""
     cids = set()
     for geometry_object in geometry_objects_ref:
-        cids.update(select_CIDs_of_residues(geometry_object))
+        # do not include objects just for occupancy refinement
+        if geometry_object["atom2"]:
+            cids.update(select_CIDs_of_residues(geometry_object))
     return {
         "refine": {
             "vdw_exclusion": {
