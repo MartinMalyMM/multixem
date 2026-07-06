@@ -5,7 +5,6 @@ import argparse
 import subprocess
 import numpy
 import pandas
-import gemmi
 import matplotlib.pyplot as plt
 import matplotlib
 import logging
@@ -16,6 +15,15 @@ import re
 import yaml
 from collections import Counter
 import concurrent.futures
+
+# servalcat 0.4.145 must be imported before gemmi
+try:
+    from servalcat import utils as servalcat_utils
+
+    servalcat_imported = True
+except RuntimeError:
+    servalcat_imported = False
+import gemmi
 from . import __version__
 from .tools import write_bin_stats, calc_scale_real, write_mtz_from_df
 from .analyse_refinement import (
@@ -1773,13 +1781,8 @@ def main():
                     )
                     mtz.write_to_file(mtz_filename)
                     mtzs_merged.append(mtz_filename)
-                else:
-                    try:
-                        from servalcat import utils as servalcat_utils
-
-                        mtz, _, _ = servalcat_utils.fileio.read_smcif_shelx(hklin_i)
-                    except RuntimeError:
-                        pass
+                elif servalcat_imported:
+                    mtz, _, _ = servalcat_utils.fileio.read_smcif_shelx(hklin_i)
                 if mtz:
                     mtz_filename = (
                         f"{os.path.splitext(os.path.basename(hklin_i))[0]}.mtz"
@@ -1791,8 +1794,11 @@ def main():
                         f"Could not recognise format of diffraction data file {hklin_i}"
                     )
             elif hklin_i.lower().endswith(".hkl") or hklin_i.lower().endswith(".ent"):
-                from servalcat import utils as servalcat_utils
-
+                if not servalcat_imported:
+                    raise RuntimeError(
+                        f"Cannot read .hkl file {hklin_i}"
+                        " because servalcat is not installed."
+                    )
                 mtz = servalcat_utils.fileio.read_smcif_hkl(hklin_i)
                 mtz_filename = f"{os.path.splitext(os.path.basename(hklin_i))[0]}.mtz"
                 mtz.write_to_file(mtz_filename)
