@@ -8,7 +8,13 @@ import pandas
 from .tools import write_mtz_from_df
 
 
-def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003], labin=""):
+def bootstrap_dataset(
+    mtz_file: str,
+    binner: gemmi.Binner,
+    seeds=[1001, 1002, 1003],
+    labin: str = "",
+    draw_factor: float = 1.0,
+):
     """
     Bootstrap the dataset from an MTZ file and save the results in new MTZ files.
 
@@ -18,24 +24,36 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003], labin=""):
         seeds (list of int): List of random seeds for bootstrapping.
         labin (str): Column label (e.g. `IMEAN,SIGIMEAN`)
             to apply `df.dropna(subset=[labin.split(",")[0]])`.
+        draw_factor (float): Factor for a number of draws in resampling.
+                              By default, the number of draws is equal to the number of
+                              reflections in each bin (draw_factor==1.0).
     Returns:
         list of str: List of output MTZ filenames created during bootstrapping.
     """
 
-    def resample(n, seed=1001, column_name="llweight"):
+    def resample(
+        n: int,
+        seed: int = 1001,
+        draw_factor: float = 1.0,
+        column_name: str = "llweight",
+    ):
         """
         Create a DataFrame`llweight` column for resampling.
 
         Args:
             n (int): Number of items to resample.
             seed (int): Random seed for reproducibility.
+            draw_factor (float): Factor for a number of draws in resampling.
+                                  By default, the number of draws is equal to the
+                                  number of reflections in each bin (draw_factor==1.0).
             column_name (str): Name of the column to create in the DataFrame.
         Returns:
             pandas.Series: Series with the bootstrap weights for each reflection.
         """
+        n_draws = int(n * draw_factor)
         rng = numpy.random.default_rng(seed)
         df_random = pandas.DataFrame(
-            rng.integers(1, n + 1, size=n), columns=["index_resample"]
+            rng.integers(1, n + 1, size=n_draws), columns=["index_resample"]
         )
         df_weight = (
             df_random.groupby(["index_resample"])
@@ -79,7 +97,7 @@ def bootstrap_dataset(mtz_file, binner, seeds=[1001, 1002, 1003], labin=""):
     completeness_list = []
     for i, seed in enumerate(seeds):
         df_bootstrap1_weight = pandas.concat(
-            [resample(len(group), seed) for _, group in df.groupby("bin")],
+            [resample(len(shell), seed, draw_factor) for _, shell in df.groupby("bin")],
             ignore_index=True,
         )
         # Merge columns H, K, L from df and llweight from df_bootstrap1_weight

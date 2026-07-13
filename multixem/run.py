@@ -171,6 +171,15 @@ def create_parser():
                 raise argparse.ArgumentTypeError(f"{value} is not a positive integer.")
             return ivalue
 
+    def positive_float(value):
+        try:
+            fvalue = float(value)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"{value} is not a float.")
+        if fvalue <= 0:
+            raise argparse.ArgumentTypeError(f"{value} is not a positive float.")
+        return fvalue
+
     def existing_file(path):
         abs_norm_path = os.path.abspath(os.path.normpath(path))
         if not os.path.isfile(abs_norm_path):
@@ -311,6 +320,16 @@ def create_parser():
         help=(
             "YAML configuration file for Servalcat"
             " (e.g. to specify occupancy refinement)"
+        ),
+    )
+    common_refinement_parent.add_argument(
+        "--draw_factor",
+        type=positive_float,
+        default=1.0,
+        help=(
+            "Factor for a number of draws in bootstrap resampling."
+            " (the default 1.0 means the number of draws is equal"
+            " to the number of reflections in each bin)."
         ),
     )
 
@@ -1969,6 +1988,7 @@ def main():
                     binner_master,
                     seeds=range(1001, 1001 + n_samples),
                     labin=labin,
+                    draw_factor=args.draw_factor,
                 )
                 if args.model_dir and args.models:
                     input_model_s = args.models
