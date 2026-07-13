@@ -106,10 +106,10 @@ def bootstrap_dataset(
             df_bootstrap1_weight, left_index=True, right_index=True
         )
         weight_sum = df_bootstrap1_weight.sum()
-        if weight_sum != len(df):
+        if weight_sum != len(df) * draw_factor:
             logging.warning(
-                f"Sum of weight coefficients {weight_sum} does not match the"
-                f" number of reflections {len(df)}."
+                f"Sum of weight coefficients ({weight_sum}) does not match the number "
+                f"of reflections multiplied by draw_factor ({len(df)} * {draw_factor})."
             )
 
         # TODO: FreeR_flag
