@@ -62,7 +62,9 @@ def bootstrap_dataset(
         )
         return df_weight.rename(column_name)
 
-    logging.info(f"\nBootstrapping dataset {mtz_file}")
+    logging.info(
+        f"\nBootstrapping dataset {mtz_file} (using draw factor {draw_factor})"
+    )
     mtzs_out = []
     mtz = gemmi.read_mtz_file(mtz_file)
     df = pandas.DataFrame(data=mtz.array, columns=mtz.column_labels())
@@ -185,6 +187,7 @@ def bootstrap_dataset(
     logging.info(
         f"Completeness of bootstrap datasets:"
         f" {completeness_mean:.2%} ± {completeness_std:.2%}"
+        f" (using draw factor {draw_factor})"
     )
 
     return mtzs_out
