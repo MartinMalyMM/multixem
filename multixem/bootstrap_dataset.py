@@ -60,6 +60,9 @@ def bootstrap_dataset(
             .size()
             .reindex(range(1, n + 1), fill_value=0)
         )
+        if draw_factor != 1.0:
+            df_weight = df_weight / draw_factor
+
         return df_weight.rename(column_name)
 
     logging.info(
@@ -108,10 +111,10 @@ def bootstrap_dataset(
             df_bootstrap1_weight, left_index=True, right_index=True
         )
         weight_sum = df_bootstrap1_weight.sum()
-        if weight_sum != len(df) * draw_factor:
+        if weight_sum != len(df):
             logging.warning(
-                f"Sum of weight coefficients ({weight_sum}) does not match the number "
-                f"of reflections multiplied by draw_factor ({len(df)} * {draw_factor})."
+                f"Sum of weight coefficients ({weight_sum}) from bootstrap resampling"
+                f" {i} does not match the number of reflections ({len(df)})."
             )
 
         # TODO: FreeR_flag
@@ -122,7 +125,7 @@ def bootstrap_dataset(
         write_mtz_from_df(
             df_bootstrap1_weight_hkl,
             mtz,
-            columns={"llweight": "I"},
+            columns={"llweight": "R"},
             filename=mtz_out_name,
         )
         mtzs_out.append(mtz_out_name)
@@ -187,7 +190,7 @@ def bootstrap_dataset(
     logging.info(
         f"Completeness of bootstrap datasets:"
         f" {completeness_mean:.2%} ± {completeness_std:.2%}"
-        f" (using draw factor {draw_factor})"
+        f" (using draw factor {draw_factor})\n"
     )
 
     return mtzs_out
