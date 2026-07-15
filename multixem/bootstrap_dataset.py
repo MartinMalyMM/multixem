@@ -14,6 +14,8 @@ def bootstrap_dataset(
     seeds=[1001, 1002, 1003],
     labin: str = "",
     draw_factor: float = 1.0,
+    random_resampling: bool = False,
+    fraction_zero: float = 0.05,
 ):
     """
     Bootstrap the dataset from an MTZ file and save the results in new MTZ files.
@@ -38,7 +40,7 @@ def bootstrap_dataset(
         column_name: str = "llweight",
     ):
         """
-        Create a DataFrame`llweight` column for resampling.
+        Create a DataFrame`llweight` column using resampling with replacement.
 
         Args:
             n (int): Number of items to resample.
@@ -65,9 +67,50 @@ def bootstrap_dataset(
 
         return df_weight.rename(column_name)
 
-    logging.info(
-        f"\nBootstrapping dataset {mtz_file} (using draw factor {draw_factor})"
-    )
+    def resample_random(
+        n: int,
+        seed: int = 1001,
+        fraction_zero: float = 0.05,
+        column_name: str = "llweight",
+    ):
+        """
+        Create a DataFrame`llweight` column using random resampling and keeping
+        a fraction of zero weights.
+
+        Args:
+            n (int): Number of items to resample.
+            seed (int): Random seed for reproducibility.
+            fraction_zero (float): Fraction of zero weights to include in the resampling
+                                   (0.0 < fraction_zero < 1.0).
+            column_name (str): Name of the column to create in the DataFrame.
+        Returns:
+            pandas.Series: Series with the weights for each reflection.
+        """
+        rng = numpy.random.default_rng(seed)
+        df_random = pandas.DataFrame(rng.random(size=n), columns=["index_resample"])
+        assert 0.0 < fraction_zero < 1.0
+        n_zero = int(n * fraction_zero)
+        n_zero = min(n_zero, n)
+        df_weight = df_random["index_resample"].copy()
+        if n_zero > 0:
+            lowest_idx = df_random["index_resample"].nsmallest(n_zero).index
+            df_weight.loc[lowest_idx] = 0.0
+        # Renormalize so that the total weight equals n
+        weight_sum = df_weight.sum()
+        assert weight_sum > 0
+        df_weight = df_weight * (n / weight_sum)
+
+        return df_weight.rename(column_name)
+
+    if random_resampling:
+        logging.info(
+            f"\nBootstrapping dataset {mtz_file} (using random resampling"
+            f" and keeping fraction of zero weights {fraction_zero})",
+        )
+    else:
+        logging.info(
+            f"\nBootstrapping dataset {mtz_file} (using draw factor {draw_factor})",
+        )
     mtzs_out = []
     mtz = gemmi.read_mtz_file(mtz_file)
     df = pandas.DataFrame(data=mtz.array, columns=mtz.column_labels())
@@ -101,10 +144,22 @@ def bootstrap_dataset(
     # df_bootstrap1_weight_master = pandas.DataFrame()
     completeness_list = []
     for i, seed in enumerate(seeds):
-        df_bootstrap1_weight = pandas.concat(
-            [resample(len(shell), seed, draw_factor) for _, shell in df.groupby("bin")],
-            ignore_index=True,
-        )
+        if random_resampling:
+            df_bootstrap1_weight = pandas.concat(
+                [
+                    resample_random(len(shell), seed, fraction_zero)
+                    for _, shell in df.groupby("bin")
+                ],
+                ignore_index=True,
+            )
+        else:
+            df_bootstrap1_weight = pandas.concat(
+                [
+                    resample(len(shell), seed, draw_factor)
+                    for _, shell in df.groupby("bin")
+                ],
+                ignore_index=True,
+            )
         # Merge columns H, K, L from df and llweight from df_bootstrap1_weight
         df_bootstrap1_weight_hkl = df[["H", "K", "L"]].copy()
         df_bootstrap1_weight_hkl = df_bootstrap1_weight_hkl.merge(
@@ -187,10 +242,17 @@ def bootstrap_dataset(
 
     completeness_mean = numpy.mean(completeness_list)
     completeness_std = numpy.std(completeness_list, ddof=1, mean=completeness_mean)
-    logging.info(
-        f"Completeness of bootstrap datasets:"
-        f" {completeness_mean:.2%} ± {completeness_std:.2%}"
-        f" (using draw factor {draw_factor})\n"
-    )
+    if random_resampling:
+        logging.info(
+            f"Completeness of bootstrap datasets:"
+            f" {completeness_mean:.2%} ± {completeness_std:.2%}"
+            f" (using random resampling and fraction of zero weights {fraction_zero})\n"
+        )
+    else:
+        logging.info(
+            f"Completeness of bootstrap datasets:"
+            f" {completeness_mean:.2%} ± {completeness_std:.2%}"
+            f" (using draw factor {draw_factor})\n"
+        )
 
     return mtzs_out

@@ -332,6 +332,20 @@ def create_parser():
             " to the number of reflections in each bin)."
         ),
     )
+    common_refinement_parent.add_argument(
+        "--random_resampling",
+        action="store_true",
+        help=("Use random resampling and keeping a fraction of zero weights."),
+    )
+    common_refinement_parent.add_argument(
+        "--fraction_zero",
+        type=positive_float,
+        default=0.05,
+        help=(
+            "If random resampling is used, this specifies the fraction of"
+            " zero weights to include. Must be in [0.0, 1.0)."
+        ),
+    )
 
     # Main pipeline subcommand (default behavior)
     pipeline_parser = subparsers.add_parser(
@@ -470,6 +484,10 @@ def create_parser():
             parser.error("--unre requires --bootstrap to be provided.")
         if args.bootstrap and args.model_dir:
             validate_model_dir(args, args.bootstrap)
+        if args.random_resampling and (
+            args.fraction_zero <= 0.0 or args.fraction_zero >= 1.0
+        ):
+            parser.error("--fraction_zero must be in the range (0.0, 1.0).")
 
     def validate_mean(args):
         validate_common(args)
@@ -493,6 +511,10 @@ def create_parser():
             args.models = sorted(model_files)[: args.n_samples]
         if args.model_dir:
             validate_model_dir(args, args.n_samples)
+        if args.random_resampling and (
+            args.fraction_zero <= 0.0 or args.fraction_zero >= 1.0
+        ):
+            parser.error("--fraction_zero must be in the range (0.0, 1.0).")
 
     pipeline_parser.set_defaults(func=validate_pipeline)
     mean_parser.set_defaults(func=validate_mean)
@@ -1989,6 +2011,8 @@ def main():
                     seeds=range(1001, 1001 + n_samples),
                     labin=labin,
                     draw_factor=args.draw_factor,
+                    random_resampling=args.random_resampling,
+                    fraction_zero=args.fraction_zero,
                 )
                 if args.model_dir and args.models:
                     input_model_s = args.models
