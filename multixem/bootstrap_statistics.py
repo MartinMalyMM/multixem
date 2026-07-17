@@ -205,17 +205,18 @@ def analyse_distribution(
     threshold_high = q3 + outlier_factor * iqr
     mask_iqr = (values_arr < threshold_low) | (values_arr > threshold_high)
 
-    # Additional median-relative criterion only for R1
-    is_r1 = str(xlabel).strip().upper() == "R1"
-    if is_r1 and median > 0:
-        rel_low = 0.7 * median
-        rel_high = 1.3 * median
-        mask_rel = (values_arr < rel_low) | (values_arr > rel_high)
+    # Additional median-relative criterion only for R1 ?
+    # is_r1 = str(xlabel).strip().upper() == "R1"
+    # if is_r1 and median > 0:
+    #     rel_low = 0.7 * median
+    #     rel_high = 1.3 * median
+    #     mask_rel = (values_arr < rel_low) | (values_arr > rel_high)
 
-        # Outlier must violate BOTH criteria
-        outlier_mask = mask_iqr & mask_rel
-    else:
-        outlier_mask = mask_iqr
+    #     # Outlier must violate BOTH criteria
+    #     outlier_mask = mask_iqr & mask_rel
+    # else:
+    #     outlier_mask = mask_iqr
+    outlier_mask = mask_iqr
 
     outlier_idx = numpy.where(outlier_mask)[0]
     outliers = (
