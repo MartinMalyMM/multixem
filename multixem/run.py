@@ -21,7 +21,7 @@ try:
     from servalcat import utils as servalcat_utils
 
     servalcat_imported = True
-except RuntimeError:
+except ModuleNotFoundError:
     servalcat_imported = False
 import gemmi
 from . import __version__
