@@ -1225,14 +1225,31 @@ def run_servalcat_refine(
     return refined_mmcifs, refined_mtzs, refined_jsons
 
 
-def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
+def compare_mtzs_fi(
+    mtzs_fi: list,
+    binner: gemmi.Binner,
+    labins: list = ["IMEAN,SIGIMEAN"],
+    bin_stats_matrix: list = [],
+    n_expected: list = [],
+):
+    """
+    Compare multiple MTZ files containing reflection data (preferably
+    reflection intensities) and calculate statistics for each pair of MTZ files.
+    """
 
     # noqa: E501
     def compare_mtz_fi_pair(
-        mtz_fi1, mtz_fi2, binner, bin_stats_list1=[], bin_stats_list2=[]
+        mtz_fi1: str,
+        mtz_fi2: str,
+        binner: gemmi.Binner,
+        labin: str = "IMEAN,SIGIMEAN",
+        bin_stats_list1: list = [],
+        bin_stats_list2: list = [],
     ):
         # f_col = "F"
-        i_col = "IMEAN"  # can be just "I" after servalcat fw
+        i_col = labin.split(",")[
+            0
+        ]  # usually IMEAN # can be just "I" after servalcat fw
         column_labels_dropna = [i_col, f"SIG{i_col}"]  # or F?
         mtz1 = gemmi.read_mtz_file(mtz_fi1)
         mtz2 = gemmi.read_mtz_file(mtz_fi2)
@@ -1532,6 +1549,7 @@ def compare_mtzs_fi(mtzs_fi, binner, bin_stats_matrix=[], n_expected=[]):
                 mtzs_fi[i],
                 mtzs_fi[j],
                 binner,
+                labins[i],
                 bin_stats_matrix[i][i],
                 bin_stats_matrix[j][j],
             )
@@ -1898,7 +1916,7 @@ def main():
     # TODO what if dealing with amplitudes?
     if n_mtzs_merged >= 2 and not args.amplitude:
         bin_stats_matrix, n_refl_matrix, ratio_refl_matrix = compare_mtzs_fi(
-            mtzs_merged, binner_master, bin_stats_matrix, n_expected_list
+            mtzs_merged, binner_master, labins, bin_stats_matrix, n_expected_list
         )
 
     if args.command == "pipeline" and args.unify_cell:
