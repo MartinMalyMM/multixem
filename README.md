@@ -81,7 +81,7 @@ multixem pipeline \
 	--model insuling_cow.pdb insuling_pig.pdb insuling_people.pdb \
 	--n_bins 30 \
 	--n_proc 4 \
-	--unify_cell```
+	--unify_cell
 ```
 
 Example: Merging and comparison of batches of unmerged diffraction data:
@@ -90,12 +90,11 @@ Example: Merging and comparison of batches of unmerged diffraction data:
 multixem pipeline \
 	--hklin_unmerged insuling_people_unmerged.mtz \
 	--hklin_free insuling_people.mtz \
-	-p insulin \
+	-p insulin_people_600 \
 	--model insuling_people.pdb \
 	--n_bins 30 \
 	--n_proc 4 \
     --n_batches 600
-	```
 ```
 
 All currently available options are listed using:
