@@ -1,6 +1,6 @@
 [project]
 name = "multixem"
-version = "0.1"
+version = "0.2"
 description = "Refinement pipeline for multiple data sets in structure biology"
 readme = "README.md"
 requires-python = ">=3.9,<4.0"
@@ -37,6 +37,14 @@ dev = [
 
 [tool.setuptools.packages.find]
 include = ["multixem*"]
+exclude = [
+    "multixem_*",
+    "tests*",
+    "docs_backup*",
+    "scripts_backup*",
+    "multixem/scripts",
+    "multixem/prototypes",
+]
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

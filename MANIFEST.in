@@ -1,0 +1,19 @@
+prune dist
+prune build
+prune __venv__
+prune venv
+prune .venv
+prune .pytest_cache
+prune .mypy_cache
+prune multixem.egg-info
+prune docs_backup
+prune scripts_backup
+prune multixem_tmp
+prune multixem_*
+prune multixem/scripts
+prune multixem/prototypes
+
+global-exclude *.py[cod]
+global-exclude __pycache__
+global-exclude *.lock
+global-exclude *.zip
