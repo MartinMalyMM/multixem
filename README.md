@@ -13,10 +13,10 @@ _________________
 Installation
 ============
 
-Install the latest code from this GitHub repository with `pip`:
+Install the released package from PyPI with `pip`:
 
 ```bash
-pip install git+https://github.com/MartinMalyMM/multixem.git
+pip install multixem
 ```
 
 It is recommended to use a Python virtual environment:
@@ -24,7 +24,7 @@ It is recommended to use a Python virtual environment:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install git+https://github.com/MartinMalyMM/multixem.git
+pip install multixem
 ```
 
 You will also need [Servalcat](https://github.com/kyamashita/servalcat) installed, typically from a recent `CCP4` installation which also includes the [Monomer Library](https://github.com/MonomerLibrary/monomers).
