@@ -60,10 +60,28 @@ The file given in `1PGJ_geometry_obj.txt` defines parameters/features of the str
 
 Regarding the distances and angles, the procedure is suitable for investigation non-covalently linked atoms. The environment is locally unrestrained (Van der Waals anti-bumping restraints switched off) to provide unbiased results.
 
+Unrestrained refinement of a small molecule can be performed using the following setting:
+
+```bash
+multixem bootstrap 10000 \
+	--hklin 1513945.cif \
+	--model 1513945.cif \
+	--prefix 1513945_bootstrap10000 \
+	--servalcat_args "--unre --hydrogen yes --refine_h --adp aniso --no_solvent --adpr_weight 0 --ncycle 20" \
+	--n_bins 20 \
+	--n_proc 16
+```
+
 All currently available options are listed using:
 
 ```bash
 multixem bootstrap --help
+```
+
+The options for Servalcat which could be provided through the `--servalcat_args` parameter to this *Multixem* pipeline can be listed using:
+
+```bash
+servalcat refine_xtal_norefmac --help
 ```
 
 Comparison of isomorphous data sets
