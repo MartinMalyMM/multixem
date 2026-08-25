@@ -15,6 +15,7 @@ def bootstrap_dataset(
     labin: str = "",
     draw_factor: float = 1.0,
     random_resampling: bool = False,
+    col_free: str = "",
     fraction_zero: float = 0.05,
 ):
     """
@@ -29,6 +30,12 @@ def bootstrap_dataset(
         draw_factor (float): Factor for a number of draws in resampling.
                               By default, the number of draws is equal to the number of
                               reflections in each bin (draw_factor==1.0).
+        random_resampling (bool): Perform random resampling instead of
+                                  resampling with replacement.
+        col_free (str): Label for free R flag in `mtz_file` which would be used to set
+                        zero weight for reflections of the free set
+                        if `fraction_zero` is zero
+        fraction zero (float): Sets fraction of reflections with zero weight [0.0, 1.0)
     Returns:
         list of str: List of output MTZ filenames created during bootstrapping.
     """
@@ -71,6 +78,7 @@ def bootstrap_dataset(
         n: int,
         seed: int = 1001,
         fraction_zero: float = 0.05,
+        zero_mask: numpy.ndarray = numpy.array([]),
         column_name: str = "llweight",
     ):
         """
@@ -81,20 +89,32 @@ def bootstrap_dataset(
             n (int): Number of items to resample.
             seed (int): Random seed for reproducibility.
             fraction_zero (float): Fraction of zero weights to include in the resampling
-                                   (0.0 < fraction_zero < 1.0).
+                                   [0.0 <= fraction_zero < 1.0).
+            zero_mask (numpy.ndarray): Optional boolean mask;
+                                       rows set to True are forced to zero.
+                                       Applied if `fraction_zero` is zero.
             column_name (str): Name of the column to create in the DataFrame.
         Returns:
             pandas.Series: Series with the weights for each reflection.
         """
         rng = numpy.random.default_rng(seed)
         df_random = pandas.DataFrame(rng.random(size=n), columns=["index_resample"])
-        assert 0.0 < fraction_zero < 1.0
-        n_zero = int(n * fraction_zero)
-        n_zero = min(n_zero, n)
         df_weight = df_random["index_resample"].copy()
-        if n_zero > 0:
-            lowest_idx = df_random["index_resample"].nsmallest(n_zero).index
-            df_weight.loc[lowest_idx] = 0.0
+        if zero_mask is not None:
+            zero_mask_array = numpy.asarray(zero_mask, dtype=bool)
+            if zero_mask_array.shape[0] != n:
+                raise ValueError(
+                    "Length mismatch between zero_mask and shell size in "
+                    f"random resampling: {zero_mask_array.shape[0]} != {n}"
+                )
+            df_weight.loc[zero_mask_array] = 0.0
+        else:  # use fraction_zero
+            assert 0.0 < fraction_zero < 1.0
+            n_zero = int(n * fraction_zero)
+            n_zero = min(n_zero, n)
+            if n_zero > 0:
+                lowest_idx = df_random["index_resample"].nsmallest(n_zero).index
+                df_weight.loc[lowest_idx] = 0.0
         # Renormalize so that the total weight equals n
         weight_sum = df_weight.sum()
         assert weight_sum > 0
@@ -103,13 +123,25 @@ def bootstrap_dataset(
         return df_weight.rename(column_name)
 
     if random_resampling:
-        logging.info(
-            f"\nBootstrapping dataset {mtz_file} (using random resampling"
-            f" and keeping fraction of zero weights {fraction_zero})",
-        )
+        if abs(fraction_zero) > 1e-6:
+            logging.info(
+                f"\nBootstrapping dataset {mtz_file} (using random resampling"
+                f" and keeping fraction of zero weights {fraction_zero})",
+            )
+        elif col_free:
+            logging.info(
+                f"\nBootstrapping dataset {mtz_file} (using random resampling,"
+                " free reflections will be excluded)."
+            )
+        else:
+            raise RuntimeError(
+                f"Free reflections were not found in {mtz_file} and --fraction_zero"
+                " is not set. Cannot assign reflections with zero weight. Aborting."
+            )
     else:
         logging.info(
-            f"\nBootstrapping dataset {mtz_file} (using draw factor {draw_factor})",
+            "\n"
+            f"Bootstrapping dataset {mtz_file} (using a draw factor of {draw_factor})",
         )
     mtzs_out = []
     mtz = gemmi.read_mtz_file(mtz_file)
@@ -119,6 +151,7 @@ def bootstrap_dataset(
         col.label: col.type for col in mtz.columns if col.label not in ["H", "K", "L"]
     }
 
+    n_unique_orig = 0
     # i_col = "IMEAN"  # can be just "I" after servalcat fw or sigmaa, or IMEAN?
     # dropping reflections can cause problems, let's save the filtered dataset as MTZ
     if labin and labin.split(",")[0] in df.columns:
@@ -128,11 +161,19 @@ def bootstrap_dataset(
             f"{os.path.splitext(os.path.basename(mtz_file))[0]}_filtered.mtz"
         )
         write_mtz_from_df(df, mtz, columns=columns_dict, filename=mtz_filtered_name)
+        n_unique_orig = df.shape[0]
     else:
         warnings.warn(
             f"Column {labin} not found in MTZ file {mtz_file}. "
             f"Using all reflections for bootstrapping."
         )
+    n_unique_expected = gemmi.count_reflections(
+        mtz.cell,
+        mtz.spacegroup,
+        mtz.resolution_high(),
+        mtz.resolution_low(),
+        unique=True,
+    )
 
     hkl_array = numpy.array(df[["H", "K", "L"]].values, numpy.int32)
     hkl_array = numpy.ascontiguousarray(hkl_array, dtype=numpy.int32)
@@ -145,13 +186,32 @@ def bootstrap_dataset(
     completeness_list = []
     for i, seed in enumerate(seeds):
         if random_resampling:
-            df_bootstrap1_weight = pandas.concat(
-                [
-                    resample_random(len(shell), seed, fraction_zero)
-                    for _, shell in df.groupby("bin")
-                ],
-                ignore_index=True,
-            )
+            if abs(fraction_zero) > 1e-6:
+                df_bootstrap1_weight = pandas.concat(
+                    [
+                        resample_random(
+                            len(shell),
+                            seed,
+                            fraction_zero,
+                            zero_mask=numpy.array([]),
+                        )
+                        for _, shell in df.groupby("bin")
+                    ],
+                    ignore_index=True,
+                )
+            elif col_free:
+                df_bootstrap1_weight = pandas.concat(
+                    [
+                        resample_random(
+                            len(bin),
+                            seed,
+                            fraction_zero,
+                            zero_mask=bin[col_free].eq(0).to_numpy(),
+                        )
+                        for _, bin in df.groupby("bin")
+                    ],
+                    ignore_index=True,
+                )
         else:
             df_bootstrap1_weight = pandas.concat(
                 [
@@ -166,7 +226,7 @@ def bootstrap_dataset(
             df_bootstrap1_weight, left_index=True, right_index=True
         )
         weight_sum = df_bootstrap1_weight.sum()
-        if weight_sum != len(df):
+        if abs(weight_sum - len(df)) > 1e-6:
             logging.warning(
                 f"Sum of weight coefficients ({weight_sum}) from bootstrap resampling"
                 f" {i} does not match the number of reflections ({len(df)})."
@@ -188,13 +248,6 @@ def bootstrap_dataset(
         # Compute completeness
         n_unique = len(
             df_bootstrap1_weight_hkl[df_bootstrap1_weight_hkl["llweight"] > 0]
-        )
-        n_unique_expected = gemmi.count_reflections(
-            mtz.cell,
-            mtz.spacegroup,
-            mtz.resolution_high(),
-            mtz.resolution_low(),
-            unique=True,
         )
         completeness = n_unique / n_unique_expected
         completeness_list.append(completeness)
@@ -241,18 +294,24 @@ def bootstrap_dataset(
     )"""
 
     completeness_mean = numpy.mean(completeness_list)
-    completeness_std = numpy.std(completeness_list, ddof=1, mean=completeness_mean)
     if random_resampling:
-        logging.info(
-            f"Completeness of bootstrap datasets:"
-            f" {completeness_mean:.2%} ± {completeness_std:.2%}"
-            f" (using random resampling and fraction of zero weights {fraction_zero})\n"
-        )
+        if n_unique_orig:
+            completeness_orig = n_unique_orig / n_unique_expected
+            logging.info(
+                f"Completeness of bootstrap datasets:"
+                f" {completeness_mean:.2%} ; Completeness of the original dataset:"
+                f" {completeness_orig:.2%}"
+            )
+        else:
+            logging.info(
+                f"Completeness of bootstrap datasets:" f" {completeness_mean:.2%}\n"
+            )
     else:
+        completeness_std = numpy.std(completeness_list, ddof=1, mean=completeness_mean)
         logging.info(
             f"Completeness of bootstrap datasets:"
             f" {completeness_mean:.2%} ± {completeness_std:.2%}"
-            f" (using draw factor {draw_factor})\n"
+            f" (using a draw factor of {draw_factor})\n"
         )
 
     return mtzs_out

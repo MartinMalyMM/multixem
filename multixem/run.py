@@ -339,11 +339,13 @@ def create_parser():
     )
     common_refinement_parent.add_argument(
         "--fraction_zero",
-        type=positive_float,
-        default=0.05,
+        type=float,
+        default=0.0,
         help=(
             "If random resampling is used, this specifies the fraction of"
-            " zero weights to include. Must be in [0.0, 1.0)."
+            " zero weights to include. Must be in [0.0, 1.0). Recommended value: 0.05."
+            " If a value of 0.0 is set,"
+            " zero weights will be assigned to free reflections."
         ),
     )
 
@@ -485,9 +487,9 @@ def create_parser():
         if args.bootstrap and args.model_dir:
             validate_model_dir(args, args.bootstrap)
         if args.random_resampling and (
-            args.fraction_zero <= 0.0 or args.fraction_zero >= 1.0
+            args.fraction_zero < 0.0 or args.fraction_zero >= 1.0
         ):
-            parser.error("--fraction_zero must be in the range (0.0, 1.0).")
+            parser.error("--fraction_zero must be in the range [0.0, 1.0).")
 
     def validate_mean(args):
         validate_common(args)
@@ -512,9 +514,9 @@ def create_parser():
         if args.model_dir:
             validate_model_dir(args, args.n_samples)
         if args.random_resampling and (
-            args.fraction_zero <= 0.0 or args.fraction_zero >= 1.0
+            args.fraction_zero < 0.0 or args.fraction_zero >= 1.0
         ):
-            parser.error("--fraction_zero must be in the range (0.0, 1.0).")
+            parser.error("--fraction_zero must be in the range [0.0, 1.0).")
 
     pipeline_parser.set_defaults(func=validate_pipeline)
     mean_parser.set_defaults(func=validate_mean)
@@ -570,6 +572,7 @@ def check_reflection_file_columns(hklin, unmerged=False, prefer_amplitude=False)
     col_sigfplusminus = []
     col_fmean = []
     col_sigxmean = []
+    col_free = ""
 
     for column in m.columns:
         if column.type == "K":
@@ -619,6 +622,10 @@ def check_reflection_file_columns(hklin, unmerged=False, prefer_amplitude=False)
             col_fmean.append(column.label)
             if unmerged:
                 logging.warning(unexpected_column_warning)
+        elif not col_free and column.type == "I":
+            if "free" in column.label.lower() and "flag" in column.label.lower():
+                col_free = column.label
+                logging.info(f"Column with free R flag (type I) found: {column.label}")
 
     labin = None
     if not prefer_amplitude:
@@ -653,7 +660,7 @@ def check_reflection_file_columns(hklin, unmerged=False, prefer_amplitude=False)
         )
     logging.info(f"Using these columns for refinement: {labin}")
 
-    return labin, anom
+    return labin, anom, col_free
 
 
 def copy_cell_mtz(mtz_input, mtz_reference):
@@ -846,7 +853,7 @@ def merge_in_groups(
     # Scan the columns of the input unmerged MTZ file
     # and check if Friedel pairs are present or not
     anom = False
-    labin, anom = check_reflection_file_columns(m, unmerged=True)
+    labin, anom, col_free = check_reflection_file_columns(m, unmerged=True)
     # print(m.dataset(0).wavelength) == 0.0
     # print(m.dataset(1).wavelength) OK
     # print(m.datasets[0].wavelength) == 0.0
@@ -1748,6 +1755,7 @@ def main():
 
     mtzs_merged = []
     labins = []
+    cols_free = []
     bin_stats_lists = []
     n_expected_list = []
     binner_master = None
@@ -1880,11 +1888,12 @@ def main():
                 f"Unit cell: {mtz.cell.a:.3f} {mtz.cell.b:.3f} {mtz.cell.c:.3f}"
                 f" {mtz.cell.alpha:.3f} {mtz.cell.beta:.3f} {mtz.cell.gamma:.3f}"
             )
-            labin, anom_present = check_reflection_file_columns(
+            labin, anom_present, col_free = check_reflection_file_columns(
                 mtz, unmerged=False, prefer_amplitude=args.amplitude
             )
             # elif i_present and not f_present: TODO FW
             labins.append(labin)
+            cols_free.append(col_free)
             bin_stats_lists.append([])
             # TODO: check and fix n_expected
             n_expected = gemmi.count_reflections(mtz.cell, mtz.spacegroup, dmin, dmax)
@@ -2007,8 +2016,8 @@ def main():
                 else args.n_samples
             )
             # TODO: some features assume only single model...
-            for i_mtz, (mtz_in, labin, model) in enumerate(
-                zip(mtzs_merged, labins, models)
+            for i_mtz, (mtz_in, labin, model, col_free) in enumerate(
+                zip(mtzs_merged, labins, models, cols_free)
             ):
                 if args.command == "bootstrap":
                     idx = 0
@@ -2030,6 +2039,7 @@ def main():
                     labin=labin,
                     draw_factor=args.draw_factor,
                     random_resampling=args.random_resampling,
+                    col_free=col_free,
                     fraction_zero=args.fraction_zero,
                 )
                 if args.model_dir and args.models:
