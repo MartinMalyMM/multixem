@@ -333,19 +333,26 @@ def create_parser():
         ),
     )
     common_refinement_parent.add_argument(
-        "--random_resampling",
+        "--random_weights",
         action="store_true",
-        help=("Use random resampling and keeping a fraction of zero weights."),
+        help=(
+            "Use fractional-random-weight bootstrap method, i.e. assign"
+            " random weights to ."
+            " A fraction of reflection will be assigned zero weights"
+            " based on the provided free flag in --hklin_free or --hklin,"
+            " or randomly if no free flag is provided, controlled by --fraction_zero."
+        ),
     )
     common_refinement_parent.add_argument(
         "--fraction_zero",
         type=float,
         default=0.0,
         help=(
-            "If random resampling is used, this specifies the fraction of"
-            " zero weights to include. Must be in [0.0, 1.0). Recommended value: 0.05."
-            " If a value of 0.0 is set,"
-            " zero weights will be assigned to free reflections."
+            "If random weighting is used, this specifies the fraction of"
+            " zero weights to include. Must be in [0.0, 1.0)."
+            " If a value of 0.0 is set (default), zero weights will be assigned"
+            " according to the free flags in --hklin_free or --hklin."
+            " Recommended value: 0.05."
         ),
     )
 
@@ -486,7 +493,7 @@ def create_parser():
             parser.error("--unre requires --bootstrap to be provided.")
         if args.bootstrap and args.model_dir:
             validate_model_dir(args, args.bootstrap)
-        if args.random_resampling and (
+        if args.random_weights and (
             args.fraction_zero < 0.0 or args.fraction_zero >= 1.0
         ):
             parser.error("--fraction_zero must be in the range [0.0, 1.0).")
@@ -513,7 +520,7 @@ def create_parser():
             args.models = sorted(model_files)[: args.n_samples]
         if args.model_dir:
             validate_model_dir(args, args.n_samples)
-        if args.random_resampling and (
+        if args.random_weights and (
             args.fraction_zero < 0.0 or args.fraction_zero >= 1.0
         ):
             parser.error("--fraction_zero must be in the range [0.0, 1.0).")
@@ -2081,7 +2088,7 @@ def main():
                     seeds=range(1001, 1001 + n_samples),
                     labin=labin,
                     draw_factor=args.draw_factor,
-                    random_resampling=args.random_resampling,
+                    random_weights=args.random_weights,
                     col_free=col_free,
                     fraction_zero=args.fraction_zero,
                 )

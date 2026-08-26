@@ -14,7 +14,7 @@ def bootstrap_dataset(
     seeds=[1001, 1002, 1003],
     labin: str = "",
     draw_factor: float = 1.0,
-    random_resampling: bool = False,
+    random_weights: bool = False,
     col_free: str = "",
     fraction_zero: float = 0.05,
 ):
@@ -30,8 +30,8 @@ def bootstrap_dataset(
         draw_factor (float): Factor for a number of draws in resampling.
                               By default, the number of draws is equal to the number of
                               reflections in each bin (draw_factor==1.0).
-        random_resampling (bool): Perform random resampling instead of
-                                  resampling with replacement.
+        random_weights (bool): Assign random weights instead of
+                               resampling with replacement.
         col_free (str): Label for free R flag in `mtz_file` which would be used to set
                         zero weight for reflections of the free set
                         if `fraction_zero` is zero
@@ -112,7 +112,7 @@ def bootstrap_dataset(
 
         return df_weight.rename(column_name)
 
-    if random_resampling:
+    if random_weights:
         if abs(fraction_zero) > 1e-6:
             logging.info(
                 f"\nBootstrapping dataset {mtz_file} (using random resampling"
@@ -176,7 +176,7 @@ def bootstrap_dataset(
 
     # Create per-bin masks once and keep them for all bootstrap samples
     zero_mask_bins = []
-    if random_resampling:
+    if random_weights:
         if abs(fraction_zero) > 1e-6:
             # Create a random mask for reflections with zero weight
             rng = numpy.random.default_rng(seeds[0])
@@ -192,7 +192,7 @@ def bootstrap_dataset(
 
     completeness_list = []
     for i, seed in enumerate(seeds):
-        if random_resampling:
+        if random_weights:
             assert len(zero_mask_bins) == len(bins)
             parts = []
             for b, bin in enumerate(bins):
@@ -282,7 +282,7 @@ def bootstrap_dataset(
     )"""
 
     completeness_mean = numpy.mean(completeness_list)
-    if random_resampling:
+    if random_weights:
         if n_unique_orig:
             logging.info(
                 "Completeness of bootstrap datasets"
