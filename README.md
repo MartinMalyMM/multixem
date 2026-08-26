@@ -7,13 +7,19 @@ _________________
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 _________________
 
-*This is still work in progress.*
+*This is still a work in progress.*
 
 
 Installation
 ============
 
-Install the released package from PyPI with `pip`:
+Install the latest code from this GitHub repository using:
+
+```bash
+pip install git+https://github.com/MartinMalyMM/multixem.git
+```
+
+Or install the released package from PyPI with `pip`:
 
 ```bash
 pip install multixem
@@ -24,10 +30,10 @@ It is recommended to use a Python virtual environment:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install multixem
+pip install multixem  # or pip install git+https://github.com/MartinMalyMM/multixem.git
 ```
 
-You will also need [Servalcat](https://github.com/kyamashita/servalcat) installed, typically from a recent `CCP4` installation which also includes the [Monomer Library](https://github.com/MonomerLibrary/monomers).
+Most of the dependencies (NumPy, pandas, [GEMMI](https://github.com/project-gemmi/gemmi), MatPlotLib Python modules) will be installed automatically. You will also need [Servalcat](https://github.com/kyamashita/servalcat) installed, typically from a recent `CCP4` installation which also includes the [Monomer Library](https://github.com/MonomerLibrary/monomers).
 
 
 Bootstrap
@@ -47,8 +53,11 @@ multixem bootstrap 10000 \
     --servalcat_confing "config.yaml" \
 	--n_bins 30 \
 	--n_proc 16 \
-    --geometry_cids 1PGJ_geometry_obj.txt
+    --geometry_cids 1PGJ_geometry_obj.txt \
+	--random_weights
 ```
+
+Random weights will be assigned to reflection likelihood terms in the target log-likelihood function. A fraction of reflection will be assigned zero weights based on the provided free flag in --hklin_free or --hklin, or randomly if no free flag is provided, controlled by --fraction_zero.
 
 The file given in `1PGJ_geometry_obj.txt` defines parameters/features of the structure model under investigation. Each lines specifies an object using atomic CIDs divided by spaces. One CID in row denotes an occupancy, two an interactomic distance, three an angle between the atoms and four a torsion angle. For instance:
 
