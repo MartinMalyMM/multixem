@@ -1882,8 +1882,8 @@ def main():
             else:
                 mtz = gemmi.read_mtz_file(hklin_i)
                 mtzs_merged.append(hklin_i)
-            dmax = mtz.resolution_high()
-            dmin = mtz.resolution_low()
+            dmin = mtz.resolution_high()
+            dmax = mtz.resolution_low()
             # Check for None or nan values and recalculate if necessary
             if dmax is None or dmin is None or numpy.isnan(dmax) or numpy.isnan(dmin):
                 d_array = mtz.cell.calculate_d_array(mtz.make_miller_array())
@@ -1942,8 +1942,8 @@ def main():
         logging.info(f"Free R flag data file: {args.hklin_free}")
         mtz_free = gemmi.read_mtz_file(args.hklin_free)
         mtzs_merged.append(args.hklin_free)
-        dmax_free = mtz_free.resolution_high()
-        dmin_free = mtz_free.resolution_low()
+        dmin_free = mtz_free.resolution_high()
+        dmax_free = mtz_free.resolution_low()
         # Check for None or nan values and recalculate if necessary
         if (
             dmax_free is None
