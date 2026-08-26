@@ -76,9 +76,8 @@ def bootstrap_dataset(
 
     def resample_random(
         n: int,
+        zero_mask: numpy.ndarray,
         seed: int = 1001,
-        fraction_zero: float = 0.05,
-        zero_mask: numpy.ndarray = numpy.array([]),
         column_name: str = "llweight",
     ):
         """
@@ -88,8 +87,6 @@ def bootstrap_dataset(
         Args:
             n (int): Number of items to resample.
             seed (int): Random seed for reproducibility.
-            fraction_zero (float): Fraction of zero weights to include in the resampling
-                                   [0.0 <= fraction_zero < 1.0).
             zero_mask (numpy.ndarray): Optional boolean mask;
                                        rows set to True are forced to zero.
                                        Applied if `fraction_zero` is zero.
@@ -100,21 +97,14 @@ def bootstrap_dataset(
         rng = numpy.random.default_rng(seed)
         df_random = pandas.DataFrame(rng.random(size=n), columns=["index_resample"])
         df_weight = df_random["index_resample"].copy()
-        if zero_mask is not None:
-            zero_mask_array = numpy.asarray(zero_mask, dtype=bool)
-            if zero_mask_array.shape[0] != n:
-                raise ValueError(
-                    "Length mismatch between zero_mask and shell size in "
-                    f"random resampling: {zero_mask_array.shape[0]} != {n}"
-                )
-            df_weight.loc[zero_mask_array] = 0.0
-        else:  # use fraction_zero
-            assert 0.0 < fraction_zero < 1.0
-            n_zero = int(n * fraction_zero)
-            n_zero = min(n_zero, n)
-            if n_zero > 0:
-                lowest_idx = df_random["index_resample"].nsmallest(n_zero).index
-                df_weight.loc[lowest_idx] = 0.0
+        # Set a fraction of weights to zero based on the provided mask
+        zero_mask_array = numpy.asarray(zero_mask, dtype=bool)
+        if zero_mask_array.shape[0] != n:
+            raise ValueError(
+                "Length mismatch between zero_mask and bin size in "
+                f"random resampling: {zero_mask_array.shape[0]} != {n}"
+            )
+        df_weight.loc[zero_mask_array] = 0.0
         # Renormalize so that the total weight equals n
         weight_sum = df_weight.sum()
         assert weight_sum > 0
@@ -182,49 +172,49 @@ def bootstrap_dataset(
     # print(df.head(10))
     # print(df.describe())
 
-    # df_bootstrap1_weight_master = pandas.DataFrame()
+    bins = [bin for _, bin in df.groupby("bin")]
+
+    # Create per-bin masks once and keep them for all bootstrap samples
+    zero_mask_bins = []
+    if random_resampling:
+        if abs(fraction_zero) > 1e-6:
+            # Create a random mask for reflections with zero weight
+            rng = numpy.random.default_rng(seeds[0])
+            zero_mask_bins = [rng.random(len(bin)) < fraction_zero for bin in bins]
+        elif col_free:
+            # Use free reflections to create a mask for refls with zero weight
+            zero_mask_bins = [bin[col_free].eq(0).to_numpy() for bin in bins]
+        else:
+            raise RuntimeError(
+                f"Free reflections were not found in {mtz_file} and --fraction_zero"
+                " is not set. Cannot assign reflections with zero weight. Aborting."
+            )
+
     completeness_list = []
     for i, seed in enumerate(seeds):
         if random_resampling:
-            if abs(fraction_zero) > 1e-6:
-                df_bootstrap1_weight = pandas.concat(
-                    [
-                        resample_random(
-                            len(shell),
-                            seed,
-                            fraction_zero,
-                            zero_mask=numpy.array([]),
-                        )
-                        for _, shell in df.groupby("bin")
-                    ],
-                    ignore_index=True,
+            assert len(zero_mask_bins) == len(bins)
+            parts = []
+            for b, bin in enumerate(bins):
+                w = resample_random(
+                    len(bin),
+                    zero_mask_bins[b],
+                    seed=seed,
                 )
-            elif col_free:
-                df_bootstrap1_weight = pandas.concat(
-                    [
-                        resample_random(
-                            len(bin),
-                            seed,
-                            fraction_zero,
-                            zero_mask=bin[col_free].eq(0).to_numpy(),
-                        )
-                        for _, bin in df.groupby("bin")
-                    ],
-                    ignore_index=True,
-                )
+                parts.append(pandas.Series(w.values, index=bin.index, name="llweight"))
+            df_bootstrap1_weight = pandas.concat(parts).sort_index()
         else:
-            df_bootstrap1_weight = pandas.concat(
-                [
-                    resample(len(shell), seed, draw_factor)
-                    for _, shell in df.groupby("bin")
-                ],
-                ignore_index=True,
-            )
-        # Merge columns H, K, L from df and llweight from df_bootstrap1_weight
+            parts = []
+            for bin in bins:
+                w = resample(len(bin), seed, draw_factor)
+                parts.append(pandas.Series(w.values, index=bin.index, name="llweight"))
+            df_bootstrap1_weight = pandas.concat(parts).sort_index()
+
+        # Keep original reflection order to preserve HKL-to-weight mapping.
         df_bootstrap1_weight_hkl = df[["H", "K", "L"]].copy()
-        df_bootstrap1_weight_hkl = df_bootstrap1_weight_hkl.merge(
-            df_bootstrap1_weight, left_index=True, right_index=True
-        )
+        df_bootstrap1_weight_hkl["llweight"] = df_bootstrap1_weight.reindex(
+            df.index
+        ).values
         weight_sum = df_bootstrap1_weight.sum()
         if abs(weight_sum - len(df)) > 1e-6:
             logging.warning(
@@ -232,7 +222,6 @@ def bootstrap_dataset(
                 f" {i} does not match the number of reflections ({len(df)})."
             )
 
-        # TODO: FreeR_flag
         # Save the llweights in the MTZ file
         mtz_out_name = (
             f"{os.path.splitext(os.path.basename(mtz_file))[0]}_llweight{i}.mtz"
@@ -262,7 +251,6 @@ def bootstrap_dataset(
                 df_bootstrap1_weight.values
             )
 
-        # TODO: FreeR_flag
         columns = {i_col: "J", "SIG" + i_col: "Q", "llweight": "I"}
         if "FreeR_flag" in df.columns:
             columns["FreeR_flag"] = "I"
@@ -296,22 +284,27 @@ def bootstrap_dataset(
     completeness_mean = numpy.mean(completeness_list)
     if random_resampling:
         if n_unique_orig:
-            completeness_orig = n_unique_orig / n_unique_expected
             logging.info(
-                f"Completeness of bootstrap datasets:"
-                f" {completeness_mean:.2%} ; Completeness of the original dataset:"
-                f" {completeness_orig:.2%}"
+                "Completeness of bootstrap datasets"
+                " after exclusion of zero-weighted reflections:"
+                f" {completeness_mean:.2%}"
             )
         else:
             logging.info(
-                f"Completeness of bootstrap datasets:" f" {completeness_mean:.2%}\n"
+                "Completeness of bootstrap datasets"
+                " after exclusion of zero-weighted reflections:"
+                f" {completeness_mean:.2%}\n"
             )
     else:
         completeness_std = numpy.std(completeness_list, ddof=1, mean=completeness_mean)
         logging.info(
-            f"Completeness of bootstrap datasets:"
+            "Completeness of bootstrap datasets"
+            " after exclusion of zero-weighted reflections:"
             f" {completeness_mean:.2%} ± {completeness_std:.2%}"
             f" (using a draw factor of {draw_factor})\n"
         )
+    if n_unique_orig:
+        completeness_orig = n_unique_orig / n_unique_expected
+        logging.info(f"Completeness of the original dataset: {completeness_orig:.2%}\n")
 
     return mtzs_out
