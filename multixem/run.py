@@ -336,8 +336,8 @@ def create_parser():
         "--random_weights",
         action="store_true",
         help=(
-            "Use fractional-random-weight bootstrap method, i.e. assign"
-            " random weights to ."
+            "Use fractional-random-weight bootstrap method, i.e. assign random weights"
+            " to reflection likelihood terms in the target log-likelihood function."
             " A fraction of reflection will be assigned zero weights"
             " based on the provided free flag in --hklin_free or --hklin,"
             " or randomly if no free flag is provided, controlled by --fraction_zero."
