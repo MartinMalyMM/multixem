@@ -78,7 +78,8 @@ multixem bootstrap 10000 \
 	--prefix 1513945_bootstrap10000 \
 	--servalcat_args "--unre --hydrogen yes --refine_h --adp aniso --no_solvent --adpr_weight 0 --ncycle 20" \
 	--n_bins 20 \
-	--n_proc 16
+	--n_proc 16 \
+	--random_weights
 ```
 
 All currently available options are listed using:
