@@ -536,7 +536,12 @@ def create_parser():
     return parser
 
 
-def check_reflection_file_columns(hklin, unmerged=False, prefer_amplitude=False):
+def check_reflection_file_columns(
+    hklin: str,
+    unmerged: bool = False,
+    prefer_amplitude: bool = False,
+    search_col_free: bool = False,
+):
     """
     Check the input reflection file for the presence of intensities,
     amplitudes and Friedel pairs. Find the column labels and decide which to use.
@@ -546,6 +551,7 @@ def check_reflection_file_columns(hklin, unmerged=False, prefer_amplitude=False)
         unmerged (bool): Whether the input file is unmerged data.
         prefer_amplitude (bool): If both intensities and amplitudes are found,
             prefer amplitudes over intensities.
+        search_col_free (bool): Whether to search only for a free reflection column
 
     Returns:
         tuple: A tuple containing three boolean values:
@@ -575,7 +581,14 @@ def check_reflection_file_columns(hklin, unmerged=False, prefer_amplitude=False)
     col_free = ""
 
     for column in m.columns:
-        if column.type == "K":
+        if not col_free and column.type == "I":
+            if "free" in column.label.lower() and "flag" in column.label.lower():
+                col_free = column.label
+                logging.info(f"Column with free R flag (type I) found: {column.label}")
+                if search_col_free:
+                    logging.info("Free R flag column found successfully.")
+                    return None, None, col_free
+        elif column.type == "K":
             logging.info(
                 f"Column with intensity (type K, Friedel pairs) found: {column.label}"
             )
@@ -622,10 +635,6 @@ def check_reflection_file_columns(hklin, unmerged=False, prefer_amplitude=False)
             col_fmean.append(column.label)
             if unmerged:
                 logging.warning(unexpected_column_warning)
-        elif not col_free and column.type == "I":
-            if "free" in column.label.lower() and "flag" in column.label.lower():
-                col_free = column.label
-                logging.info(f"Column with free R flag (type I) found: {column.label}")
 
     labin = None
     if not prefer_amplitude:
@@ -1890,7 +1899,7 @@ def main():
             )
             labin, anom_present, col_free = check_reflection_file_columns(
                 mtz, unmerged=False, prefer_amplitude=args.amplitude
-            )
+            )  # col_free may be reset later if args.hklin_free is given
             # elif i_present and not f_present: TODO FW
             labins.append(labin)
             cols_free.append(col_free)
@@ -1911,6 +1920,7 @@ def main():
                     mtz.make_1_d2_array(),
                     mtz.get_cell(),
                 )
+            logging.info("")
     n_mtzs_merged = len(mtzs_merged)
     assert n_mtzs_merged == len(labins)
 
@@ -1927,6 +1937,39 @@ def main():
         bin_stats_matrix, n_refl_matrix, ratio_refl_matrix = compare_mtzs_fi(
             mtzs_merged, binner_master, labins, bin_stats_matrix, n_expected_list
         )
+
+    if args.hklin_free:
+        logging.info(f"Free R flag data file: {args.hklin_free}")
+        mtz_free = gemmi.read_mtz_file(args.hklin_free)
+        mtzs_merged.append(args.hklin_free)
+        dmax_free = mtz_free.resolution_high()
+        dmin_free = mtz_free.resolution_low()
+        # Check for None or nan values and recalculate if necessary
+        if (
+            dmax_free is None
+            or dmin_free is None
+            or numpy.isnan(dmax_free)
+            or numpy.isnan(dmin_free)
+        ):
+            d_array_free = mtz_free.cell.calculate_d_array(mtz_free.make_miller_array())
+            dmax_free = max(d_array_free)
+            dmin_free = min(d_array_free)
+        logging.info(f"Resolution limits: {dmax_free:.3f}" f" - {dmin_free:.3f} A")
+        logging.info(
+            f"Space group: {mtz_free.spacegroup.hm} (No. {mtz_free.spacegroup.number})"
+        )
+        logging.info(
+            "Unit cell:"
+            f" {mtz_free.cell.a:.3f} {mtz_free.cell.b:.3f} {mtz_free.cell.c:.3f}"
+            f" {mtz_free.cell.alpha:.3f} {mtz_free.cell.beta:.3f}"
+            f" {mtz_free.cell.gamma:.3f}"
+        )
+        # Overwrite cols_free
+        _, _, col_free = check_reflection_file_columns(
+            args.hklin_free, unmerged=False, search_col_free=True
+        )
+        cols_free = len(cols_free) * [col_free]
+        logging.info("")
 
     if args.command == "pipeline" and args.unify_cell:
         for i, mtz in enumerate(mtzs_merged):
