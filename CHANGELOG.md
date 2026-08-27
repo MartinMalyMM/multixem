@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-27
+- Automated build and release
+
 ## [0.3] - 2026-08-27
 - Command line argument `--random_weights` instead of `--random_resampling`
 - In bootrap, the selection of zero weights is kept consistent when `--random_weights` is used

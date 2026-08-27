@@ -1,6 +1,6 @@
 [project]
 name = "multixem"
-version = "0.3"
+version = "0.3.1"
 description = "Refinement pipeline for multiple data sets in structure biology"
 readme = "README.md"
 requires-python = ">=3.9,<4.0"
