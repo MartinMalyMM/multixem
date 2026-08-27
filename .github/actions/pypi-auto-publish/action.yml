@@ -115,7 +115,7 @@ runs:
       uses: ncipollo/release-action@v1
       with:
         commit: ${{ github.sha }}
-        tag: v${{ steps.compare-version.outputs.version }}
+        tag: ${{ steps.compare-version.outputs.version }}
         token: ${{ inputs.gh-token }}
         body: ${{ steps.changelog.outputs.changes }}
 
