@@ -13,5 +13,5 @@ jobs:
       - name: Auto-release
         uses: ./.github/actions/pypi-auto-publish
         with:
-          pypi-token: ${{ secrets.PYPI_TOKEN }}
+          pypi-token: ${{ secrets.PYPI_API_TOKEN }}
           gh-token: ${{ secrets.GITHUB_TOKEN }}
