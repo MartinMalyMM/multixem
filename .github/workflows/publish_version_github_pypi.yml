@@ -1,0 +1,2 @@
+- name: Python auto-release (PyPI & GitHub)
+  uses: etils-actions/pypi-auto-publish@v1.5.6
