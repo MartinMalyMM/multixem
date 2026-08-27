@@ -531,31 +531,70 @@ def scatter_plot_histogram(
 
 def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
     logging.info(f"Loading {len(jsons)} json files with statistics...")
+    # Find out which statistics are available
+    # and create related empty lists in data_overall_dict and data_overall[_init]_dict
     with open(jsons[0]) as f:
         data_first = json.load(f)
-    stats_avail = data_first[-1]["data"]["summary"].keys()
-    data_overall_dict = {stat: [] for stat in stats_avail}
-    data_overall_init_dict = {stat: [] for stat in stats_avail}
+    stats_data_avail = data_first[-1]["data"]["summary"].keys()
+    data_overall_dict = {stat: [] for stat in stats_data_avail}
+    data_overall_init_dict = {stat: [] for stat in stats_data_avail}
+    # Add keys for geometry statistics from geom section
+    geom_stats_avail = False
+    geom_stats = [
+        "Bond distances, non H",
+        "Bond angles, non H",
+    ]
+    for stat in geom_stats:
+        if (
+            stat in data_first[-1]["geom"]["summary"]["r.m.s.d."].keys()
+            and stat in data_first[-1]["geom"]["summary"]["r.m.s.Z"].keys()
+        ):
+            geom_stats_avail = True
+            data_overall_dict[f"Rmsd {stat}"] = []
+            data_overall_dict[f"RmsZ {stat}"] = []
+            data_overall_init_dict[f"Rmsd {stat}"] = []
+            data_overall_init_dict[f"RmsZ {stat}"] = []
+    if "weight" in data_first[-1] and len(data_first) >= 3 and geom_stats_avail:
+        # First available value for weight is in the 1st cycle, not 0th cycle
+        data_overall_dict["weight"] = []
+        data_overall_init_dict["weight"] = []
     """
     stats_additional = []
-    for stat in stats_avail:
+    for stat in stats_data_avail:
         if "CC" in stat:
             data_overall_dict[f"R2_{stat}"] = []
             data_overall_init_dict[f"R2_{stat}"] = []
             stats_additional.append(f"R2_{stat}")
     """
 
+    # Load statistics from json files and append to lists in data_overall[_init]_dict
     for json_file in jsons:
         with open(json_file) as f:
             data_loaded = json.load(f)
-        for stat in stats_avail:
+        for stat in stats_data_avail:
             data_overall_init_dict[stat].append(
                 data_loaded[0]["data"]["summary"].get(stat, 0)
             )
             data_overall_dict[stat].append(
                 data_loaded[-1]["data"]["summary"].get(stat, 0)
             )
-
+        if geom_stats_avail:
+            for stat in geom_stats:
+                data_overall_init_dict[f"Rmsd {stat}"].append(
+                    data_loaded[0]["geom"]["summary"]["r.m.s.d."].get(stat, 0)
+                )
+                data_overall_dict[f"Rmsd {stat}"].append(
+                    data_loaded[-1]["geom"]["summary"]["r.m.s.d."].get(stat, 0)
+                )
+                data_overall_init_dict[f"RmsZ {stat}"].append(
+                    data_loaded[0]["geom"]["summary"]["r.m.s.Z"].get(stat, 0)
+                )
+                data_overall_dict[f"RmsZ {stat}"].append(
+                    data_loaded[-1]["geom"]["summary"]["r.m.s.Z"].get(stat, 0)
+                )
+            if "weight" in data_overall_dict.keys():
+                data_overall_init_dict["weight"].append(data_loaded[1].get("weight", 0))
+                data_overall_dict["weight"].append(data_loaded[-1].get("weight", 0))
             """
             if "CC" in stat:
                 # also calculate R = sqrt(1 - CC^2)
@@ -614,12 +653,27 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
             "R1_llw=0": "R1free",
             "CCI_llw>0_avg": "CCIworkavg",
             "CCI_llw=0_avg": "CCIfreeavg",
+            "Rmsd Bond distances, non H": "Rmsd Bond distances, non H",
+            "Rmsd Bond angles, non H": "Rmsd Bond angles, non H",
+            "RmsZ Bond distances, non H": "RmsZ Bond distances, non H",
+            "RmsZ Bond angles, non H": "RmsZ Bond angles, non H",
+            "weight": "weight",
         }
         data_ref = {}
 
         with open(json_ref) as f:
             data_ref_loaded = json.load(f)
             data_ref = data_ref_loaded[-1]["data"]["summary"]
+            if geom_stats_avail:
+                for stat in geom_stats:
+                    data_ref[f"Rmsd {stat}"] = data_ref_loaded[-1]["geom"]["summary"][
+                        "r.m.s.d."
+                    ].get(stat, 0)
+                    data_ref[f"RmsZ {stat}"] = data_ref_loaded[-1]["geom"]["summary"][
+                        "r.m.s.Z"
+                    ].get(stat, 0)
+                if "weight" in data_overall_dict and len(data_ref_loaded) >= 2:
+                    data_ref["weight"] = data_ref_loaded[-1].get("weight", 0)
             if data_ref:
                 logging.info(f"Loaded reference statistics from {json_ref}")
             else:
@@ -631,8 +685,7 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
 
     distrs = {"init": {}, "final": {}}
     llweight_R1_outliers = []
-    # for stat in list(stats_avail) + stats_additional:
-    for stat in stats_avail:
+    for stat in data_overall_dict.keys():
         stat_ref = {}
         if (
             json_ref
@@ -672,6 +725,7 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
         json.dump(distrs, f, indent=2, default=json_numpy_converter)
     logging.info(f"Saved statistics to {json_filename}")
 
+    # Filter outliers based on R1 values and re-analyse the distributions
     if llweight_R1_outliers:
         distrs_filtered = {"init": {}, "final": {}}
         data_overall_filtered_dict = {}
@@ -681,7 +735,7 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
             " R1 value outliers which will be exluded from the following analysis\n"
             f" {llweight_R1_outliers if llweight_R1_outliers else ''}"
         )
-        for stat in stats_avail:
+        for stat in data_overall_dict.keys():
             data_overall_filtered_dict[stat] = [
                 val
                 for i, val in enumerate(data_overall_dict[stat])
