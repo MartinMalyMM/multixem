@@ -123,21 +123,22 @@ def sort_llweight_files(file_list):
     return sorted(file_list, key=extract_llweight_number)
 
 
-def filter_out_refined_files(mmcif_files, llweights):
+def filter_out_refined_files(files, llweights):
     """
-    Filter out refined mmcif files corresponding to outliers in R1 values.
+    Filter out refined files based on their llweight in the file name.
+    Typically used to exclude R1-value outliers.
 
     Args:
-        mmcif_files: List of refined mmcif file paths.
+        files: List of refined file paths.
         llweights: List of llweight numbers to exclude.
 
     Returns:
-        Filtered list of mmcif file paths.
+        Filtered list of file paths.
     """
     if not llweights:
-        return mmcif_files
+        return files
     filtered_files = []
-    for file in mmcif_files:
+    for file in files:
         match = re.search(r"_llweight(\d+)_", file)
         if match:
             llweight_num = int(match.group(1))
@@ -1686,7 +1687,7 @@ def main():
                 geometry_objects_ref = geometry_analysis_load(
                     st_ref, geometry_objects_ref
                 )
-            bootstrap_analyse_structures(
+            mean_b_values, b_values_distr = bootstrap_analyse_structures(
                 refined_mmcifs,
                 refined_mmcif_ref,
                 idx=0,
@@ -1727,6 +1728,8 @@ def main():
                     binner=binner,
                     mtz_ref=refined_mtz_ref,
                     n_proc=n_proc,
+                    mean_b_values=mean_b_values,
+                    mean_mean_b_value=b_values_distr["mean"],
                 )
         else:
             logging.warning(
@@ -1823,7 +1826,7 @@ def main():
                         i_group_prefix=n_groups,
                     )
                 )
-            print(_mtz_groups_i)
+            # print(_mtz_groups_i)
             mtz_groups_i.extend(_mtz_groups_i)
             n_groups += len(_mtz_groups_i)
             n_groups_this_file = len(_mtz_groups_i)
@@ -1841,8 +1844,8 @@ def main():
             # TODO: free reflections if not given
             # TODO: check that input files have FI(R?)
             # TODO: mmCIF
-        print(mtzs_merged)
-        print(labins)
+        # print(mtzs_merged)
+        # print(labins)
 
     if args.hklin:
         logging.info(f"Merged diffraction data files: {args.hklin}")
@@ -2160,7 +2163,7 @@ def main():
                     )
 
                 if os.path.splitext(model)[1] == ".cif":
-                    bootstrap_analyse_structures(
+                    mean_b_values, b_values_distr = bootstrap_analyse_structures(
                         refined_mmcifs_bootstrap,
                         refined_mmcifs[i_mtz],
                         idx=idx,
@@ -2172,7 +2175,7 @@ def main():
                         no_origin_shift=args.no_origin_shift,
                     )
                 else:
-                    bootstrap_analyse_structures(
+                    mean_b_values, b_values_distr = bootstrap_analyse_structures(
                         refined_mmcifs_bootstrap,
                         refined_mmcifs[i_mtz],
                         idx=idx,
@@ -2190,4 +2193,6 @@ def main():
                     binner=binner_master,
                     mtz_ref=refined_mtzs[i_mtz],
                     n_proc=n_proc,
+                    mean_b_values=mean_b_values,
+                    mean_mean_b_value=b_values_distr["mean"],
                 )

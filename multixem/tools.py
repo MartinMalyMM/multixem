@@ -341,7 +341,8 @@ def json_numpy_converter(o):
 
 def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefix=""):
     """
-    Scale reflections from refl2 to refl1 in resolution bins defined by binner.
+    Scale reflections in the "FWT", "PHWT", "DELFWT", "PHDELWT" columns
+    from refl2 to refl1 in resolution bins defined by binner.
 
     Args:
         refl1 (str or gemmi.Mtz or pandas.DataFrame): First reflection dataset.
@@ -396,7 +397,14 @@ def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefi
     # logging.info(f"No. unique reflections: {n_refl1} in file {mtz_file_1}")
 
     llweight_col = ["llweight"] if "llweight" in df2.columns else []
-    df2 = df2[["H", "K", "L"] + columns + llweight_col]
+    fc_phfc_cols = (
+        ["FC", "PHFC"]
+        if (  # include also FP?
+            "FC" in df2.columns and "PHFC" in df2.columns  # and "FP" in df2.columns
+        )
+        else []
+    )
+    df2 = df2[["H", "K", "L"] + columns + llweight_col + fc_phfc_cols]
     df2 = df2.dropna(subset=[f_col])  # Select only observed reflections
     if llweight_col:
         df2 = df2.dropna(subset=llweight_col)
@@ -497,7 +505,9 @@ def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefi
     )
     df["PHDELWT"] = numpy.rad2deg(numpy.arctan2(df["DELFWT2SCIM"], df["DELFWT2SCRE"]))
     df2_scaled = df[
-        ["H", "K", "L", "FWT", "PHWT", "DELFWT", "PHDELWT"] + llweight_col
+        ["H", "K", "L", "FWT", "PHWT", "DELFWT", "PHDELWT"]
+        + llweight_col
+        + fc_phfc_cols
     ].copy()
 
     if output_mtz2_prefix:

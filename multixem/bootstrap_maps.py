@@ -15,8 +15,37 @@ from .tools import (
 )
 
 
+def bscale_reflections_fc(
+    df: pandas.DataFrame,
+    delta_b: float,
+) -> pandas.DataFrame:
+    """
+    Scale the FC amplitudes in the DataFrame `df` according to the B-value.
+    s^2 has to be pre-calculated and present in the DataFrame as a column named "s2".
+
+    Args:
+        df (pandas.DataFrame): DataFrame containing reflections.
+        delta_b (float): delta B-value for scaling.
+
+    Returns:
+        pandas.DataFrame: DataFrame with scaled FC values.
+    """
+    df["bscale_factor"] = numpy.exp(-delta_b * df["s2"] / 4)
+    df["FC"] *= df["bscale_factor"]
+    df.drop(columns=["bscale_factor"], inplace=True)
+
+    return df
+
+
 def bootstrap_mean_map(
-    refined_mtzs, idx=0, prefix="", binner=None, mtz_ref="", n_proc=4
+    refined_mtzs: list[str],
+    idx: int = 0,
+    prefix: str = "",
+    binner: gemmi.Binner = None,
+    mtz_ref: str = "",
+    n_proc: int = 4,
+    mean_b_values: numpy.ndarray = numpy.array([]),
+    mean_mean_b_value: float = 0.0,
 ):
     """
     Calculate the mean 2Fo-Fc and Fo-Fc maps from refined MTZ files after bootstrapping.
@@ -29,25 +58,30 @@ def bootstrap_mean_map(
         prefix (str): Prefix for the output filename.
         binner (gemmi.Binner): Binner object for resolution bins (optional).
         mtz_ref (str): Reference MTZ file for scaling (optional).
+        n_proc (int): Number of parallel processes to use.
+        mean_b_values (list of float): Mean B-values for each data set for
+                                       mean map scaling (optional).
+        mean_mean_b_value (float): Mean of the mean B-values for
+                                   mean map scaling (optional).
 
     Returns:
         None: Writes the mean maps in
-            '{prefix}group{idx}_bootstrap_mean_map_all.mtz'
-            '{prefix}group{idx}_bootstrap_mean_map_llweight0.mtz'
-            '{prefix}group{idx}_bootstrap_mean_map_llweightpos.mtz'
-            '{prefix}group{idx}_bootstrap_mean_map_llweightposw.mtz'
+            '{prefix}[group{idx}]_bootstrap_mean_map_all.mtz'
+            '{prefix}[group{idx}]_bootstrap_mean_map_llweight0.mtz'
+            '{prefix}[group{idx}]_bootstrap_mean_map_llweightpos.mtz'
+            '{prefix}[group{idx}]_bootstrap_mean_map_llweightposw.mtz'
     """
 
     def merge_reflections_bootstrap(
-        df_master,
-        mtz_first=None,
-        prefix="",
-        suffix="",
-        idx=0,
-        binner=None,
-        mtz_ref="",
-        do_llweighting=False,
-    ):
+        df_master: pandas.DataFrame,
+        mtz_first: gemmi.Mtz = None,
+        prefix: str = "",
+        suffix: str = "",
+        idx: int = 0,
+        binner: gemmi.Binner = None,
+        mtz_ref: str = "",
+        do_llweighting: bool = False,
+    ) -> pandas.DataFrame:
         """
         Merge reflections from the master DataFrame and calculate mean maps.
 
@@ -58,6 +92,9 @@ def bootstrap_mean_map(
             prefix (str): Prefix for the output filename.
             suffix (str): Suffix for the output filename.
             idx (int): Index for naming the output file.
+            binner (gemmi.Binner): Binner object for resolution bins.
+            mtz_ref (str): Reference MTZ file for scaling.
+            do_llweighting (bool): Whether to apply weighting based on llweight column
 
         Returns:
             pandas.DataFrame: DataFrame with mean maps.
@@ -69,52 +106,72 @@ def bootstrap_mean_map(
                 (int(h), int(k), int(l))  # noqa: E741
             )"""
 
-        def calculate_mean_std_count(df, do_llweighting=False):
+        def calculate_mean_std_count(
+            df: pandas.DataFrame,
+            do_llweighting: bool = False,
+        ) -> pandas.DataFrame:
             """Calculate mean and standard deviation and number of structure factors."""
 
-            def stats_func(miller_index_df, column_name, do_llweighting=do_llweighting):
+            def stats_func(
+                miller_index_df: pandas.DataFrame,
+                column_name: str,
+                do_llweighting: bool = do_llweighting,
+            ) -> pandas.Series:
                 """
                 Compute weighted or unweighted mean, std, and count
                 for one Miller index.
 
                 Args:
                     miller_index_df (pandas.DataFrame): DataFrame for
-                        a specific Miller index.
+                                                        a particular Miller index.
                     column_name (str): Column name to compute stats on.
                     do_llweighting (bool): Whether to apply llweighting.
 
                 Returns:
                     pandas.Series: Series containing mean, std, and count.
                 """
-                x = miller_index_df[column_name].values
-
+                x = numpy.asarray(
+                    miller_index_df[column_name].to_numpy(),
+                    dtype=numpy.complex128,
+                )
                 if len(x) <= 1:
                     return pandas.Series([numpy.mean(x), 0.0, len(x)])
 
+                mean_val: complex
+                real_mean: float
+                imag_mean: float
+                real_var: float
+                imag_var: float
                 if do_llweighting and "llweight" in miller_index_df.columns:
                     # Weighted mean and variance
-                    w = miller_index_df["llweight"].values
+                    w = numpy.asarray(
+                        miller_index_df["llweight"].to_numpy(),
+                        dtype=numpy.float64,
+                    )
                     w = w / numpy.sum(w)  # normalize weights
-                    mean_val = numpy.sum(w * x)
-
-                    real_mean = numpy.real(mean_val)
-                    imag_mean = numpy.imag(mean_val)
+                    mean_val = complex(numpy.sum(w * x))
+                    real_mean = float(numpy.real(mean_val))
+                    imag_mean = float(numpy.imag(mean_val))
                     real_part = numpy.real(x)
                     imag_part = numpy.imag(x)
-                    real_var = numpy.sum(w * (real_part - real_mean) ** 2)
-                    imag_var = numpy.sum(w * (imag_part - imag_mean) ** 2)
+                    real_var = float(numpy.sum(w * (real_part - real_mean) ** 2))
+                    imag_var = float(numpy.sum(w * (imag_part - imag_mean) ** 2))
                 else:
                     # Unweighted mean and variance
-                    mean_val = numpy.mean(x)
-                    real_mean = numpy.real(mean_val)
-                    imag_mean = numpy.imag(mean_val)
+                    mean_val = complex(numpy.mean(x))
+                    real_mean = float(numpy.real(mean_val))
+                    imag_mean = float(numpy.imag(mean_val))
                     real_part = numpy.real(x)
                     imag_part = numpy.imag(x)
-                    real_var = numpy.var(real_part, ddof=1, mean=real_mean)
-                    imag_var = numpy.var(imag_part, ddof=1, mean=imag_mean)
+                    real_var = float(numpy.var(real_part, ddof=1, mean=real_mean))
+                    imag_var = float(numpy.var(imag_part, ddof=1, mean=imag_mean))
 
                 std_val = numpy.sqrt(real_var + imag_var)
-                return pandas.Series([mean_val, std_val, len(x)])
+
+                return pandas.Series(
+                    [mean_val, std_val, len(x)],
+                    dtype=object,
+                )
 
             # F_complex: apply stats_func to each Miller index
             df_mean_fwt = df.groupby(["H", "K", "L"], as_index=False).apply(
@@ -123,14 +180,17 @@ def bootstrap_mean_map(
             )
             # This converts Series to DataFrame
             # df_mean_fwt = df_mean_fwt.unstack(level=-1)
-            df_mean_fwt.columns = [
-                "H",
-                "K",
-                "L",
-                "F_complex_mean",
-                "SIGFWT",
-                "FWTcount",
-            ]
+            df_mean_fwt = df_mean_fwt.set_axis(
+                [
+                    "H",
+                    "K",
+                    "L",
+                    "F_complex_mean",
+                    "SIGFWT",
+                    "FWTcount",
+                ],
+                axis="columns",
+            )
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", numpy.exceptions.ComplexWarning)
                 df_mean_fwt["SIGFWT"] = df_mean_fwt["SIGFWT"].astype(numpy.float32)
@@ -144,14 +204,17 @@ def bootstrap_mean_map(
             )
             # This converts Series to DataFrame
             # df_mean_delfwt = df_mean_delfwt.unstack(level=-1)
-            df_mean_delfwt.columns = [
-                "H",
-                "K",
-                "L",
-                "DEL_F_complex_mean",
-                "SIGDELFWT",
-                "DELFWTcount",
-            ]
+            df_mean_delfwt = df_mean_delfwt.set_axis(
+                [
+                    "H",
+                    "K",
+                    "L",
+                    "DEL_F_complex_mean",
+                    "SIGDELFWT",
+                    "DELFWTcount",
+                ],
+                axis="columns",
+            )
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", numpy.exceptions.ComplexWarning)
                 df_mean_delfwt["SIGDELFWT"] = df_mean_delfwt["SIGDELFWT"].astype(
@@ -162,10 +225,42 @@ def bootstrap_mean_map(
                 )
             df_mean_delfwt = df_mean_delfwt.reset_index()
 
+            # mean FC for 2 Fo-<Fc> and Fo-<Fc> maps
+            # FC_complex: apply stats_func to each Miller index
+            df_mean_fc = df.groupby(["H", "K", "L"], as_index=False).apply(
+                lambda d: stats_func(d, "FC_complex", do_llweighting=do_llweighting),
+                include_groups=False,
+            )
+            df_mean_fc = df_mean_fc.set_axis(
+                [
+                    "H",
+                    "K",
+                    "L",
+                    "FC_complex",
+                    "SIGFC_complex",
+                    "FC_complexcount",
+                ],
+                axis="columns",
+            )
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", numpy.exceptions.ComplexWarning)
+                df_mean_fc["SIGFC_complex"] = df_mean_fc["SIGFC_complex"].astype(
+                    numpy.float32
+                )
+                df_mean_fc["FC_complexcount"] = df_mean_fc["FC_complexcount"].astype(
+                    numpy.int32
+                )
+            df_mean_fc = df_mean_fc.reset_index()
+
             df_mean_fwt_delfwt = df_mean_fwt.merge(
                 df_mean_delfwt, on=["H", "K", "L"], how="outer"
             )
-            return df_mean_fwt_delfwt
+            df_mean_all = df_mean_fwt_delfwt.merge(
+                df_mean_fc, on=["H", "K", "L"], how="outer"
+            )
+            # df_mean_all = df_mean_all.reindex(df_ref.index)
+
+            return df_mean_all
 
             """
             # old code which treated centric and acentric reflections differently
@@ -221,13 +316,26 @@ def bootstrap_mean_map(
         df_master = df_master.astype({col: "int32" for col in ["H", "K", "L"]})
         df_mean = calculate_mean_std_count(df_master, do_llweighting=do_llweighting)
 
+        """
+        if mtz_ref:  # TODO use Fo data
+            mtz_ref_read = gemmi.read_mtz_file(mtz_ref)
+            col_labels_ref = mtz_ref_read.column_labels()
+            df_ref = pandas.DataFrame(data=mtz_ref_read.array, columns=col_labels_ref)
+            df_ref = df_ref.astype({col: "int32" for col in ["H", "K", "L"]})
+            df_ref = df_ref[["H", "K", "L", "FP"]]
+        else:
+            df_ref = pandas.DataFrame()
+        """
+
         # Convert to amplitude and phase
         df_mean["FWT"] = numpy.abs(df_mean["F_complex_mean"])
         df_mean["PHWT"] = numpy.rad2deg(numpy.angle(df_mean["F_complex_mean"]))
         df_mean["DELFWT"] = numpy.abs(df_mean["DEL_F_complex_mean"])
         df_mean["PHDELWT"] = numpy.rad2deg(numpy.angle(df_mean["DEL_F_complex_mean"]))
+        df_mean["FC"] = numpy.abs(df_mean["FC_complex"])
+        df_mean["PHFC"] = numpy.rad2deg(numpy.angle(df_mean["FC_complex"]))
 
-        if mtz_first and prefix and suffix and idx:
+        if mtz_first and prefix and suffix:
             # Save the mean maps as an MTZ file
             columns = {
                 "FWT": "F",
@@ -238,28 +346,35 @@ def bootstrap_mean_map(
                 "PHDELWT": "P",
                 "SIGDELFWT": "Q",
                 "DELFWTcount": "I",
+                "FC": "F",
+                "PHFC": "P",
             }
+            """
+            if mtz_ref and not df_ref.empty:
+                # should drop reflections without FP...
+                df_mean["PHTWOFPFC"] = df_mean["PHFC"]
+                df_mean["PHFPFC"] = df_mean["PHTWOFPFC"]
+                df_mean["TWOFPFC"] = 2 * df_ref["FP"] - df_mean["FC"]
+                df_mean["FPFC"] = df_ref["FP"] - df_mean["FC"]
+                columns.update(
+                    {
+                        "TWOFPFC": "F",
+                        "PHTWOFPFC": "P",
+                        # "SIGTWOFPFC": "Q",
+                        # "TWOFPFCcount": "I",
+                        "FPFC": "F",
+                        "PHFPFC": "P",
+                        # "SIGFPFC": "Q",
+                    }
+                )
+            """
             mtz_filename = (
                 f"{prefix}group{idx}_bootstrap_mean_map{suffix}.mtz"
                 if idx
                 else f"{prefix}bootstrap_mean_map{suffix}.mtz"
             )
             write_mtz_from_df(
-                df_mean[
-                    [
-                        "H",
-                        "K",
-                        "L",
-                        "FWT",
-                        "PHWT",
-                        "SIGFWT",
-                        "FWTcount",
-                        "DELFWT",
-                        "PHDELWT",
-                        "SIGDELFWT",
-                        "DELFWTcount",
-                    ]
-                ],
+                df_mean[["H", "K", "L"] + list(columns.keys())],
                 mtz_first,
                 columns,
                 filename=mtz_filename,
@@ -430,8 +545,9 @@ def bootstrap_mean_map(
 
         return df_scaled
 
-    logging.info(f"Loading {len(refined_mtzs)} density maps...")
+    logging.info(f"\nLoading {len(refined_mtzs)} density maps...")
     columns_selected = ["H", "K", "L", "FWT", "PHWT", "DELFWT", "PHDELWT", "llweight"]
+    columns_selected += ["FC", "PHFC"]  # include also FP?
     if binner:
         if mtz_ref:
             logging.info(f"Scaling reflections to {mtz_ref}")
@@ -448,15 +564,16 @@ def bootstrap_mean_map(
         Worker function to scale one MTZ file for bootstrap mean map calculation.
         Returns (df, bin_stats) or (None, None) on failure.
         """
-        mtz_file, columns_selected, binner, mtz_ref = worker_args
+        mtz_file, columns_selected, binner, mtz_ref, delta_b = worker_args
         try:
             mtz = gemmi.read_mtz_file(mtz_file)
             col_labels = mtz.column_labels()
             df = pandas.DataFrame(data=mtz.array, columns=col_labels)
             df = df[columns_selected]
             if df.empty:
+                columns_selected_str = ", ".join(columns_selected)
                 logging.warning(
-                    f"No reflections in {mtz_file} for FWT/PHWT/DELFWT/PHDELWT."
+                    f"No reflections in {mtz_file} for columns {columns_selected_str}"
                 )
                 return None, None
 
@@ -467,6 +584,13 @@ def bootstrap_mean_map(
                 df, bin_stats = scale_reflections(
                     mtz_ref, df, binner, output_mtz2_prefix=mtz_file_base
                 )
+                if delta_b:
+                    # Scale FC values according to delta_b for this MTZ file
+                    hkl_array = numpy.array(df[["H", "K", "L"]].values, numpy.int32)
+                    # TODO: now suboptimal: calculate s^2 for each MTZ...
+                    df["s2"] = binner.cell.calculate_1_d2_array(hkl_array)
+                    df = bscale_reflections_fc(df, delta_b)
+                    df.drop(columns=["s2"], inplace=True)
 
             df = df.astype({name: "int32" for name in ["H", "K", "L"]})
             return df, bin_stats
@@ -478,8 +602,20 @@ def bootstrap_mean_map(
             traceback.print_exc()
             return None, None
 
+    if mean_mean_b_value:
+        if len(mean_b_values) != len(refined_mtzs):
+            logging.warning(
+                "Length of mean_b_values does not match number of refined MTZs. "
+                "Skipping B-value scaling."
+            )
+            delta_bs = [0.0] * len(refined_mtzs)
+        else:
+            delta_bs = [b - mean_mean_b_value for b in mean_b_values]
+    else:
+        delta_bs = [0.0] * len(refined_mtzs)
     worker_args_list = [
-        (mtz_file, columns_selected, binner, mtz_ref) for mtz_file in refined_mtzs
+        (mtz_file, columns_selected, binner, mtz_ref, delta_b)
+        for mtz_file, delta_b in zip(refined_mtzs, delta_bs)
     ]
     df_list = []
     bin_stats_bootstrap_scale = []
@@ -520,13 +656,18 @@ def bootstrap_mean_map(
                 f"Could not write bootstrap map scaling stats JSON file: {e}"
             )
 
-    # Convert FWT & PHWT and DELFWT & PHDELWT to complex numbers and calculate mean
+    logging.info("")
+    # Convert FWT&PHWT, DELFWT&PHDELWT and FC&PHFC to complex numbers
     df_master["F_complex"] = df_master["FWT"] * numpy.exp(
         1j * numpy.deg2rad(df_master["PHWT"])
     )
     df_master["DEL_F_complex"] = df_master["DELFWT"] * numpy.exp(
         1j * numpy.deg2rad(df_master["PHDELWT"])
     )
+    df_master["FC_complex"] = df_master["FC"] * numpy.exp(
+        1j * numpy.deg2rad(df_master["PHFC"])
+    )
+
     # print(df_master.head(10))
     # print(df_master[["H", "K", "L", "FWT", "PHWT"]].describe())
     df_master_llweight_0 = df_master[df_master["llweight"] == 0].copy()

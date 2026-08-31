@@ -955,7 +955,10 @@ def bootstrap_analyse_structures(
     geometry_cids_file="",
     geometry_objects_ref=[],
     no_origin_shift=False,
-):
+) -> tuple[numpy.ndarray, dict]:
+    obj_occ_refs: list[dict[str, list]] = []
+    obj_bond_refs: list[dict[str, list]] = []
+    obj_angle_torsion_refs: list[dict[str, list]] = []
     """
     Analyse structure models (mmCIF files) to compute mean coordinates and B-factors.
     The structure models are expected to be after refinement against a bootstrapped
@@ -1023,16 +1026,13 @@ def bootstrap_analyse_structures(
         if skip_hydrogen:
             logging.info("(Not taking into account hydrogen atoms)")
 
-        ref_b_values = []
         if len(st_first_cras) != len(st_ref_cras):
             logging.warning(
                 f"Inconsistent reference structure {mmcif_ref}"
                 f" ({len(st_ref_cras)} atoms) with structure models after bootstrapping"
                 f" ({len(st_first_cras)} atoms)"
             )
-        for cra_ref in st_ref_cras:
-            ref_b_values.append(cra_ref.atom.b_iso)
-        ref_b_values = numpy.array(ref_b_values)
+        ref_b_values = [cra.atom.b_iso for cra in st_ref_cras]
         ref_b_value = {"median B-value": numpy.median(ref_b_values)}
 
         if not no_origin_shift:
@@ -1343,7 +1343,7 @@ def bootstrap_analyse_structures(
     std_occupancies = numpy.std(occupancies, ddof=1, axis=1)  # shape: (n_atoms,)
 
     mean_b_values_per_structure = numpy.mean(b_values, axis=0)  # shape: (n_structures,)
-    plot_histogram(
+    b_values_distr, _, _ = plot_histogram(
         mean_b_values_per_structure, "Average B-value", ref_b_value, idx, prefix
     )
 
@@ -1566,4 +1566,5 @@ def bootstrap_analyse_structures(
         logging.warning(
             "Saving the mean structure in the PDB format was not successful."
         )
-    return
+
+    return mean_b_values_per_structure, b_values_distr
