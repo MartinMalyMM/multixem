@@ -610,7 +610,8 @@ def bootstrap_mean_map(
             )
             delta_bs = [0.0] * len(refined_mtzs)
         else:
-            delta_bs = [b - mean_mean_b_value for b in mean_b_values]
+            # Compensate for differences in mean B-values between structures
+            delta_bs = [mean_mean_b_value - b for b in mean_b_values]
     else:
         delta_bs = [0.0] * len(refined_mtzs)
     worker_args_list = [
