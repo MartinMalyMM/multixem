@@ -1,3 +1,4 @@
+include multixem/data/*.json
 prune dist
 prune build
 prune __venv__
