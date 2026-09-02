@@ -48,7 +48,7 @@ exclude = [
 ]
 
 [tool.setuptools.package-data]
-multixem = ["data/*.json"]
+multixem = ["data/*.json", "scripts/*.py"]
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
