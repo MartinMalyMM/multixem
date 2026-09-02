@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-09-02
+- Fixed bug: include script files
+
 ## [0.3.2] - 2026-09-02
 - Dynamic versioning
 - Fixed bug: include data files
