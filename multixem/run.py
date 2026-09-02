@@ -1954,7 +1954,6 @@ def main():
     if args.hklin_free:
         logging.info(f"Free R flag data file: {args.hklin_free}")
         mtz_free = gemmi.read_mtz_file(args.hklin_free)
-        mtzs_merged.append(args.hklin_free)
         dmin_free = mtz_free.resolution_high()
         dmax_free = mtz_free.resolution_low()
         # Check for None or nan values and recalculate if necessary
