@@ -1728,6 +1728,12 @@ def main():
                     mtz_ref=refined_mtz_ref,
                     n_proc=n_proc,
                 )
+            else:
+                logging.warning(
+                    f"No reference MTZ file found with a filename template"
+                    f" {args.file_name_template}_refine.mtz ."
+                    " Skipping mean map calculation."
+                )
         else:
             logging.warning(
                 f"No refined MTZ files found with a filename template"
