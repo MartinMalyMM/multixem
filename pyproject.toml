@@ -1,6 +1,6 @@
 [project]
 name = "multixem"
-version = "0.3.1"
+dynamic = ["version"]
 description = "Refinement pipeline for multiple data sets in structure biology"
 readme = "README.md"
 requires-python = ">=3.9,<4.0"
@@ -16,6 +16,9 @@ dependencies = [
 
 [project.scripts]
 multixem = "multixem.run:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "multixem.__version__" }
 
 [project.optional-dependencies]
 dev = [
@@ -43,6 +46,9 @@ exclude = [
     "docs_backup*",
     "scripts_backup*",
 ]
+
+[tool.setuptools.package-data]
+multixem = ["data/*.json"]
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
