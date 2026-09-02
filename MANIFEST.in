@@ -1,4 +1,6 @@
 include multixem/data/*.json
+include multixem/scripts/*.py
+
 prune dist
 prune build
 prune __venv__
@@ -11,7 +13,6 @@ prune docs_backup
 prune scripts_backup
 prune multixem_tmp
 prune multixem_*
-prune multixem/scripts
 prune multixem/prototypes
 
 global-exclude *.py[cod]
