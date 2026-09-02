@@ -166,7 +166,11 @@ def floating_origin_detect(st: gemmi.Structure):
         )
         with Rrot_sum_eigen_path.open("r", encoding="utf-8") as f:
             point_group_results = json.load(f)
-    except FileNotFoundError:
+    except (FileNotFoundError, ModuleNotFoundError) as e:
+        logging.warning(
+            f"Could not load point group results Rrot_sum_eigen.json"
+            f" for origin shift analysis: {e}"
+        )
         from multixem.scripts.Rrot_sum_eigen import get_Rrot_sum_eigen
 
         point_group_results = get_Rrot_sum_eigen()
