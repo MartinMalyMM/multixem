@@ -425,8 +425,7 @@ def create_parser():
     )
     mean_parser.add_argument(
         "--calculate_mean_map",
-        type=bool,
-        default=False,
+        action="store_true",
         help="Calculate mean maps.",
     )
     mean_parser.add_argument(
