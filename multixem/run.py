@@ -1730,6 +1730,12 @@ def main():
                     mean_b_values=mean_b_values,
                     mean_mean_b_value=b_values_distr["mean"],
                 )
+            else:
+                logging.warning(
+                    f"No reference MTZ file found with a filename template"
+                    f" {args.file_name_template}_refine.mtz ."
+                    " Skipping mean map calculation."
+                )
         else:
             logging.warning(
                 f"No refined MTZ files found with a filename template"
@@ -1950,7 +1956,6 @@ def main():
     if args.hklin_free:
         logging.info(f"Free R flag data file: {args.hklin_free}")
         mtz_free = gemmi.read_mtz_file(args.hklin_free)
-        mtzs_merged.append(args.hklin_free)
         dmin_free = mtz_free.resolution_high()
         dmax_free = mtz_free.resolution_low()
         # Check for None or nan values and recalculate if necessary
