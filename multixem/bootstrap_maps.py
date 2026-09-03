@@ -173,37 +173,48 @@ def bootstrap_mean_map(
                     dtype=object,
                 )
 
-            # F_complex: apply stats_func to each Miller index and expand results
-            df_mean_fwt = df.groupby(["H", "K", "L"]).apply(
-                lambda d: result_per_refl(d, "F_complex", do_llweighting=do_llweighting)
+            # F_complex: apply stats_func to each Miller index
+            df_mean_fwt = df.groupby(["H", "K", "L"], as_index=False).apply(
+                lambda d: result_per_refl(
+                    d, "F_complex", do_llweighting=do_llweighting
+                ),
+                include_groups=False,
             )
-            # Reset index to turn group keys into columns and get a 'stats' column
-            df_mean_fwt = df_mean_fwt.reset_index()
-            df_mean_fwt = df_mean_fwt.rename(columns={0: "result"})
-            # Expand the result (mean, std, count) into separate columns
-            df_mean_fwt[["F_complex_mean", "SIGFWT", "FWTcount"]] = pandas.DataFrame(
-                df_mean_fwt["result"].tolist(), index=df_mean_fwt.index
+            df_mean_fwt = df_mean_fwt.set_axis(
+                [
+                    "H",
+                    "K",
+                    "L",
+                    "F_complex_mean",
+                    "SIGFWT",
+                    "FWTcount",
+                ],
+                axis="columns",
             )
-            df_mean_fwt = df_mean_fwt.drop(columns=["result"])
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", numpy.exceptions.ComplexWarning)
                 df_mean_fwt["SIGFWT"] = df_mean_fwt["SIGFWT"].astype(numpy.float32)
                 df_mean_fwt["FWTcount"] = df_mean_fwt["FWTcount"].astype(numpy.int32)
+            df_mean_fwt = df_mean_fwt.reset_index()
 
             # DEL_F_complex: apply stats_func to each Miller index
-            df_mean_delfwt = df.groupby(["H", "K", "L"]).apply(
+            df_mean_delfwt = df.groupby(["H", "K", "L"], as_index=False).apply(
                 lambda d: result_per_refl(
                     d, "DEL_F_complex", do_llweighting=do_llweighting
-                )
+                ),
+                include_groups=False,
             )
-            df_mean_delfwt = df_mean_delfwt.reset_index()
-            df_mean_delfwt = df_mean_delfwt.rename(columns={0: "result"})
-            df_mean_delfwt[["DEL_F_complex_mean", "SIGDELFWT", "DELFWTcount"]] = (
-                pandas.DataFrame(
-                    df_mean_delfwt["result"].tolist(), index=df_mean_delfwt.index
-                )
+            df_mean_delfwt = df_mean_delfwt.set_axis(
+                [
+                    "H",
+                    "K",
+                    "L",
+                    "DEL_F_complex_mean",
+                    "SIGDELFWT",
+                    "DELFWTcount",
+                ],
+                axis="columns",
             )
-            df_mean_delfwt = df_mean_delfwt.drop(columns=["result"])
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", numpy.exceptions.ComplexWarning)
                 df_mean_delfwt["SIGDELFWT"] = df_mean_delfwt["SIGDELFWT"].astype(
@@ -212,20 +223,27 @@ def bootstrap_mean_map(
                 df_mean_delfwt["DELFWTcount"] = df_mean_delfwt["DELFWTcount"].astype(
                     numpy.int32
                 )
+            df_mean_delfwt = df_mean_delfwt.reset_index()
 
             # mean FC for 2 Fo-<Fc> and Fo-<Fc> maps
             # FC_complex: apply result_per_refl to each Miller index
-            df_mean_fc = df.groupby(["H", "K", "L"]).apply(
+            df_mean_fc = df.groupby(["H", "K", "L"], as_index=False).apply(
                 lambda d: result_per_refl(
                     d, "FC_complex", do_llweighting=do_llweighting
-                )
+                ),
+                include_groups=False,
             )
-            df_mean_fc = df_mean_fc.reset_index()
-            df_mean_fc = df_mean_fc.rename(columns={0: "result"})
-            df_mean_fc[["FC_complex", "SIGFC_complex", "FC_complexcount"]] = (
-                pandas.DataFrame(df_mean_fc["result"].tolist(), index=df_mean_fc.index)
+            df_mean_fc = df_mean_fc.set_axis(
+                [
+                    "H",
+                    "K",
+                    "L",
+                    "FC_complex",
+                    "SIGFC_complex",
+                    "FC_complexcount",
+                ],
+                axis="columns",
             )
-            df_mean_fc = df_mean_fc.drop(columns=["result"])
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", numpy.exceptions.ComplexWarning)
                 df_mean_fc["SIGFC_complex"] = df_mean_fc["SIGFC_complex"].astype(
@@ -234,6 +252,7 @@ def bootstrap_mean_map(
                 df_mean_fc["FC_complexcount"] = df_mean_fc["FC_complexcount"].astype(
                     numpy.int32
                 )
+            df_mean_fc = df_mean_fc.reset_index()
 
             df_mean_fwt_delfwt = df_mean_fwt.merge(
                 df_mean_delfwt, on=["H", "K", "L"], how="outer"
