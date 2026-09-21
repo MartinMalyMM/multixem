@@ -17,7 +17,7 @@ def bootstrap_dataset(
     random_weights: bool = False,
     col_free: str = "",
     fraction_zero: float = 0.05,
-):
+) -> tuple[list[str], str]:
     """
     Bootstrap the dataset from an MTZ file and save the results in new MTZ files.
 
@@ -38,6 +38,8 @@ def bootstrap_dataset(
         fraction zero (float): Sets fraction of reflections with zero weight [0.0, 1.0)
     Returns:
         list of str: List of output MTZ filenames created during bootstrapping.
+        str: Path to the MTZ file without reflections without data
+             (or the original MTZ file if no filtering is applied).
     """
 
     def resample(
@@ -45,7 +47,7 @@ def bootstrap_dataset(
         seed: int = 1001,
         draw_factor: float = 1.0,
         column_name: str = "llweight",
-    ):
+    ) -> pandas.Series:
         """
         Create a DataFrame`llweight` column using resampling with replacement.
 
@@ -79,7 +81,7 @@ def bootstrap_dataset(
         zero_mask: numpy.ndarray,
         seed: int = 1001,
         column_name: str = "llweight",
-    ):
+    ) -> pandas.Series:
         """
         Create a DataFrame`llweight` column using random resampling and keeping
         a fraction of zero weights.
@@ -153,6 +155,7 @@ def bootstrap_dataset(
         write_mtz_from_df(df, mtz, columns=columns_dict, filename=mtz_filtered_name)
         n_unique_orig = df.shape[0]
     else:
+        mtz_filtered_name = mtz_file
         warnings.warn(
             f"Column {labin} not found in MTZ file {mtz_file}. "
             f"Using all reflections for bootstrapping."
@@ -192,9 +195,9 @@ def bootstrap_dataset(
 
     completeness_list = []
     for i, seed in enumerate(seeds):
+        parts: list[pandas.Series] = []
         if random_weights:
             assert len(zero_mask_bins) == len(bins)
-            parts = []
             for b, bin in enumerate(bins):
                 w = resample_random(
                     len(bin),
@@ -204,7 +207,6 @@ def bootstrap_dataset(
                 parts.append(pandas.Series(w.values, index=bin.index, name="llweight"))
             df_bootstrap1_weight = pandas.concat(parts).sort_index()
         else:
-            parts = []
             for bin in bins:
                 w = resample(len(bin), seed, draw_factor)
                 parts.append(pandas.Series(w.values, index=bin.index, name="llweight"))
@@ -307,4 +309,4 @@ def bootstrap_dataset(
         completeness_orig = n_unique_orig / n_unique_expected
         logging.info(f"Completeness of the original dataset: {completeness_orig:.2%}\n")
 
-    return mtzs_out
+    return mtzs_out, mtz_filtered_name

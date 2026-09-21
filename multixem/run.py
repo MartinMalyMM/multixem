@@ -2089,7 +2089,7 @@ def main():
                         st_ref, geometry_objects_ref
                     )
                     # restraints_file = unrestrain(geometry_objects_ref, model)
-                mtzs_bootstrap = bootstrap_dataset(
+                mtzs_bootstrap, mtz_in_filtered = bootstrap_dataset(
                     mtz_in,
                     binner_master,
                     seeds=range(1001, 1001 + n_samples),
@@ -2109,7 +2109,7 @@ def main():
                         _,
                         _,
                     ) = run_servalcat_refine(
-                        [mtz_in],
+                        [mtz_in_filtered],
                         [labin],
                         input_model_s,
                         mtzs_free=mtzs_bootstrap,
@@ -2137,7 +2137,7 @@ def main():
                     refined_mtzs_bootstrap,
                     refined_jsons_bootstrap,
                 ) = run_servalcat_refine(
-                    [mtz_in],
+                    [mtz_in_filtered],
                     [labin],
                     input_model_s,
                     mtzs_free=mtzs_bootstrap,
