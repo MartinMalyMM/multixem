@@ -616,8 +616,11 @@ def bootstrap_mean_map(
         mtz_ref,
         do_llweighting=True,
     )
-    merge_reflections_bootstrap(
-        df_master_llweight_0, mtz_first, prefix, "_llweight0", idx, binner, mtz_ref
-    )
+    try:
+        merge_reflections_bootstrap(
+            df_master_llweight_0, mtz_first, prefix, "_llweight0", idx, binner, mtz_ref
+        )
+    except (ValueError, KeyError) as e:
+        logging.warning(f"Error occurred while processing llweight=0 reflections: {e}")
 
     return
