@@ -144,18 +144,25 @@ def bootstrap_dataset(
     }
 
     n_unique_orig = 0
-    # i_col = "IMEAN"  # can be just "I" after servalcat fw or sigmaa, or IMEAN?
-    # dropping reflections can cause problems, let's save the filtered dataset as MTZ
+    mtz_filtered_name = mtz_file
     if labin and labin.split(",")[0] in df.columns:
-        df = df.dropna(subset=[labin.split(",")[0]])
-        # Save the filtered dataset as MTZ, preserving all original columns
-        mtz_filtered_name = (
-            f"{os.path.splitext(os.path.basename(mtz_file))[0]}_filtered.mtz"
-        )
-        write_mtz_from_df(df, mtz, columns=columns_dict, filename=mtz_filtered_name)
         n_unique_orig = df.shape[0]
+        df = df.dropna(subset=[labin.split(",")[0]])
+        n_unique_after_drop = df.shape[0]
+        if n_unique_after_drop < n_unique_orig:
+            # Drop reflections without data and
+            # save the filtered dataset as MTZ, preserving all original columns
+            mtz_filtered_name = (
+                f"{os.path.splitext(os.path.basename(mtz_file))[0]}_filtered.mtz"
+            )
+            write_mtz_from_df(df, mtz, columns=columns_dict, filename=mtz_filtered_name)
+            logging.info(
+                f"Filtered {n_unique_orig - n_unique_after_drop} reflections"
+                f" with missing data in {labin} from {mtz_file}"
+                f" and saved to {mtz_filtered_name}"
+            )
+            n_unique_orig = n_unique_after_drop
     else:
-        mtz_filtered_name = mtz_file
         warnings.warn(
             f"Column {labin} not found in MTZ file {mtz_file}. "
             f"Using all reflections for bootstrapping."
