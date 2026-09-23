@@ -683,9 +683,6 @@ def bootstrap_mean_map(
         df_master, mtz_first, prefix, "_all", idx, binner, mtz_ref
     )
     merge_reflections_bootstrap(
-        df_master_llweight_0, mtz_first, prefix, "_llweight0", idx, binner, mtz_ref
-    )
-    merge_reflections_bootstrap(
         df_master_llweight_pos, mtz_first, prefix, "_llweightpos", idx, binner, mtz_ref
     )
     merge_reflections_bootstrap(
@@ -697,6 +694,9 @@ def bootstrap_mean_map(
         binner,
         mtz_ref,
         do_llweighting=True,
+    )
+    merge_reflections_bootstrap(
+        df_master_llweight_0, mtz_first, prefix, "_llweight0", idx, binner, mtz_ref
     )
 
     return
