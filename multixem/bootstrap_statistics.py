@@ -1,4 +1,5 @@
 # coding: utf-8
+from typing import Union
 import os
 import json
 import logging
@@ -15,7 +16,7 @@ from .tools import filename_replace_char, json_numpy_converter
 matplotlib.use("Agg")
 
 
-def match_sigfigs(value, ref):
+def match_sigfigs(value: Union[float, int], ref: Union[float, int]) -> str:
     """Format `value` to have the same number of significant figures as `ref`."""
     if ref == 0:
         return f"{value:.2f}"
@@ -24,17 +25,21 @@ def match_sigfigs(value, ref):
 
 
 def df_scatter_plot(
-    df, x_cols, y_cols_groups, filename="scatter_plot.png", per_element=False
+    df: Union[pandas.DataFrame, str],
+    x_cols: list[str],
+    y_cols_groups: list[list[str]],
+    filename: str = "scatter_plot.png",
+    per_element: bool = False,
 ):
     """
     Create multiple scatter subplots from a DataFrame and save as PNG.
 
     Args:
         df (pandas.DataFrame or str or file stream): DataFrame or a CSV file.
-        x_cols (list of str): Column names for x-axis for each subplot.
+        x_cols (list[str]): Column names for x-axis for each subplot.
                               If per_element=True,
                               x_cols should be 'atomic_number' or 'atom_id'.
-        y_cols_groups (list of list of str): Each sublist is a group of
+        y_cols_groups (list[list[str]]): Each sublist is a group of
                                              y columns for one subplot.
         filename (str): Output PNG filename.
         per_element (bool): If True, create separate plots for each atom.
@@ -76,7 +81,6 @@ def df_scatter_plot(
         df_filt = df[combined_mask]
 
         max_x = 0
-        max_x_b = 0
         for data in x_cols:
             if "sigma_b" not in data:
                 max_x = max(max_x, df_filt[data].max())
@@ -103,6 +107,12 @@ def df_scatter_plot(
                 ax.set_xlabel(x_cols[i])
                 ax.set_title(x_cols[i] + " vs " + ", ".join(y_group))
                 ax.legend(loc="upper left")
+                x_max_i = df_filt[x_cols[i]].max()
+                y_max_i = df_filt[y_col].max()
+                axis_limit = max(x_max_i, y_max_i) * 1.05
+                ax.set_xlim(0, axis_limit)
+                ax.set_ylim(0, axis_limit)
+                ax.set_aspect("equal", adjustable="box")
             else:  # per_element
                 ax.scatter(
                     df["atomic_number"] + j * 0.2,
@@ -115,16 +125,9 @@ def df_scatter_plot(
                 ax.legend()
             if not per_element:
                 if "sigma_b" not in y_col:
-                    ax.set_xlim(0, max_x * 1.05)
-                    ax.set_ylim(0, max_y * 1.05)
+                    pass
                 else:  # not per_element, "sigma_b"
-                    if "sigma_b" in x_cols[i]:
-                        max_x_b_candidate = df_filt[x_cols[i]].max()
-                        max_x_b = max(max_x_b, max_x_b_candidate)
-                        ax.set_xlim(0, max_x_b * 1.05)
-                    max_y_b_candidate = df_filt[y_col].max()
-                    max_y_b = max(max_y_b, max_y_b_candidate)
-                    ax.set_ylim(0, max_y_b * 1.05)
+                    pass
             else:  # per_element  # do not touch xlim
                 if "sigma_b" not in y_col:
                     ax.set_ylim(0, max_y * 1.05)
@@ -468,6 +471,7 @@ def scatter_plot_histogram(
     ax.set_ylabel(f"Initial {label}")
     ax.set_xlim(min_val - buffer, max_val + buffer)
     ax.set_ylim(min_val - buffer, max_val + buffer)
+    ax.set_aspect("equal", adjustable="box")
     ax.grid(True, alpha=0.7)
     ax.legend(title=f"n = {len(x)}")
 
