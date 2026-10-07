@@ -83,8 +83,8 @@ def bootstrap_dataset(
         column_name: str = "llweight",
     ) -> pandas.Series:
         """
-        Create a DataFrame`llweight` column using random resampling and keeping
-        a fraction of zero weights.
+        Create a DataFrame`llweight` column from random draws from uniform Dirichlet
+        distribution while keeping a fraction of zero weights.
 
         Args:
             n (int): Number of items to resample.
@@ -97,20 +97,12 @@ def bootstrap_dataset(
             pandas.Series: Series with the weights for each reflection.
         """
         rng = numpy.random.default_rng(seed)
-        df_random = pandas.DataFrame(rng.random(size=n), columns=["index_resample"])
-        df_weight = df_random["index_resample"].copy()
+        weights = rng.dirichlet(numpy.ones(n, dtype=float))
+        df_weight = pandas.Series(weights, index=range(n), name="index_resample")
         # Set a fraction of weights to zero based on the provided mask
-        zero_mask_array = numpy.asarray(zero_mask, dtype=bool)
-        if zero_mask_array.shape[0] != n:
-            raise ValueError(
-                "Length mismatch between zero_mask and bin size in "
-                f"random resampling: {zero_mask_array.shape[0]} != {n}"
-            )
-        df_weight.loc[zero_mask_array] = 0.0
-        # Renormalize so that the total weight equals n
-        weight_sum = df_weight.sum()
-        assert weight_sum > 0
-        df_weight = df_weight * (n / weight_sum)
+        df_weight.loc[zero_mask] = 0.0
+        # Renormalize so that the sum of weights equals n
+        df_weight = df_weight * (n / df_weight.sum())
 
         return df_weight.rename(column_name)
 
