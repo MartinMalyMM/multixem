@@ -177,12 +177,27 @@ def bootstrap_dataset(
     bins = [bin for _, bin in df.groupby("bin")]
 
     # Create per-bin masks once and keep them for all bootstrap samples
-    zero_mask_bins = []
+    zero_mask_bins: list[numpy.ndarray] = []
     if random_weights:
         if abs(fraction_zero) > 1e-6:
-            # Create a random mask for reflections with zero weight
+            # Create per-bin zero masks with an exact number of zero weights.
+            # This keeps the zero fraction deterministic for each bin while still
+            # being reproducible for a given seed.
             rng = numpy.random.default_rng(seeds[0])
-            zero_mask_bins = [rng.random(len(bin)) < fraction_zero for bin in bins]
+            zero_mask_bins = []
+            for bin in bins:
+                n_bin = len(bin)
+                n_zero = int(round(fraction_zero * n_bin))
+                if n_zero <= 0:
+                    zero_mask_bins.append(numpy.zeros(n_bin, dtype=bool))
+                    continue
+                if n_zero >= n_bin:
+                    zero_mask_bins.append(numpy.ones(n_bin, dtype=bool))
+                    continue
+                zero_idx = rng.choice(n_bin, size=n_zero, replace=False)
+                zero_mask = numpy.zeros(n_bin, dtype=bool)
+                zero_mask[zero_idx] = True
+                zero_mask_bins.append(zero_mask)
         elif col_free:
             # Use free reflections to create a mask for refls with zero weight
             zero_mask_bins = [bin[col_free].eq(0).to_numpy() for bin in bins]
