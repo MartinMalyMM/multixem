@@ -97,7 +97,7 @@ def bootstrap_dataset(
             pandas.Series: Series with the weights for each reflection.
         """
         rng = numpy.random.default_rng(seed)
-        weights = rng.dirichlet(numpy.ones(n, dtype=float) * 4)
+        weights = rng.dirichlet(numpy.ones(n, dtype=float))
         df_weight = pandas.Series(weights, index=range(n), name="index_resample")
 
         # Temporary workaround for testing: force exactly 5% of reflections to zero.
