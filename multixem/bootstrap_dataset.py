@@ -44,7 +44,7 @@ def bootstrap_dataset(
 
     def resample(
         n: int,
-        seed: int = 1001,
+        seed: int = 1000001,
         draw_factor: float = 1.0,
         column_name: str = "llweight",
     ) -> pandas.Series:
@@ -79,7 +79,7 @@ def bootstrap_dataset(
     def resample_random(
         n: int,
         zero_mask: numpy.ndarray,
-        seed: int = 1001,
+        seed: int = 1000001,
         column_name: str = "llweight",
     ) -> pandas.Series:
         """
@@ -226,13 +226,13 @@ def bootstrap_dataset(
                 w = resample_random(
                     len(bin),
                     zero_mask_bins[b],
-                    seed=seed,
+                    seed=seed + (b + 1) * 1000000,
                 )
                 parts.append(pandas.Series(w.values, index=bin.index, name="llweight"))
             df_bootstrap1_weight = pandas.concat(parts).sort_index()
         else:
-            for bin in bins:
-                w = resample(len(bin), seed, draw_factor)
+            for b, bin in enumerate(bins):
+                w = resample(len(bin), seed + (b + 1) * 1000000, draw_factor)
                 parts.append(pandas.Series(w.values, index=bin.index, name="llweight"))
             df_bootstrap1_weight = pandas.concat(parts).sort_index()
 
