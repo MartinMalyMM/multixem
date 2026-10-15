@@ -1858,6 +1858,7 @@ def main():
             if hklin_i.lower().endswith(".cif") or hklin_i.lower().endswith(".ent"):
                 mtz = None
                 doc = gemmi.cif.read(hklin_i)
+                # doc_for_metadata = gemmi.cif.read(hklin_i)
                 rblocks = gemmi.as_refln_blocks(doc)
                 for rblock in rblocks:
                     if rblock.is_merged():
@@ -1872,6 +1873,25 @@ def main():
                     mtzs_merged.append(mtz_filename)
                 elif servalcat_imported:
                     mtz, _, _ = servalcat_utils.fileio.read_smcif_shelx(hklin_i)
+                    """ # Does not work - wavelength is not written to the MTZ file ?
+                    if len(doc_for_metadata) > 0:
+                        try:
+                            wavelength_sm = doc_for_metadata[0].find_value(
+                                "_diffrn_radiation_wavelength"
+                                )
+                            logging.info(
+                                f"Wavelength from small molecule CIF: {wavelength_sm}"
+                            )
+                            if (
+                                wavelength_sm and
+                                isinstance(wavelength_sm, (int, float))
+                            ):
+                                mtz.dataset(0).wavelength = float(wavelength_sm)
+                        except Exception as e:
+                            logging.warning(
+                                f"Could not read wavelength from {hklin_i}: {e}"
+                            )
+                    """
                 if mtz:
                     mtz_filename = (
                         f"{os.path.splitext(os.path.basename(hklin_i))[0]}.mtz"
