@@ -97,9 +97,20 @@ def bootstrap_dataset(
             pandas.Series: Series with the weights for each reflection.
         """
         rng = numpy.random.default_rng(seed)
-        weights = rng.dirichlet(numpy.ones(n, dtype=float))
+        # weights = rng.dirichlet(numpy.ones(n, dtype=float))
+        # Temporary test: use discrete weights from resampling + 0.5 as alphas
+        df_random = pandas.DataFrame(
+            rng.integers(1, n + 1, size=int(n)), columns=["index_resample"]
+        )
+        counts = (
+            df_random.groupby(["index_resample"])
+            .size()
+            .reindex(range(1, n + 1), fill_value=0)
+        )
+        weights = rng.dirichlet(counts.to_numpy(dtype=float) + 0.5)
         df_weight = pandas.Series(weights, index=range(n), name="index_resample")
 
+        """
         # Temporary workaround for testing: force exactly 5% of reflections to zero.
         n_zero = int(round(0.05 * n))
         if n_zero > 0:
@@ -108,7 +119,7 @@ def bootstrap_dataset(
             zero_mask[zero_idx] = True
         else:
             zero_mask = numpy.zeros(n, dtype=bool)
-
+        """
         # Set a fraction of weights to zero based on the provided mask
         df_weight.loc[zero_mask] = 0.0
         # Renormalize so that the sum of weights equals n
