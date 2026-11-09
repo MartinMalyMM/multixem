@@ -581,7 +581,7 @@ def bootstrap_mean_map(
             )
 
     logging.info("")
-    # Convert FWT&PHWT, DELFWT&PHDELWT and FC&PHFC to complex numbers
+    # Convert FWT & PHWT and DELFWT & PHDELWT to complex numbers and calculate mean
     df_master["F_complex"] = df_master["FWT"] * numpy.exp(
         1j * numpy.deg2rad(df_master["PHWT"])
     )

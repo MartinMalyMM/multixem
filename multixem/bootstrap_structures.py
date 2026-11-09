@@ -1608,5 +1608,4 @@ def bootstrap_analyse_structures(
         logging.warning(
             "Saving the mean structure in the PDB format was not successful."
         )
-
     return mean_b_values_per_structure, b_values_distr
