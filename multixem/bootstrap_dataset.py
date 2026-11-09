@@ -15,6 +15,7 @@ def bootstrap_dataset(
     labin: str = "",
     draw_factor: float = 1.0,
     random_weights: bool = False,
+    dirichlet_alpha: float = 1.0,
     col_free: str = "",
     fraction_zero: float = 0.05,
 ) -> tuple[list[str], str]:
@@ -76,28 +77,31 @@ def bootstrap_dataset(
 
         return df_weight.rename(column_name)
 
-    def resample_random(
+    def resample_dirichlet(
         n: int,
         zero_mask: numpy.ndarray,
+        alpha: float = 1.0,
         seed: int = 1000001,
         column_name: str = "llweight",
     ) -> pandas.Series:
         """
         Create a DataFrame`llweight` column from random draws from uniform Dirichlet
-        distribution while keeping a fraction of zero weights.
+        distribution with alpha parameter while keeping a fraction of zero weights.
 
         Args:
             n (int): Number of items to resample.
-            seed (int): Random seed for reproducibility.
             zero_mask (numpy.ndarray): Optional boolean mask;
                                        rows set to True are forced to zero.
                                        Applied if `fraction_zero` is zero.
+            alpha (float): Alpha parameter for the uniform Dirichlet distribution.
+                           Must be positive. Default is 1.0.
+            seed (int): Random seed for reproducibility.
             column_name (str): Name of the column to create in the DataFrame.
         Returns:
             pandas.Series: Series with the weights for each reflection.
         """
         rng = numpy.random.default_rng(seed)
-        weights = rng.dirichlet(numpy.ones(n, dtype=float))
+        weights = rng.dirichlet(alpha * numpy.ones(n, dtype=float))
         df_weight = pandas.Series(weights, index=range(n), name="index_resample")
         # Set a fraction of weights to zero based on the provided mask
         df_weight.loc[zero_mask] = 0.0
@@ -213,7 +217,7 @@ def bootstrap_dataset(
         if random_weights:
             assert len(zero_mask_bins) == len(bins)
             for b, bin in enumerate(bins):
-                w = resample_random(
+                w = resample_dirichlet(
                     len(bin),
                     zero_mask_bins[b],
                     seed=seed + (b + 1) * 1000000,
