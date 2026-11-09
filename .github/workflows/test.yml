@@ -37,7 +37,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install --upgrade "nanobind-backend"
           python -m pip install --upgrade "git+https://github.com/project-gemmi/gemmi.git@master" --no-deps --force-reinstall
-          python -m pip install --upgrade "git+https://github.com/keitaroyam/servalcat.git@main" --no-deps --force-reinstall
+          python -m pip install --upgrade "git+https://github.com/keitaroyam/servalcat.git@main" --no-deps --force-reinstall --no-build-isolation
 
       - name: Download monomer library
         shell: bash
