@@ -1859,7 +1859,7 @@ def main():
             # TODO: check that input files have FI(R?)
             # TODO: mmCIF
         # print(mtzs_merged)
-        print(labins)
+        # print(labins)
 
     if args.hklin:
         logging.info(f"Merged diffraction data files: {args.hklin}")
