@@ -337,7 +337,8 @@ def create_parser():
         "--random_weights",
         action="store_true",
         help=(
-            "Use fractional-random-weight bootstrap method, i.e. assign random weights"
+            "Use fractional-random-weight bootstrap method: assign random weights"
+            " from a uniform Dirichlet distribution with alpha parameter "
             " to reflection likelihood terms in the target log-likelihood function."
             " A fraction of reflection will be assigned zero weights"
             " based on the provided free flag in --hklin_free or --hklin,"
@@ -354,6 +355,16 @@ def create_parser():
             " If a value of 0.0 is set (default), zero weights will be assigned"
             " according to the free flags in --hklin_free or --hklin."
             " Recommended value: 0.05."
+        ),
+    )
+    common_refinement_parent.add_argument(
+        "--dirichlet_alpha",
+        type=positive_float,
+        default=1.0,
+        help=(
+            "Alpha parameter for the uniform Dirichlet distribution used in"
+            " fractional-random-weight bootstrap. Must be positive."
+            " Default is 1.0."
         ),
     )
 
@@ -1860,6 +1871,7 @@ def main():
             if hklin_i.lower().endswith(".cif") or hklin_i.lower().endswith(".ent"):
                 mtz = None
                 doc = gemmi.cif.read(hklin_i)
+                # doc_for_metadata = gemmi.cif.read(hklin_i)
                 rblocks = gemmi.as_refln_blocks(doc)
                 for rblock in rblocks:
                     if rblock.is_merged():
@@ -1874,6 +1886,25 @@ def main():
                     mtzs_merged.append(mtz_filename)
                 elif servalcat_imported:
                     mtz, _, _ = servalcat_utils.fileio.read_smcif_shelx(hklin_i)
+                    """ # Does not work - wavelength is not written to the MTZ file ?
+                    if len(doc_for_metadata) > 0:
+                        try:
+                            wavelength_sm = doc_for_metadata[0].find_value(
+                                "_diffrn_radiation_wavelength"
+                                )
+                            logging.info(
+                                f"Wavelength from small molecule CIF: {wavelength_sm}"
+                            )
+                            if (
+                                wavelength_sm and
+                                isinstance(wavelength_sm, (int, float))
+                            ):
+                                mtz.dataset(0).wavelength = float(wavelength_sm)
+                        except Exception as e:
+                            logging.warning(
+                                f"Could not read wavelength from {hklin_i}: {e}"
+                            )
+                    """
                 if mtz:
                     mtz_filename = (
                         f"{os.path.splitext(os.path.basename(hklin_i))[0]}.mtz"
@@ -2096,6 +2127,7 @@ def main():
                     labin=labin,
                     draw_factor=args.draw_factor,
                     random_weights=args.random_weights,
+                    dirichlet_alpha=args.dirichlet_alpha,
                     col_free=col_free,
                     fraction_zero=args.fraction_zero,
                 )

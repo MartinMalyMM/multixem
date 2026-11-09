@@ -15,6 +15,7 @@ def bootstrap_dataset(
     labin: str = "",
     draw_factor: float = 1.0,
     random_weights: bool = False,
+    dirichlet_alpha: float = 1.0,
     col_free: str = "",
     fraction_zero: float = 0.05,
 ) -> tuple[list[str], str]:
@@ -44,7 +45,7 @@ def bootstrap_dataset(
 
     def resample(
         n: int,
-        seed: int = 1001,
+        seed: int = 1000001,
         draw_factor: float = 1.0,
         column_name: str = "llweight",
     ) -> pandas.Series:
@@ -76,41 +77,36 @@ def bootstrap_dataset(
 
         return df_weight.rename(column_name)
 
-    def resample_random(
+    def resample_dirichlet(
         n: int,
         zero_mask: numpy.ndarray,
-        seed: int = 1001,
+        alpha: float = 1.0,
+        seed: int = 1000001,
         column_name: str = "llweight",
     ) -> pandas.Series:
         """
-        Create a DataFrame`llweight` column using random resampling and keeping
-        a fraction of zero weights.
+        Create a DataFrame`llweight` column from random draws from uniform Dirichlet
+        distribution with alpha parameter while keeping a fraction of zero weights.
 
         Args:
             n (int): Number of items to resample.
-            seed (int): Random seed for reproducibility.
             zero_mask (numpy.ndarray): Optional boolean mask;
                                        rows set to True are forced to zero.
                                        Applied if `fraction_zero` is zero.
+            alpha (float): Alpha parameter for the uniform Dirichlet distribution.
+                           Must be positive. Default is 1.0.
+            seed (int): Random seed for reproducibility.
             column_name (str): Name of the column to create in the DataFrame.
         Returns:
             pandas.Series: Series with the weights for each reflection.
         """
         rng = numpy.random.default_rng(seed)
-        df_random = pandas.DataFrame(rng.random(size=n), columns=["index_resample"])
-        df_weight = df_random["index_resample"].copy()
+        weights = rng.dirichlet(alpha * numpy.ones(n, dtype=float))
+        df_weight = pandas.Series(weights, index=range(n), name="index_resample")
         # Set a fraction of weights to zero based on the provided mask
-        zero_mask_array = numpy.asarray(zero_mask, dtype=bool)
-        if zero_mask_array.shape[0] != n:
-            raise ValueError(
-                "Length mismatch between zero_mask and bin size in "
-                f"random resampling: {zero_mask_array.shape[0]} != {n}"
-            )
-        df_weight.loc[zero_mask_array] = 0.0
-        # Renormalize so that the total weight equals n
-        weight_sum = df_weight.sum()
-        assert weight_sum > 0
-        df_weight = df_weight * (n / weight_sum)
+        df_weight.loc[zero_mask] = 0.0
+        # Renormalize so that the sum of weights equals n
+        df_weight = df_weight * (n / df_weight.sum())
 
         return df_weight.rename(column_name)
 
@@ -185,12 +181,27 @@ def bootstrap_dataset(
     bins = [bin for _, bin in df.groupby("bin")]
 
     # Create per-bin masks once and keep them for all bootstrap samples
-    zero_mask_bins = []
+    zero_mask_bins: list[numpy.ndarray] = []
     if random_weights:
         if abs(fraction_zero) > 1e-6:
-            # Create a random mask for reflections with zero weight
+            # Create per-bin zero masks with an exact number of zero weights.
+            # This keeps the zero fraction deterministic for each bin while still
+            # being reproducible for a given seed.
             rng = numpy.random.default_rng(seeds[0])
-            zero_mask_bins = [rng.random(len(bin)) < fraction_zero for bin in bins]
+            zero_mask_bins = []
+            for bin in bins:
+                n_bin = len(bin)
+                n_zero = int(round(fraction_zero * n_bin))
+                if n_zero <= 0:
+                    zero_mask_bins.append(numpy.zeros(n_bin, dtype=bool))
+                    continue
+                if n_zero >= n_bin:
+                    zero_mask_bins.append(numpy.ones(n_bin, dtype=bool))
+                    continue
+                zero_idx = rng.choice(n_bin, size=n_zero, replace=False)
+                zero_mask = numpy.zeros(n_bin, dtype=bool)
+                zero_mask[zero_idx] = True
+                zero_mask_bins.append(zero_mask)
         elif col_free:
             # Use free reflections to create a mask for refls with zero weight
             zero_mask_bins = [bin[col_free].eq(0).to_numpy() for bin in bins]
@@ -206,16 +217,16 @@ def bootstrap_dataset(
         if random_weights:
             assert len(zero_mask_bins) == len(bins)
             for b, bin in enumerate(bins):
-                w = resample_random(
+                w = resample_dirichlet(
                     len(bin),
                     zero_mask_bins[b],
-                    seed=seed,
+                    seed=seed + (b + 1) * 1000000,
                 )
                 parts.append(pandas.Series(w.values, index=bin.index, name="llweight"))
             df_bootstrap1_weight = pandas.concat(parts).sort_index()
         else:
-            for bin in bins:
-                w = resample(len(bin), seed, draw_factor)
+            for b, bin in enumerate(bins):
+                w = resample(len(bin), seed + (b + 1) * 1000000, draw_factor)
                 parts.append(pandas.Series(w.values, index=bin.index, name="llweight"))
             df_bootstrap1_weight = pandas.concat(parts).sort_index()
 

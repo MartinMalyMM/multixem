@@ -1472,6 +1472,44 @@ def bootstrap_analyse_structures(
             per_element=True,
         )
 
+        # Also generate scatter plots for bonds, angles and torsions (if present)
+        if bonds_list and not df_bonds.empty:
+            png_bonds = (
+                f"{prefix}group{idx}_bootstrap_mean_stats_plot_bonds.png"
+                if idx
+                else f"{prefix}bootstrap_mean_stats_plot_bonds.png"
+            )
+            df_scatter_plot(
+                df_bonds,
+                ["sigma_bond_deposit"],
+                [["sigma_bond"]],
+                filename=png_bonds,
+            )
+        if angles_list and not df_angles.empty:
+            png_angles = (
+                f"{prefix}group{idx}_bootstrap_mean_stats_plot_angles.png"
+                if idx
+                else f"{prefix}bootstrap_mean_stats_plot_angles.png"
+            )
+            df_scatter_plot(
+                df_angles,
+                ["sigma_angle_deposit"],
+                [["sigma_angle"]],
+                filename=png_angles,
+            )
+        if torsions_list and not df_torsions.empty:
+            png_torsions = (
+                f"{prefix}group{idx}_bootstrap_mean_stats_plot_torsions.png"
+                if idx
+                else f"{prefix}bootstrap_mean_stats_plot_torsions.png"
+            )
+            df_scatter_plot(
+                df_torsions,
+                ["sigma_torsion_deposit"],
+                [["sigma_torsion"]],
+                filename=png_torsions,
+            )
+
     if mmcif_ref and os.path.isfile(mmcif_ref) and eigenindices_nonzero:
         # Write floating origin analysis results
         floating_origin_dict = dict()
