@@ -30,7 +30,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
-          python -m pip install servalcat
+
+      - name: Install latest Servalcat from GitHub main branch
+        shell: bash
+        run: |
+          python -m pip install "git+https://github.com/keitaroyam/servalcat.git@main" --force-reinstall --no-deps
 
       - name: Download monomer library
         shell: bash
