@@ -24,14 +24,23 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
+        shell: bash
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
+          python -m pip install servalcat
+
+      - name: Download monomer library
+        shell: bash
+        run: |
+          export CLIBD_MON="$RUNNER_TEMP/monomers"
+          echo "CLIBD_MON=$CLIBD_MON" >> "$GITHUB_ENV"
+          git clone --depth 1 https://github.com/MonomerLibrary/monomers.git "$CLIBD_MON"
 
       - name: Test
         shell: bash
         run: |
-          python -m pytest tests/ -m "not slow" -q --cov=multixem --cov-report=term-missing
+          python -m pytest tests/ -q --cov=multixem --cov-report=term-missing
           python -m coverage xml
 
       - name: Report Coverage
