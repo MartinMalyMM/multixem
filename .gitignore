@@ -84,3 +84,6 @@ venv/
 docs/preconvert
 site/
 out
+
+# Custop
+*_backup
