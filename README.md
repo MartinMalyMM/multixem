@@ -45,19 +45,18 @@ Example:
 
 ```bash
 multixem bootstrap 10000 \
-	--hklin 1PGJ_data.mtz \
-	--model 1PGJ_model.pdb \
+    --hklin 1PGJ_data.mtz \
+    --model 1PGJ_model.pdb \
     --hklin_free 1PGJ_data.mtz \
-	--prefix 1PGJ_bootstrap10000 \
-	--servalcat_args "--ncycle 10" \
+    --prefix 1PGJ_bootstrap10000 \
+    --servalcat_args "--ncycle 10" \
     --servalcat_confing "config.yaml" \
-	--n_bins 30 \
-	--n_proc 16 \
+    --n_bins 30 \
+    --n_proc 16 \
     --geometry_cids 1PGJ_geometry_obj.txt \
-	--random_weights
 ```
 
-Random weights will be assigned to reflection likelihood terms in the target log-likelihood function. A fraction of reflection will be assigned zero weights based on the provided free flag in --hklin_free or --hklin, or randomly if no free flag is provided, controlled by --fraction_zero.
+The merged diffraction data (i.e. reflection) will be resampled with replacement 10,000 times. The subsequently refined structures will be analysed including calculation of mean, standard deviation, etc.
 
 The file given in `1PGJ_geometry_obj.txt` defines parameters/features of the structure model under investigation. Each lines specifies an object using atomic CIDs divided by spaces. One CID in row denotes an occupancy, two an interactomic distance, three an angle between the atoms and four a torsion angle. For instance:
 
@@ -73,13 +72,12 @@ Unrestrained refinement of a small molecule can be performed using the following
 
 ```bash
 multixem bootstrap 10000 \
-	--hklin 1513945.cif \
-	--model 1513945.cif \
-	--prefix 1513945_bootstrap10000 \
-	--servalcat_args "--unre --hydrogen yes --refine_h --adp aniso --no_solvent --adpr_weight 0 --ncycle 20" \
-	--n_bins 20 \
-	--n_proc 16 \
-	--random_weights
+    --hklin 1513945.cif \
+    --model 1513945.cif \
+    --prefix 1513945_bootstrap10000 \
+    --servalcat_args "--unre --hydrogen yes --refine_h --adp aniso --no_solvent --adpr_weight 0 --ncycle 20" \
+    --n_bins 5 \
+    --n_proc 16 \
 ```
 
 All currently available options are listed using:
@@ -103,25 +101,25 @@ Example: comparison of bovine, pork and human insulin:
 
 ```bash
 multixem pipeline \
-	--hklin insuling_cow.mtz insuling_pig.mtz insuling_people.mtz \
-	--hklin_free insuling_people.mtz \
-	-p insulin \
-	--model insuling_cow.pdb insuling_pig.pdb insuling_people.pdb \
-	--n_bins 30 \
-	--n_proc 4 \
-	--unify_cell
+    --hklin insuling_cow.mtz insuling_pig.mtz insuling_people.mtz \
+    --hklin_free insuling_people.mtz \
+    -p insulin \
+    --model insuling_cow.pdb insuling_pig.pdb insuling_people.pdb \
+    --n_bins 30 \
+    --n_proc 4 \
+    --unify_cell
 ```
 
 Example: Merging and comparison of batches of unmerged diffraction data:
 
 ```bash
 multixem pipeline \
-	--hklin_unmerged insuling_people_unmerged.mtz \
-	--hklin_free insuling_people.mtz \
-	-p insulin_people_600 \
-	--model insuling_people.pdb \
-	--n_bins 30 \
-	--n_proc 4 \
+    --hklin_unmerged insuling_people_unmerged.mtz \
+    --hklin_free insuling_people.mtz \
+    -p insulin_people_600 \
+    --model insuling_people.pdb \
+    --n_bins 30 \
+    --n_proc 4 \
     --n_batches 600
 ```
 
