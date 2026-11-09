@@ -341,7 +341,8 @@ def json_numpy_converter(o):
 
 def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefix=""):
     """
-    Scale reflections from refl2 to refl1 in resolution bins defined by binner.
+    Scale reflections in the "FWT", "PHWT", "DELFWT", "PHDELWT" columns
+    from refl2 to refl1 in resolution bins defined by binner.
 
     Args:
         refl1 (str or gemmi.Mtz or pandas.DataFrame): First reflection dataset.
