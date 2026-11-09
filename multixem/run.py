@@ -336,7 +336,8 @@ def create_parser():
         "--random_weights",
         action="store_true",
         help=(
-            "Use fractional-random-weight bootstrap method, i.e. assign random weights"
+            "Use fractional-random-weight bootstrap method: assign random weights"
+            " from a uniform Dirichlet distribution with alpha parameter "
             " to reflection likelihood terms in the target log-likelihood function."
             " A fraction of reflection will be assigned zero weights"
             " based on the provided free flag in --hklin_free or --hklin,"
@@ -353,6 +354,16 @@ def create_parser():
             " If a value of 0.0 is set (default), zero weights will be assigned"
             " according to the free flags in --hklin_free or --hklin."
             " Recommended value: 0.05."
+        ),
+    )
+    common_refinement_parent.add_argument(
+        "--dirichlet_alpha",
+        type=positive_float,
+        default=1.0,
+        help=(
+            "Alpha parameter for the uniform Dirichlet distribution used in"
+            " fractional-random-weight bootstrap. Must be positive."
+            " Default is 1.0."
         ),
     )
 
@@ -2114,6 +2125,7 @@ def main():
                     labin=labin,
                     draw_factor=args.draw_factor,
                     random_weights=args.random_weights,
+                    dirichlet_alpha=args.dirichlet_alpha,
                     col_free=col_free,
                     fraction_zero=args.fraction_zero,
                 )
