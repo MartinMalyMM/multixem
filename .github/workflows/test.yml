@@ -35,7 +35,13 @@ jobs:
         shell: bash
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --upgrade "nanobind-backend"
+          python -m pip install --upgrade \
+            "scikit-build-core" \
+            "nanobind>=3.1.0,<4" \
+            "nanobind-backend>=1.0" \
+            "packaging" \
+            "scipy" \
+            "omegaconf==2.3.0"
           python -m pip install --upgrade "git+https://github.com/project-gemmi/gemmi.git@master" --no-deps --force-reinstall
           python -m pip install --upgrade "git+https://github.com/keitaroyam/servalcat.git@main" --no-deps --force-reinstall --no-build-isolation
 
