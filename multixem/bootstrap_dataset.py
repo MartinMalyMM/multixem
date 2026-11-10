@@ -80,7 +80,7 @@ def bootstrap_dataset(
     def resample_dirichlet(
         n: int,
         zero_mask: numpy.ndarray,
-        alpha: float = 1.0,
+        dirichlet_alpha: float = 1.0,
         seed: int = 1000001,
         column_name: str = "llweight",
     ) -> pandas.Series:
@@ -93,15 +93,15 @@ def bootstrap_dataset(
             zero_mask (numpy.ndarray): Optional boolean mask;
                                        rows set to True are forced to zero.
                                        Applied if `fraction_zero` is zero.
-            alpha (float): Alpha parameter for the uniform Dirichlet distribution.
-                           Must be positive. Default is 1.0.
+            dirichlet_alpha (float): Alpha parameter for the uniform Dirichlet
+                                     distribution. Must be positive. Default is 1.0.
             seed (int): Random seed for reproducibility.
             column_name (str): Name of the column to create in the DataFrame.
         Returns:
             pandas.Series: Series with the weights for each reflection.
         """
         rng = numpy.random.default_rng(seed)
-        weights = rng.dirichlet(alpha * numpy.ones(n, dtype=float))
+        weights = rng.dirichlet(dirichlet_alpha * numpy.ones(n, dtype=float))
         df_weight = pandas.Series(weights, index=range(n), name="index_resample")
         # Set a fraction of weights to zero based on the provided mask
         df_weight.loc[zero_mask] = 0.0
@@ -220,6 +220,7 @@ def bootstrap_dataset(
                 w = resample_dirichlet(
                     len(bin),
                     zero_mask_bins[b],
+                    dirichlet_alpha=dirichlet_alpha,
                     seed=seed + (b + 1) * 1000000,
                 )
                 parts.append(pandas.Series(w.values, index=bin.index, name="llweight"))
