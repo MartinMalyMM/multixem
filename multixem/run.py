@@ -1728,6 +1728,7 @@ def main():
                     f" {args.file_name_template}_refine.mtz ."
                     " Skipping mean map calculation."
                 )
+            logging.info("Mean maps from Servalcat sigmaa will not be calculated.")
         else:
             logging.warning(
                 f"No refined MTZ files found with a filename template"
