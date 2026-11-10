@@ -5,6 +5,8 @@ import gemmi
 import logging
 import pandas
 import re
+import subprocess
+import shlex
 
 
 def write_bin_stats(bin_stats_list, filename):
@@ -520,3 +522,51 @@ def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefi
         write_bin_stats(bin_stats_list, stats_filename)
 
     return df2_scaled, bin_stats_list
+
+
+def run_servalcat_sigmaa(
+    mtz_fi: str,
+    labin: str,
+    model: str,
+    mtz_free: str = "",
+    source: str = "xray",
+    output_prefix: str = "",
+):
+    """
+    Run servalcat sigmaa command with the given parameters.
+
+    Returns the output MTZ filename (str).
+    """
+
+    log_filename_sigmaa = f"{output_prefix}.log"
+    cmd_sigmaa = [
+        "servalcat",
+        "sigmaa",
+        "--hklin",
+        mtz_fi,
+        "--model",
+        model,
+        "-s",
+        source,
+        "--labin",
+        labin,
+        "-o",
+        output_prefix,
+    ]
+    if mtz_free:
+        cmd_sigmaa.extend(["--hklin_free", mtz_free])
+    # if arguments:
+    #     cmd_sigmaa.extend(arguments)
+    logging.info("Running command: %s", shlex.join(cmd_sigmaa))
+    try:
+        with open(log_filename_sigmaa, "w") as log_file_sigmaa:
+            subprocess.run(
+                cmd_sigmaa,
+                check=True,
+                stdout=log_file_sigmaa,
+                stderr=subprocess.STDOUT,
+            )
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error occurred while running command: {e}")
+
+    return f"{output_prefix}.mtz"

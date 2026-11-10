@@ -25,7 +25,12 @@ except ModuleNotFoundError:
     servalcat_imported = False
 import gemmi
 from . import __version__
-from .tools import write_bin_stats, calc_scale_real, write_mtz_from_df
+from .tools import (
+    write_bin_stats,
+    calc_scale_real,
+    write_mtz_from_df,
+    run_servalcat_sigmaa,
+)
 from .analyse_refinement import (
     adp_analysis_histograms,
     compute_difference_maps,
@@ -41,7 +46,7 @@ from .bootstrap_structures import (
     select_cids_for_geometry_analysis,
     bootstrap_analyse_structures,
 )
-from .bootstrap_maps import bootstrap_mean_map
+from .bootstrap_maps import bootstrap_mean_map, bootstrap_mean_map_sigmaa
 
 matplotlib.use("Agg")
 
@@ -1172,37 +1177,15 @@ def run_servalcat_refine(
             ]
             logging.info(f"Finished: {prefix}.mmcif {', '.join(stats_line_list)}")
         if sigmaa:
-            log_filename_sigmaa = prefix + "_sigmaa.log"
-            cmd_sigmaa = [
-                "servalcat",
-                "sigmaa",
-                "--hklin",
-                mtz_fi,
-                "--model",
-                prefix + ".mmcif",
-                "-s",
-                source,
-                "--labin",
-                labin,
-                "-o",
-                prefix + "_sigmaa",
-            ]
-            if mtz_free:
-                cmd_sigmaa.extend(["--hklin_free", mtz_free])
-            # if arguments:
-            #     cmd_sigmaa.extend(arguments)
-            logging.info("Running command: %s", shlex.join(cmd_sigmaa))
-            try:
-                with open(log_filename_sigmaa, "w") as log_file_sigmaa:
-                    subprocess.run(
-                        cmd_sigmaa,
-                        check=True,
-                        stdout=log_file_sigmaa,
-                        stderr=subprocess.STDOUT,
-                    )
-            except subprocess.CalledProcessError as e:
-                logging.error(f"Error occurred while running command: {e}")
-            local_refined_mtzs.append(prefix + "_sigmaa.mtz")
+            output_mtz_sigmaa = run_servalcat_sigmaa(
+                mtz_fi=mtz_fi,
+                labin=labin,
+                model=prefix + ".mmcif",
+                mtz_free=mtz_free,
+                source=source,
+                output_prefix=prefix + "_sigmaa",
+            )
+            local_refined_mtzs.append(output_mtz_sigmaa)  # prefix + _sigmaa.mtz
         else:
             local_refined_mtzs.append(prefix + ".mtz")
         local_refined_mmcifs.append(prefix + ".mmcif")
@@ -1750,6 +1733,7 @@ def main():
                 f"No refined MTZ files found with a filename template"
                 f" {args.file_name_template}_llweight*_refine.mtz"
             )
+        logging.info("Multixem run finished.")
         return
 
     elif args.command not in ["pipeline", "bootstrap"] and args.command is not None:
@@ -2228,3 +2212,15 @@ def main():
                     mtz_ref=refined_mtzs[i_mtz],
                     n_proc=n_proc,
                 )
+                bootstrap_mean_map_sigmaa(
+                    refined_mmcifs_bootstrap,
+                    mtz_in,
+                    labin,
+                    col_free,
+                    mean_b_values,
+                    source=args.source,
+                    idx=idx,
+                    prefix=prefix,
+                )
+        logging.info("Multixem run finished.")
+        return

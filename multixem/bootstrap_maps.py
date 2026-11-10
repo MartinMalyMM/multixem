@@ -1,5 +1,6 @@
 # coding: utf-8
 import concurrent.futures
+import gzip
 import json
 import logging
 import os
@@ -12,6 +13,7 @@ from .tools import (
     scale_reflections,
     write_bin_stats,
     write_mtz_from_df,
+    run_servalcat_sigmaa,
 )
 
 
@@ -22,8 +24,6 @@ def bootstrap_mean_map(
     binner: gemmi.Binner = None,
     mtz_ref: str = "",
     n_proc: int = 4,
-    mean_b_values: numpy.ndarray = numpy.array([]),
-    mean_mean_b_value: float = 0.0,
 ):
     """
     Calculate the mean 2Fo-Fc and Fo-Fc maps from refined MTZ files after bootstrapping.
@@ -520,3 +520,92 @@ def bootstrap_mean_map(
         logging.warning(f"Error occurred while processing llweight=0 reflections: {e}")
 
     return
+
+
+def bootstrap_mean_map_sigmaa(
+    mmcifs_path: list[str],
+    mtz_in: str,
+    labin: str,
+    col_free: str,
+    mean_b_values: numpy.ndarray = numpy.array([]),
+    source: str = "xray",
+    idx: int = 0,
+    prefix: str = "",
+):
+    """
+    Calculate the mean maps from multiple mmCIF files using Servalcat sigmaa.
+    The ADPs of each model are adjusted to have the same mean ADP
+    before calculating the mean map.
+
+    Returns:
+        str: The output MTZ filename containing the mean map.
+    """
+    logging.info(
+        f"\nCalculating mean map using {len(mmcifs_path)} mmCIF files..."
+        " This is the final step of the bootstrap protocol and may take a while."
+    )
+
+    # Create a joint structure with all models from the mmCIF files
+    mmcifs_loaded = [gemmi.read_structure(mmcif) for mmcif in mmcifs_path]
+    mmcifs_joint = mmcifs_loaded[0]
+    for structure in mmcifs_loaded[1:]:
+        mmcifs_joint.add_model(structure[0])
+        mmcifs_joint[-1].num = len(mmcifs_joint)
+
+    if not mean_b_values.any():
+        # Calculate mean ADP for each model
+        logging.warning(
+            "Mean ADPs not provided. Calculating mean ADPs for each model now."
+        )
+        b_values_all = []
+        for model in mmcifs_joint:
+            atoms = [
+                cra.atom for cra in structure[0].all() if not cra.atom.is_hydrogen()
+            ]
+            b_values = numpy.array([atom.b_iso for atom in atoms])
+            b_values_all.append(b_values)
+        b_values_array = numpy.array(b_values_all)
+        mean_b_values = numpy.mean(b_values_array, axis=1)
+
+    # Calculate overall average ADP
+    global_average_b = numpy.mean(mean_b_values)
+    logging.info(f"Overall average ADP: {global_average_b:.2f} A^2")
+
+    # Adjust ADP values of each model so all have the same mean ADP
+    logging.info("Adjusting ADPs of each model to have the same mean...")
+    for model_idx, model in enumerate(mmcifs_joint):
+        difference = mean_b_values[model_idx] - global_average_b
+        for cra in model.all():
+            cra.atom.b_iso = cra.atom.b_iso - difference
+
+    mmcifs_joint_filename = (
+        f"{prefix}group{idx}_bootstrap_all_models.mmcif"
+        if idx
+        else f"{prefix}bootstrap_all_models.mmcif"
+    )
+    mmcifs_joint.make_mmcif_block().write_file(mmcifs_joint_filename)
+
+    mtz_sigmaa = run_servalcat_sigmaa(
+        mtz_fi=mtz_in,
+        labin=labin,
+        model=mmcifs_joint_filename,
+        mtz_free=col_free,
+        source=source,
+        output_prefix=(
+            f"{prefix}group{idx}_bootstrap_mean_map_sigmaa"
+            if idx
+            else f"{prefix}bootstrap_mean_map_sigmaa"
+        ),
+    )
+    logging.info(f"Saved mean map file: {mtz_sigmaa}")
+
+    # Compress and delete the joint mmCIF file
+    with (
+        open(mmcifs_joint_filename, "rb") as src,
+        gzip.open(f"{mmcifs_joint_filename}.gz", "wb") as dst,
+    ):
+        dst.write(src.read())
+    os.remove(mmcifs_joint_filename)
+    logging.info(f"Saved joint mmCIF file: {mmcifs_joint_filename}.gz")
+
+    return mtz_sigmaa
