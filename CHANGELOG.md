@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4] - 2026-11-10
+- Support for fractional weight bootstrap using Dirichlet distribution
+- Mean maps using servalcat sigmaa
+- Few minor changes
+
 ## [0.3.3] - 2026-09-02
 - Fixed bug: include script files
 
