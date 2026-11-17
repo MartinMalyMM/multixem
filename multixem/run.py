@@ -559,6 +559,25 @@ def create_parser():
     return parser
 
 
+def read_small_molecule_cif(hklin: str):
+    """Read reflection data from a small molecule CIF (SHELX) using Servalcat.
+
+    Same as `servalcat util sm2mm`, including the wavelength.
+    Returns gemmi.Mtz, or None if the file could not be read.
+    """
+    try:
+        _, mtz = servalcat_utils.fileio.read_small_molecule_files([hklin])
+    except Exception as e:
+        logging.error(f"Could not read small molecule CIF {hklin} using Servalcat: {e}")
+        return None
+    if not mtz:
+        logging.error(
+            "Servalcat did not find coordinates and/or " f"reflection data in {hklin}"
+        )
+        return None
+    return mtz
+
+
 def check_reflection_file_columns(
     hklin: str,
     unmerged: bool = False,
@@ -1868,26 +1887,7 @@ def main():
                     mtz.write_to_file(mtz_filename)
                     mtzs_merged.append(mtz_filename)
                 elif servalcat_imported:
-                    mtz, _, _ = servalcat_utils.fileio.read_smcif_shelx(hklin_i)
-                    """ # Does not work - wavelength is not written to the MTZ file ?
-                    if len(doc_for_metadata) > 0:
-                        try:
-                            wavelength_sm = doc_for_metadata[0].find_value(
-                                "_diffrn_radiation_wavelength"
-                                )
-                            logging.info(
-                                f"Wavelength from small molecule CIF: {wavelength_sm}"
-                            )
-                            if (
-                                wavelength_sm and
-                                isinstance(wavelength_sm, (int, float))
-                            ):
-                                mtz.dataset(0).wavelength = float(wavelength_sm)
-                        except Exception as e:
-                            logging.warning(
-                                f"Could not read wavelength from {hklin_i}: {e}"
-                            )
-                    """
+                    mtz = read_small_molecule_cif(hklin_i)
                 if mtz:
                     mtz_filename = (
                         f"{os.path.splitext(os.path.basename(hklin_i))[0]}.mtz"
