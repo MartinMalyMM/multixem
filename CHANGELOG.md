@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-18
+- Bug fix related to conversion of diffraction data from small molecule CIF to MTZ
+- Minor bug fix related to mean maps using servalcat sigmaa
+- Integration automatic tests refactored
+
 ## [0.4] - 2026-11-10
 - Support for fractional weight bootstrap using Dirichlet distribution
 - Mean maps using servalcat sigmaa
