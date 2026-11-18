@@ -60,7 +60,7 @@ def bootstrap_cli_1pgj_args(real_1pgj_paths):
     """Reusable default CLI args for the bootstrap command using 1PGJ data set."""
     return [
         "bootstrap",
-        "8",
+        "3",
         "--hklin",
         str(real_1pgj_paths["hklin"]),
         "--model",
@@ -68,7 +68,7 @@ def bootstrap_cli_1pgj_args(real_1pgj_paths):
         "--n_bins",
         "15",
         "--n_proc",
-        "8",
+        "3",
         "--prefix",
         "1PGJ_bootstrap",
         "--servalcat_args",

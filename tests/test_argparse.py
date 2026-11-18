@@ -125,10 +125,12 @@ class TestBootstrapCommand:
 
         # Verify structure and values (paths come from fixture automatically)
         assert args.command == "bootstrap"
-        assert args.n_samples == 8
+        # n_samples and n_proc as set in the fixture
+        cli = bootstrap_cli_1pgj_args
+        assert args.n_samples == int(cli[1])
         assert len(args.hklin) == 1
         assert args.n_bins == 15
-        assert args.n_proc == 8
+        assert args.n_proc == int(cli[cli.index("--n_proc") + 1])
         assert args.prefix == "1PGJ_bootstrap"
         assert args.servalcat_args == "--ncycle 2 --hydrogen yes"
         assert args.hklin_free is not None
