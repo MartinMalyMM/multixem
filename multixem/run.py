@@ -2217,7 +2217,7 @@ def main():
                     refined_mmcifs_bootstrap,
                     mtz_in,
                     labin,
-                    col_free,
+                    args.hklin_free or "",
                     mean_b_values,
                     source=args.source,
                     idx=idx,

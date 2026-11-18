@@ -535,7 +535,7 @@ def run_servalcat_sigmaa(
     """
     Run servalcat sigmaa command with the given parameters.
 
-    Returns the output MTZ filename (str).
+    Returns the output MTZ filename (str), or "" if it was not created.
     """
 
     log_filename_sigmaa = f"{output_prefix}.log"
@@ -569,4 +569,10 @@ def run_servalcat_sigmaa(
     except subprocess.CalledProcessError as e:
         logging.error(f"Error occurred while running command: {e}")
 
-    return f"{output_prefix}.mtz"
+    mtz_out = f"{output_prefix}.mtz"
+    if not os.path.isfile(mtz_out):
+        logging.error(
+            f"Servalcat sigmaa did not create {mtz_out}, see {log_filename_sigmaa}"
+        )
+        return ""
+    return mtz_out

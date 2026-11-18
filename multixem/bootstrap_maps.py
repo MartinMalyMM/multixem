@@ -526,7 +526,7 @@ def bootstrap_mean_map_sigmaa(
     mmcifs_path: list[str],
     mtz_in: str,
     labin: str,
-    col_free: str,
+    mtz_free: str,
     mean_b_values: numpy.ndarray = numpy.array([]),
     source: str = "xray",
     idx: int = 0,
@@ -589,7 +589,7 @@ def bootstrap_mean_map_sigmaa(
         mtz_fi=mtz_in,
         labin=labin,
         model=mmcifs_joint_filename,
-        mtz_free=col_free,
+        mtz_free=mtz_free,
         source=source,
         output_prefix=(
             f"{prefix}group{idx}_bootstrap_mean_map_sigmaa"
@@ -597,7 +597,10 @@ def bootstrap_mean_map_sigmaa(
             else f"{prefix}bootstrap_mean_map_sigmaa"
         ),
     )
-    logging.info(f"Saved mean map file: {mtz_sigmaa}")
+    if mtz_sigmaa:
+        logging.info(f"Saved mean map file: {mtz_sigmaa}")
+    else:
+        logging.warning("Servalcat sigmaa failed to calculate the mean map.")
 
     # Compress and delete the joint mmCIF file
     with (
