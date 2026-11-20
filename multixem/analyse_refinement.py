@@ -1,4 +1,6 @@
 # coding: utf-8
+from __future__ import annotations
+
 import os
 import numpy
 import pandas
@@ -17,9 +19,11 @@ from .tools import (
 matplotlib.use("Agg")
 
 
-def adp_analysis_histograms(modelPaths, prefix=""):
+def adp_analysis_histograms(modelPaths: list[str], prefix: str = "") -> str:
 
-    def adp_analysis(modelPath):
+    def adp_analysis(
+        modelPath: str,
+    ) -> tuple[list[float], float, float, float, float, float]:
         """
         Perform ADP analysis on a given structure model (mmCIF)
         and return statistics.
@@ -29,8 +33,6 @@ def adp_analysis_histograms(modelPaths, prefix=""):
         Returns:
             tuple: Contains the following elements:
                 - adp_dict["All"] (list): List of all ADP values.
-                - hist (numpy.ndarray): Histogram of ADP values.
-                - bin_edges (numpy.ndarray): Edges of the histogram bins.
                 - median (float): Median of ADP values.
                 - mad (float): Median Absolute Deviation of ADP values.
                 - q1 (float): First quartile of ADP values.
@@ -38,8 +40,8 @@ def adp_analysis_histograms(modelPaths, prefix=""):
                 - iqr (float): Interquartile range of ADP values.
         """
         logging.info(f"Running ADP analysis for {modelPath}")
-        adp_dict = {}
-        adp_per_resi = {}
+        adp_dict: dict[str, list[float]] = {}
+        adp_per_resi: dict[str, dict[str, list]] = {}
         adp_dict["All"] = []
         cif_block = gemmi.cif.read(modelPath)[0]
         st = gemmi.make_structure_from_block(cif_block)
@@ -95,16 +97,17 @@ def adp_analysis_histograms(modelPaths, prefix=""):
                             f" in chain {chain.name}: {e}"
                         )
 
-        median = numpy.median(adp_dict["All"])
-        mad = numpy.median(numpy.absolute(adp_dict["All"] - median))
-        q1 = numpy.quantile(adp_dict["All"], 0.25)
-        q3 = numpy.quantile(adp_dict["All"], 0.75)
+        median = float(numpy.median(adp_dict["All"]))
+        adp_all = numpy.asarray(adp_dict["All"])
+        mad = float(numpy.median(numpy.absolute(adp_all - median)))
+        q1 = float(numpy.quantile(adp_dict["All"], 0.25))
+        q3 = float(numpy.quantile(adp_dict["All"], 0.75))
         iqr = q3 - q1
 
         return adp_dict["All"], median, mad, q1, q3, iqr
 
     plt.figure(figsize=(8, 6))
-    max_value = 0
+    max_value = 0.0
     for modelPath in modelPaths:
         values, median, mad, q1, q3, iqr = adp_analysis(modelPath)
         max_value = max(max_value, max(values))
@@ -130,7 +133,7 @@ def adp_analysis_histograms(modelPaths, prefix=""):
     plt.ylabel("Frequency")
     plt.title("ADP Histogram")
     plt.legend(loc="upper right")
-    plt.xlim(0, max(values) * 1.1)
+    plt.xlim(0, max_value * 1.1)
     png_filename = f"{prefix}adp_histogram.png"
     plt.savefig(png_filename)
     # TODO: same histogram ranges
@@ -138,12 +141,12 @@ def adp_analysis_histograms(modelPaths, prefix=""):
 
 
 def compute_difference_maps_pair(
-    mtz_file_1,
-    mtz_file_2,
-    binner,
-    bin_stats_list=[],
-    amplitude=False,
-):
+    mtz_file_1: str,
+    mtz_file_2: str,
+    binner: gemmi.Binner,
+    bin_stats_list: list[dict] = [],
+    amplitude: bool = False,
+) -> tuple[list[dict], str, str]:
     """
     Compute difference maps between two MTZ files from `servalcat refine_xtal_norefmac`
     or `servalcat sigmaa`, save the results in a new MTZ file and save the statistics
@@ -163,8 +166,12 @@ def compute_difference_maps_pair(
                                          so F_est column is present),
                             or amplitudes (True)
     Returns:
-        bin_stats_list (list of dict): Updated list with statistics
-            for each resolution bin.
+        tuple: Contains the following elements:
+            - bin_stats_list (list of dict): Updated list with statistics
+              for each resolution bin.
+            - output_mtz (str): MTZ file with the difference maps.
+            - output_mtz_fwt (str): MTZ file with the difference maps
+              calculated from all reflections (DELFWTFWT2SCall).
     """
 
     mtz1 = gemmi.read_mtz_file(mtz_file_1)
@@ -455,7 +462,12 @@ def compute_difference_maps_pair(
     return bin_stats_list, output_mtz, output_mtz_fwt
 
 
-def compute_difference_maps(refined_mtzs, binner, bin_stats_matrix=[], amplitude=False):
+def compute_difference_maps(
+    refined_mtzs: list[str],
+    binner: gemmi.Binner,
+    bin_stats_matrix: list[list[list[dict]]] = [],
+    amplitude: bool = False,
+) -> tuple[list[list[list[dict]]], list[str], list[str]]:
     """Compute difference maps for all pairs of MTZ files in `refined_mtzs`
     and update the `bin_stats_matrix` with the statistics
     for each pair and each resolution bin."""
@@ -495,7 +507,7 @@ def compute_difference_maps(refined_mtzs, binner, bin_stats_matrix=[], amplitude
     return bin_stats_matrix, output_mtzs, output_mtzs_fwt
 
 
-def compute_structure_differences(refined_mmcifs):
+def compute_structure_differences(refined_mmcifs: list[str]) -> None:
     for i in range(len(refined_mmcifs)):
         for j in range(i + 1, len(refined_mmcifs)):
             compute_structure_differences_pair(
@@ -506,10 +518,20 @@ def compute_structure_differences(refined_mmcifs):
 
 
 def compute_structure_differences_pair(
-    structure1, structure2, output=None, minCoordDev=0, minAdpDev=0
-):
+    structure1: str,
+    structure2: str,
+    output: str = "",
+    minCoordDev: float = 0,
+    minAdpDev: float = 0,
+) -> pandas.DataFrame:
 
-    def search(st1Cras, st2Cras, output, minCoordDev, minAdpDev):
+    def search(
+        st1Cras: list[gemmi.CRA],
+        st2Cras: list[gemmi.CRA],
+        output: str,
+        minCoordDev: float,
+        minAdpDev: float,
+    ) -> pandas.DataFrame:
         records = []
         for cra1 in st1Cras:
             for j, cra2 in enumerate(st2Cras):
@@ -550,10 +572,10 @@ def compute_structure_differences_pair(
 
 def write_coot_script(
     mmcifs: list[str],
-    maps=[],
-    maps_labels=("FWT", "PHWT"),
-    diffmaps=[],
-    diffmaps_labels=("DELFWT", "PHDELWT"),
+    maps: list[str] = [],
+    maps_labels: tuple[str, ...] = ("FWT", "PHWT"),
+    diffmaps: list[str] = [],
+    diffmaps_labels: tuple[str, ...] = ("DELFWT", "PHDELWT"),
 ) -> str:
     """
     Generate a Coot Python script for loading structure models and density maps.
@@ -574,16 +596,16 @@ def write_coot_script(
         maps (list[str], optional):
             List of MTZ files containing density map coefficients.
 
-        maps_labels (tuple[str], optional):
+        maps_labels (tuple[str, ...], optional):
             Two-element tuple specifying the amplitude and phase column labels
-            for maps. Defaults to ["FWT", "PHWT"].
+            for maps. Defaults to ("FWT", "PHWT").
 
         diffmaps (list[str], optional):
             List of MTZ files containing difference map coefficients.
 
-        diffmaps_labels (tuple[str], optional):
+        diffmaps_labels (tuple[str, ...], optional):
             Two-element tuple specifying the amplitude and phase column labels
-            for difference maps. Defaults to ["DELFWT", "PHDELWT"].
+            for difference maps. Defaults to ("DELFWT", "PHDELWT").
 
     Returns:
         str:

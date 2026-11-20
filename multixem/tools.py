@@ -1,4 +1,6 @@
 # coding: utf-8
+from __future__ import annotations
+
 import os
 import numpy
 import gemmi
@@ -9,7 +11,7 @@ import subprocess
 import shlex
 
 
-def write_bin_stats(bin_stats_list, filename):
+def write_bin_stats(bin_stats_list: list[dict], filename: str) -> None:
     """
     Save bin statistics to a fixed-width text file.
 
@@ -39,14 +41,20 @@ def write_bin_stats(bin_stats_list, filename):
     logging.info(f"Saved statistics to {filename}")
 
 
-def write_mtz_from_df(df, mtz_ref, columns, filename):
+def write_mtz_from_df(
+    df: pandas.DataFrame,
+    mtz_ref: str | gemmi.Mtz,
+    columns: dict[str, str],
+    filename: str,
+) -> None:
     """
     Create a gemmi.Mtz object from a pandas dataframe and save to file.
     The numpy.float32 format is used for the data.
 
     Args:
         df (pandas.DataFrame): DataFrame containing columns for H, K, L and other data.
-        mtz_ref (gemmi.Mtz): Reference MTZ file or object for cell and spacegroup.
+        mtz_ref (str or gemmi.Mtz): Reference MTZ file or object
+            for cell and spacegroup.
         columns (dict): Dictionary of column names and their MTZ data types
             to include after H, K, L.
         filename (str): Output filename for the MTZ file.
@@ -73,7 +81,13 @@ def write_mtz_from_df(df, mtz_ref, columns, filename):
     return
 
 
-def calc_scale_real(df, column="FP", b=0, dmax=0.0, dmin=0.0):
+def calc_scale_real(
+    df: pandas.DataFrame,
+    column: str = "FP",
+    b: int = 0,
+    dmax: float = 0.0,
+    dmin: float = 0.0,
+) -> float:
     """
     Assumes that df contains columns F1 and F2.
     scale_real = sum_hkl (F1 * F2) / sum_hkl F2**2.
@@ -102,7 +116,14 @@ def calc_scale_real(df, column="FP", b=0, dmax=0.0, dmin=0.0):
         return 1.0
 
 
-def calc_scale_complex(df, column="F_est", column_denom="", b=0, dmax=0.0, dmin=0.0):
+def calc_scale_complex(
+    df: pandas.DataFrame,
+    column: str = "F_est",
+    column_denom: str = "",
+    b: int = 0,
+    dmax: float = 0.0,
+    dmin: float = 0.0,
+) -> float:
     """
     Assumes that df contains columns `F_est`1RE, `F_est`1IM,
     `F_est`2RE, `F_est`2IM and `F_est`2.
@@ -140,7 +161,7 @@ def calc_scale_complex(df, column="F_est", column_denom="", b=0, dmax=0.0, dmin=
         return 1.0
 
 
-def makeAddressStr(cra):
+def makeAddressStr(cra: gemmi.CRA) -> str:
     address = cra.chain.name + "/" + cra.residue.name + " "
     address += str(cra.residue.seqid.num)
     if cra.residue.seqid.icode.strip():
@@ -166,12 +187,13 @@ def CRA2CID(cra):
 '''
 
 
-def CID2dict(cid, atom_level=True):
+def CID2dict(cid: str, atom_level: bool = True) -> dict[str, str]:
     """
     Parse a CID string and extract chain, seqid, insertion code, atom name, and altloc.
 
     Args:
         cid (str): CID string in format //chain/seqnum[.inscode]/atom[:altloc][@symm]
+        atom_level (bool): Require the CID to select an atom.
 
     Returns:
         dict: Dictionary with keys chain, seqnum, inscode, atom, altloc, symm
@@ -185,24 +207,18 @@ def CID2dict(cid, atom_level=True):
         symm = cid.split("@")[1]
     else:
         symm = ""
+    # parts missing in a shorter CID stay empty
+    chain = seqnum = inscode = atom = altloc = ""
     if len(cid_split) >= 3:
         chain = cid_split[2]
-        if len(cid_split) >= 4:
-            seqid_split = cid_split[3].split(".")
-            seqnum = seqid_split[0]
-            inscode = seqid_split[1] if len(seqid_split) > 1 else ""
-            if len(cid_split) >= 5:
-                atom_split = cid_split[4].split(":")
-                atom = atom_split[0]
-                altloc = atom_split[1] if len(atom_split) > 1 else ""
-            else:
-                atom = ""
-                altloc = ""
-        else:
-            seqnum = ""
-            inscode = ""
-    else:
-        chain = ""
+    if len(cid_split) >= 4:
+        seqid_split = cid_split[3].split(".")
+        seqnum = seqid_split[0]
+        inscode = seqid_split[1] if len(seqid_split) > 1 else ""
+    if len(cid_split) >= 5:
+        atom_split = cid_split[4].split(":")
+        atom = atom_split[0]
+        altloc = atom_split[1] if len(atom_split) > 1 else ""
 
     return {
         "chain": chain,
@@ -214,7 +230,7 @@ def CID2dict(cid, atom_level=True):
     }
 
 
-def dict2CID(atom_dict):
+def dict2CID(atom_dict: dict[str, str]) -> str:
     """Convert a dictionary with keys:
     chain, seqnum, inscode, atom, altloc, symm
     to a CID string."""
@@ -234,7 +250,7 @@ def dict2CID(atom_dict):
     return cid
 
 
-def select_CIDs_of_residues(geometry_object):
+def select_CIDs_of_residues(geometry_object: dict) -> list[str]:
     """
     geometry_object is a dict with keys:
     atom1, atom2, atom3, atom4 - CIDs of the atoms involved
@@ -324,7 +340,7 @@ def CID2RefmacRestraint(geometry_object):
 '''
 
 
-def filename_replace_char(filename):
+def filename_replace_char(filename: str) -> str:
     filename = filename.replace("=", "_equals_")
     filename = filename.replace(">", "_gt_")
     filename = filename.replace("<", "_lt_")
@@ -332,7 +348,7 @@ def filename_replace_char(filename):
     return filename
 
 
-def json_numpy_converter(o):
+def json_numpy_converter(o: object) -> object:
     if isinstance(o, numpy.generic):
         return o.item()
     if isinstance(o, numpy.ndarray):
@@ -341,7 +357,13 @@ def json_numpy_converter(o):
     return str(o)
 
 
-def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefix=""):
+def scale_reflections(
+    refl1: str | gemmi.Mtz | pandas.DataFrame,
+    refl2: str | gemmi.Mtz | pandas.DataFrame,
+    binner: gemmi.Binner,
+    bin_stats_list: list[dict] = [],
+    output_mtz2_prefix: str = "",
+) -> tuple[pandas.DataFrame, list[dict]]:
     """
     Scale reflections in the "FWT", "PHWT", "DELFWT", "PHDELWT" columns
     from refl2 to refl1 in resolution bins defined by binner.
@@ -352,13 +374,19 @@ def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefi
         binner (gemmi.Binner): Binner object defining resolution bins.
         bin_stats_list (list of dict): List to store statistics for each resolution bin.
         output_mtz2_prefix (str): If provided, save scaled refl2 to MTZ file
-            with this prefix.
+            with this prefix. The cell and space group are taken from refl1,
+            so refl1 must be an MTZ file or gemmi.Mtz in this case.
 
     Returns:
         df2_scaled (pandas.DataFrame): Scaled reflections from refl2.
         bin_stats_list (list of dict): Updated list with statistics
             for each resolution bin.
     """
+    if output_mtz2_prefix and isinstance(refl1, pandas.DataFrame):
+        raise ValueError(
+            "output_mtz2_prefix requires refl1 as an MTZ file or gemmi.Mtz,"
+            " not a pandas.DataFrame."
+        )
 
     if isinstance(refl1, str):
         if not os.path.isfile(refl1):
@@ -367,6 +395,7 @@ def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefi
         df1 = pandas.DataFrame(data=mtz1.array, columns=mtz1.column_labels())
         df1 = df1.astype({name: "int32" for name in ["H", "K", "L"]})
     elif isinstance(refl1, gemmi.Mtz):
+        mtz1 = refl1
         df1 = pandas.DataFrame(data=refl1.array, columns=refl1.column_labels())
         df1 = df1.astype({name: "int32" for name in ["H", "K", "L"]})
     else:
@@ -480,7 +509,7 @@ def scale_reflections(refl1, refl2, binner, bin_stats_list=[], output_mtz2_prefi
         delfwt2_count = int(
             pandas.to_numeric(df_bin["DELFWT2"], errors="coerce").notna().sum()
         )
-        bin_stats_list[b]["delfwt_count"] = min(delfwt2_count, delfwt2_count)
+        bin_stats_list[b]["delfwt_count"] = delfwt2_count
 
         # FWT
         df.loc[df_bin.index, "FWT2SCRE"] = scale_fwt * df_bin["FWT2RE"]
@@ -531,7 +560,7 @@ def run_servalcat_sigmaa(
     mtz_free: str = "",
     source: str = "xray",
     output_prefix: str = "",
-):
+) -> str:
     """
     Run servalcat sigmaa command with the given parameters.
 

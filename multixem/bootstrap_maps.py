@@ -1,4 +1,6 @@
 # coding: utf-8
+from __future__ import annotations
+
 import concurrent.futures
 import gzip
 import json
@@ -21,10 +23,10 @@ def bootstrap_mean_map(
     refined_mtzs: list[str],
     idx: int = 0,
     prefix: str = "",
-    binner: gemmi.Binner = None,
+    binner: gemmi.Binner | None = None,
     mtz_ref: str = "",
     n_proc: int = 4,
-):
+) -> None:
     """
     Calculate the mean 2Fo-Fc and Fo-Fc maps from refined MTZ files after bootstrapping.
     The maps are expected to be after refinement against a bootstrapped
@@ -34,13 +36,9 @@ def bootstrap_mean_map(
         refined_mtzs (list of str): List of MTZ filenames.
         idx (int): Index for naming the output file (applies if not set to 0).
         prefix (str): Prefix for the output filename.
-        binner (gemmi.Binner): Binner object for resolution bins (optional).
+        binner (gemmi.Binner or None): Binner object for resolution bins (optional).
         mtz_ref (str): Reference MTZ file for scaling (optional).
-        n_proc (int): Number of parallel processes to use.
-        mean_b_values (list of float): Mean B-values for each data set for
-                                       mean map scaling (optional).
-        mean_mean_b_value (float): Mean of the mean B-values for
-                                   mean map scaling (optional).
+        n_proc (int): Number of parallel threads to use.
 
     Returns:
         None: Writes the mean maps in
@@ -52,11 +50,11 @@ def bootstrap_mean_map(
 
     def merge_reflections_bootstrap(
         df_master: pandas.DataFrame,
-        mtz_first: gemmi.Mtz = None,
+        mtz_first: gemmi.Mtz | None = None,
         prefix: str = "",
         suffix: str = "",
         idx: int = 0,
-        binner: gemmi.Binner = None,
+        binner: gemmi.Binner | None = None,
         mtz_ref: str = "",
         do_llweighting: bool = False,
     ) -> pandas.DataFrame:
@@ -66,16 +64,18 @@ def bootstrap_mean_map(
         Args:
             df_master (pandas.DataFrame): DataFrame containing reflections.
                 It must contain columns "H", "K", "L", "F_complex", "DEL_F_complex",
-            mtz_first (gemmi.Mtz): Reference MTZ object for cell and spacegroup.
+            mtz_first (gemmi.Mtz or None): Reference MTZ object for cell
+                and spacegroup.
             prefix (str): Prefix for the output filename.
             suffix (str): Suffix for the output filename.
             idx (int): Index for naming the output file.
-            binner (gemmi.Binner): Binner object for resolution bins.
+            binner (gemmi.Binner or None): Binner object for resolution bins.
             mtz_ref (str): Reference MTZ file for scaling.
             do_llweighting (bool): Whether to apply weighting based on llweight column
 
         Returns:
-            pandas.DataFrame: DataFrame with mean maps.
+            pandas.DataFrame: Mean maps scaled to mtz_ref, or unscaled mean maps
+                if mtz_ref, binner, prefix or suffix is not given.
         """
 
         """# noqa: E741
@@ -141,8 +141,8 @@ def bootstrap_mean_map(
                     imag_mean = float(numpy.imag(mean_val))
                     real_part = numpy.real(x)
                     imag_part = numpy.imag(x)
-                    real_var = float(numpy.var(real_part, ddof=1, mean=real_mean))
-                    imag_var = float(numpy.var(imag_part, ddof=1, mean=imag_mean))
+                    real_var = float(numpy.var(real_part, ddof=1))
+                    imag_var = float(numpy.var(imag_part, ddof=1))
 
                 std_val = numpy.sqrt(real_var + imag_var)
 
@@ -374,6 +374,8 @@ def bootstrap_mean_map(
                 )
                 write_bin_stats(bin_stats, stats_filename)
 
+        # unscaled mean maps unless they can be scaled to mtz_ref below
+        df_scaled = df_mean
         if mtz_ref and binner and prefix and suffix:
             mtz_scaled_prefix = (
                 f"{prefix}group{idx}_bootstrap_mean_map{suffix}"
@@ -385,6 +387,21 @@ def bootstrap_mean_map(
                 df_mean.copy(),
                 binner,
                 output_mtz2_prefix=mtz_scaled_prefix,
+            )
+        else:
+            missing = [
+                name
+                for name, value in (
+                    ("mtz_ref", mtz_ref),
+                    ("binner", binner),
+                    ("prefix", prefix),
+                    ("suffix", suffix),
+                )
+                if not value
+            ]
+            logging.warning(
+                f"Mean map{f' {suffix}' if suffix else ''} not scaled,"
+                f" missing: {', '.join(missing)}. Returning unscaled mean map."
             )
 
         return df_scaled
@@ -402,7 +419,9 @@ def bootstrap_mean_map(
             logging.info(f"Scaling reflections to {refined_mtzs[0]}")
 
     # Process MTZ files in parallel
-    def _add_reflections(worker_args):
+    def _add_reflections(
+        worker_args: tuple[str, list[str], gemmi.Binner | None, str],
+    ) -> tuple[pandas.DataFrame | None, list[dict] | None]:
         """
         Worker function to scale one MTZ file for bootstrap mean map calculation.
         Returns (df, bin_stats) or (None, None) on failure.
@@ -531,14 +550,15 @@ def bootstrap_mean_map_sigmaa(
     source: str = "xray",
     idx: int = 0,
     prefix: str = "",
-):
+) -> str:
     """
     Calculate the mean maps from multiple mmCIF files using Servalcat sigmaa.
     The ADPs of each model are adjusted to have the same mean ADP
     before calculating the mean map.
 
     Returns:
-        str: The output MTZ filename containing the mean map.
+        str: The output MTZ filename containing the mean map,
+            or "" if it was not created.
     """
     logging.info(
         f"\nCalculating mean map using {len(mmcifs_path)} mmCIF files..."
@@ -557,15 +577,20 @@ def bootstrap_mean_map_sigmaa(
         logging.warning(
             "Mean ADPs not provided. Calculating mean ADPs for each model now."
         )
-        b_values_all = []
-        for model in mmcifs_joint:
-            atoms = [
-                cra.atom for cra in structure[0].all() if not cra.atom.is_hydrogen()
+        # mean of each model separately; the models are expected to have the same
+        # atoms, but this would also work if they differed
+        mean_b_values = numpy.array(
+            [
+                numpy.mean(
+                    [
+                        cra.atom.b_iso
+                        for cra in model.all()
+                        if not cra.atom.is_hydrogen()
+                    ]
+                )
+                for model in mmcifs_joint
             ]
-            b_values = numpy.array([atom.b_iso for atom in atoms])
-            b_values_all.append(b_values)
-        b_values_array = numpy.array(b_values_all)
-        mean_b_values = numpy.mean(b_values_array, axis=1)
+        )
 
     # Calculate overall average ADP
     global_average_b = numpy.mean(mean_b_values)

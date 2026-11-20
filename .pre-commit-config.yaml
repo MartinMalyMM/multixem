@@ -22,7 +22,13 @@ repos:
       - id: flake8
         additional_dependencies: [flake8-pyproject]
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.8.0
+    # v1.19.1 is the last mypy version which can check for Python 3.9
+    rev: v1.19.1
     hooks:
       - id: mypy
-        additional_dependencies: [pandas-stubs, types-Pillow, types-setuptools, types-PyYAML]
+        args: [--ignore-missing-imports, --python-version=3.9]
+        # the GitHub action scripts run on a newer Python, not checked for 3.9
+        exclude: ^\.github/
+        # pinned, newer stubs (pandas-stubs 3) report many false positives
+        additional_dependencies:
+          [pandas-stubs==2.2.3.250308, numpy==2.2.4, types-Pillow, types-setuptools, types-PyYAML]

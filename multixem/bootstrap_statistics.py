@@ -1,5 +1,6 @@
 # coding: utf-8
-from typing import Union
+from __future__ import annotations
+
 import os
 import json
 import logging
@@ -16,7 +17,7 @@ from .tools import filename_replace_char, json_numpy_converter
 matplotlib.use("Agg")
 
 
-def match_sigfigs(value: Union[float, int], ref: Union[float, int]) -> str:
+def match_sigfigs(value: float, ref: float) -> str:
     """Format `value` to have the same number of significant figures as `ref`."""
     if ref == 0:
         return f"{value:.2f}"
@@ -25,17 +26,17 @@ def match_sigfigs(value: Union[float, int], ref: Union[float, int]) -> str:
 
 
 def df_scatter_plot(
-    df: Union[pandas.DataFrame, str],
+    df: pandas.DataFrame | str,
     x_cols: list[str],
     y_cols_groups: list[list[str]],
     filename: str = "scatter_plot.png",
     per_element: bool = False,
-):
+) -> None:
     """
     Create multiple scatter subplots from a DataFrame and save as PNG.
 
     Args:
-        df (pandas.DataFrame or str or file stream): DataFrame or a CSV file.
+        df (pandas.DataFrame or str): DataFrame or path to a CSV file.
         x_cols (list[str]): Column names for x-axis for each subplot.
                               If per_element=True,
                               x_cols should be 'atomic_number' or 'atom_id'.
@@ -46,14 +47,19 @@ def df_scatter_plot(
                             Hydrogens will be excluded.
     """
 
-    def extract_atomic_numbers(df, atom_id_col):
+    def extract_atomic_numbers(df: pandas.DataFrame, atom_id_col: str) -> numpy.ndarray:
         # atom_id can look like "A/00 1/H19A", I want to extract "H"
         atom_labels = df[atom_id_col]
         proton_numbers = []
         for atom_id in atom_labels:
             atom_id_part = atom_id.split("/")[-1]
             match = re.match(r"^([A-Z][a-z]?)", atom_id_part)
-            element = match.group(1)
+            if match:
+                element = match.group(1)
+            else:
+                # unknown element X has atomic number 0, excluded from the plot
+                logging.warning(f"Element not recognised in {atom_id}, skipping it.")
+                element = "X"
             proton_number = gemmi.Element(element).atomic_number
             proton_numbers.append(proton_number)
         return numpy.array(proton_numbers)
@@ -149,8 +155,14 @@ def df_scatter_plot(
 
 
 def analyse_distribution(
-    values, xlabel, outlier_factor=3.0, idx=0, prefix="", filtered=False, save=True
-):
+    values: list[float] | numpy.ndarray,
+    xlabel: str,
+    outlier_factor: float = 3.0,
+    idx: int = 0,
+    prefix: str = "",
+    filtered: bool = False,
+    save: bool = True,
+) -> tuple[dict, dict, pandas.DataFrame | None]:
     """
     Analyse a distribution of values and return summary statistics.
 
@@ -179,9 +191,9 @@ def analyse_distribution(
     q3 = numpy.percentile(values, 75)
     iqr = q3 - q1
     # MAD to be consistent with stdev for normal distribution
-    mad = numpy.median(numpy.abs(values - median)) * 1.4826
-    min_val = numpy.min(values)
-    max_val = numpy.max(values)
+    mad = numpy.median(numpy.abs(numpy.asarray(values) - median)) * 1.4826
+    min_val = float(numpy.min(values))
+    max_val = float(numpy.max(values))
     n_values = len(values)
     distr_analysis_dict = {
         "mean": mean,
@@ -288,12 +300,19 @@ def analyse_distribution(
     )
 
 
-def plot_histogram(values, xlabel, ref={}, idx=0, prefix="", outlier_factor=3.0):
+def plot_histogram(
+    values: list[float] | numpy.ndarray,
+    xlabel: str,
+    ref: dict[str, float] = {},
+    idx: int = 0,
+    prefix: str = "",
+    outlier_factor: float = 3.0,
+) -> tuple[dict, dict, pandas.DataFrame | None]:
     """
     Plot a histogram of the data and save as PNG.
 
     Args:
-        data (list or numpy array): Data to plot.
+        values (list or numpy array): Data to plot.
         xlabel (str): Label for the x-axis and the output file.
         ref (dict): Reference values for the plot {label: value}.
         idx (int): Index for naming the output file (applies if not set to 0).
@@ -369,20 +388,37 @@ def plot_histogram(values, xlabel, ref={}, idx=0, prefix="", outlier_factor=3.0)
 
 
 def scatter_plot_histogram(
-    x, y, label, stat_ref={}, idx=0, prefix="", filtered=True, outlier_factor=3.0
-):
+    x: list[float] | numpy.ndarray,
+    y: list[float] | numpy.ndarray,
+    label: str,
+    stat_ref: dict[str, float] = {},
+    idx: int = 0,
+    prefix: str = "",
+    filtered: bool = True,
+    outlier_factor: float = 3.0,
+) -> tuple[dict, dict, pandas.DataFrame | None]:
     """
     Plot a scatter plot of x vs y including histograms and save as PNG.
 
     Args:
         x (list or numpy array): Data for the x-axis.
         y (list or numpy array): Data for the y-axis.
-        stat_ref (dict): Reference statistic for the plot {label: value}.
         label (str): Label for the axes and the output file.
+        stat_ref (dict): Reference statistic for the plot {label: value}.
         idx (int): Index for naming the output file (applies if not set to 0).
         prefix (str): Prefix for the output filename.
         filtered (bool): Whether the values are already filtered.
         outlier_factor (float): Factor for determining outliers.
+
+    Returns:
+        tuple: (distr, distr_init, outliers):
+            - distr (dict): Summary statistics of x (mean, stdev, median, q1, q3,
+              iqr, mad, min, max, n), see analyse_distribution().
+              The histogram and values of x are also saved to CSV files.
+            - distr_init (dict): The same summary statistics of y (not saved).
+            - outliers (pandas.DataFrame or None): Outliers of x outside
+              [q1 - outlier_factor * iqr, q3 + outlier_factor * iqr], with
+              columns "index" (position in x) and "value"; None if there are none.
     """
     if len(x) != len(y):
         raise ValueError("x and y must have the same length.")
@@ -533,15 +569,19 @@ def scatter_plot_histogram(
     return distr, distr_init, outliers
 
 
-def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
+def bootstrap_analyse_stats(
+    jsons: list[str], json_ref: str, idx: int = 0, prefix: str = ""
+) -> list[int]:
     logging.info(f"Loading {len(jsons)} json files with statistics...")
     # Find out which statistics are available
     # and create related empty lists in data_overall_dict and data_overall[_init]_dict
     with open(jsons[0]) as f:
         data_first = json.load(f)
     stats_data_avail = data_first[-1]["data"]["summary"].keys()
-    data_overall_dict = {stat: [] for stat in stats_data_avail}
-    data_overall_init_dict = {stat: [] for stat in stats_data_avail}
+    data_overall_dict: dict[str, list[float]] = {stat: [] for stat in stats_data_avail}
+    data_overall_init_dict: dict[str, list[float]] = {
+        stat: [] for stat in stats_data_avail
+    }
     # Add keys for geometry statistics from geom section
     geom_stats_avail = False
     geom_stats = [
@@ -687,7 +727,7 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
             f"Reference file with statistics not found {json_ref if json_ref else ''}"
         )
 
-    distrs = {"init": {}, "final": {}}
+    distrs: dict[str, dict] = {"init": {}, "final": {}}
     llweight_R1_outliers = []
     for stat in data_overall_dict.keys():
         stat_ref = {}
@@ -699,9 +739,7 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
             and data_ref.get(stats_ref_equivalents[stat], None) is not None
         ):
             stat_ref = {
-                stats_ref_equivalents[stat]: data_ref.get(
-                    stats_ref_equivalents[stat], None
-                )
+                stats_ref_equivalents[stat]: data_ref[stats_ref_equivalents[stat]]
             }
         distr, distr_init, llweight_outliers = scatter_plot_histogram(
             data_overall_dict[stat],
@@ -731,7 +769,7 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
 
     # Filter outliers based on R1 values and re-analyse the distributions
     if llweight_R1_outliers:
-        distrs_filtered = {"init": {}, "final": {}}
+        distrs_filtered: dict[str, dict] = {"init": {}, "final": {}}
         data_overall_filtered_dict = {}
         data_overall_init_filtered_dict = {}
         logging.info(
@@ -758,9 +796,7 @@ def bootstrap_analyse_stats(jsons, json_ref, idx=0, prefix=""):
                 and data_ref.get(stats_ref_equivalents[stat], None) is not None
             ):
                 stat_ref = {
-                    stats_ref_equivalents[stat]: data_ref.get(
-                        stats_ref_equivalents[stat], None
-                    )
+                    stats_ref_equivalents[stat]: data_ref[stats_ref_equivalents[stat]]
                 }
             distr_filtered, distr_init_filtered, _ = scatter_plot_histogram(
                 data_overall_filtered_dict[stat],

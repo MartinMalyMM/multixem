@@ -562,6 +562,45 @@ class TestCommonOptions:
 
         assert args.servalcat_args == servalcat_str
 
+    @pytest.mark.parametrize(
+        "servalcat_args",
+        [
+            ["--servalcat_args", "--nscr"],  # single option, starts with "-"
+            ["--servalcat_args", "-x"],
+            ["--servalcat_args", "--nscr --ncycle 2"],
+        ],
+    )
+    def test_servalcat_args_starting_with_dash(self, dummy_files, servalcat_args):
+        """A value starting with "-" must not be taken for another option."""
+        parser = create_parser()
+        args = parser.parse_args(
+            [
+                "bootstrap",
+                "5",
+                "--hklin",
+                dummy_files["mtz"],
+                "--model",
+                dummy_files["pdb"],
+                *servalcat_args,
+            ]
+        )
+        assert args.servalcat_args == servalcat_args[1]
+
+    def test_servalcat_args_default(self, dummy_files):
+        """Without --servalcat_args the value is an empty string."""
+        parser = create_parser()
+        args = parser.parse_args(
+            [
+                "bootstrap",
+                "5",
+                "--hklin",
+                dummy_files["mtz"],
+                "--model",
+                dummy_files["pdb"],
+            ]
+        )
+        assert args.servalcat_args == ""
+
 
 class TestMeanCommand:
     """Test mean subcommand."""

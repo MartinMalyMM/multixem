@@ -1,4 +1,6 @@
 # coding: utf-8
+from __future__ import annotations
+
 import json
 import logging
 import os
@@ -136,7 +138,7 @@ def unrestrain(geometry_objects_ref, structure_file):
 '''
 
 
-def unrestrain_yaml(geometry_objects_ref):
+def unrestrain_yaml(geometry_objects_ref: list[dict]) -> dict:
     """geometry_objects_ref is a list of dicts with keys:
     atom1, atom2, atom3, atom4 - CIDs of the atoms involved"""
     cids = set()
@@ -154,7 +156,9 @@ def unrestrain_yaml(geometry_objects_ref):
     }
 
 
-def floating_origin_detect(st: gemmi.Structure):
+def floating_origin_detect(
+    st: gemmi.Structure,
+) -> tuple[list[numpy.ndarray], list[int]]:
     """
     Detect if there is a floating origin problem in the point group
     and in which directions.
@@ -263,8 +267,8 @@ def calculate_alpha_displacement(
 
 def apply_alpha_to_structure_cartesian(
     st: gemmi.Structure,
-    alpha: numpy.ndarray,
-):
+    alpha: gemmi.Position,
+) -> gemmi.Structure:
 
     for cra in st[0].all():
         cra.atom.pos = cra.atom.pos + alpha
@@ -273,11 +277,36 @@ def apply_alpha_to_structure_cartesian(
 
 
 def floating_origin_shift(
-    st1: gemmi.Structure, st2: gemmi.Structure, basis_vectors, eigenindices_nonzero
-):
+    st1: gemmi.Structure,
+    st2: gemmi.Structure,
+    basis_vectors: list[numpy.ndarray],
+    eigenindices_nonzero: list[int],
+) -> tuple[
+    gemmi.Structure,
+    gemmi.Fractional,
+    gemmi.Position,
+    tuple[float, float, numpy.ndarray, numpy.ndarray],
+]:
     """
     Apply a shift to st2 to correct for the floating origin problem based
     on the difference in coordinates between st1 and st2.
+
+    Returns:
+        tuple: (st2_shifted, alpha_frac, alpha_cart, sum_coords_diff_frac_sqs):
+            - st2_shifted (gemmi.Structure): st2 with all atoms of the first
+              model shifted by alpha_cart. st2 is modified in place,
+              st2_shifted is the same object.
+            - alpha_frac (gemmi.Fractional): The shift in fractional coordinates.
+            - alpha_cart (gemmi.Position): The shift in Cartesian coordinates.
+            - sum_coords_diff_frac_sqs (tuple): Squared differences in fractional
+              coordinates between st1 and st2 (wrapped to the nearest lattice
+              translation), before and after the shift:
+                - (float) atomic-weight-weighted sum over atoms
+                  of dx² + dy² + dz², before the shift,
+                - (float) the same after the shift,
+                - (numpy.ndarray) unweighted sums of dx², dy², dz² (shape 3),
+                  before the shift,
+                - (numpy.ndarray) the same after the shift.
     """
 
     coords1_frac = load_fractional_coords(st1)
@@ -294,12 +323,14 @@ def floating_origin_shift(
     )
 
     # Scalar: mean over atoms of (dx² + dy² + dz²)
-    sum_coords_diff_frac_sq = numpy.sum(
-        atom_weights
-        * (
-            coords_diff_frac[:, 0] ** 2
-            + coords_diff_frac[:, 1] ** 2
-            + coords_diff_frac[:, 2] ** 2
+    sum_coords_diff_frac_sq = float(
+        numpy.sum(
+            atom_weights
+            * (
+                coords_diff_frac[:, 0] ** 2
+                + coords_diff_frac[:, 1] ** 2
+                + coords_diff_frac[:, 2] ** 2
+            )
         )
     )
     # individual components also
@@ -324,12 +355,14 @@ def floating_origin_shift(
         ]
     )
 
-    sum_coords_diff_frac_sq_shifted = numpy.sum(
-        atom_weights
-        * (
-            coords_diff_frac_shifted[:, 0] ** 2
-            + coords_diff_frac_shifted[:, 1] ** 2
-            + coords_diff_frac_shifted[:, 2] ** 2
+    sum_coords_diff_frac_sq_shifted = float(
+        numpy.sum(
+            atom_weights
+            * (
+                coords_diff_frac_shifted[:, 0] ** 2
+                + coords_diff_frac_shifted[:, 1] ** 2
+                + coords_diff_frac_shifted[:, 2] ** 2
+            )
         )
     )
     sum_coords_diff_frac_sq_shifted_xyz = numpy.sum(coords_diff_frac_shifted**2, axis=0)
@@ -343,7 +376,12 @@ def floating_origin_shift(
     return st2_shifted, alpha_frac, alpha_cart, sum_coords_diff_frac_sqs
 
 
-def calculate_angle(atom1_pos, atom2_pos, atom3_pos, degrees=True):
+def calculate_angle(
+    atom1_pos: gemmi.Position,
+    atom2_pos: gemmi.Position,
+    atom3_pos: gemmi.Position,
+    degrees: bool = True,
+) -> float:
     """
     Calculate the angle ABC (at atom2) from gemmi.Position objects.
     """
@@ -365,7 +403,13 @@ def calculate_angle(atom1_pos, atom2_pos, atom3_pos, degrees=True):
     return numpy.degrees(theta_rad) if degrees else theta_rad
 
 
-def calculate_torsion_angle(atom1_pos, atom2_pos, atom3_pos, atom4_pos, degrees=True):
+def calculate_torsion_angle(
+    atom1_pos: gemmi.Position,
+    atom2_pos: gemmi.Position,
+    atom3_pos: gemmi.Position,
+    atom4_pos: gemmi.Position,
+    degrees: bool = True,
+) -> float:
     """
     Calculates the torsion (dihedral) angle between four gemmi.Position objects.
     Angle is defined by A–B–C–D.
@@ -405,7 +449,7 @@ def calculate_torsion_angle(atom1_pos, atom2_pos, atom3_pos, atom4_pos, degrees=
     return numpy.degrees(angle_rad) if degrees else angle_rad
 
 
-def circular_mean_deg(angles_deg):
+def circular_mean_deg(angles_deg: numpy.ndarray) -> float:
     angles_rad = numpy.deg2rad(angles_deg)
     mean_angle_rad = numpy.arctan2(
         numpy.mean(numpy.sin(angles_rad)), numpy.mean(numpy.cos(angles_rad))
@@ -419,7 +463,7 @@ def circular_mean_deg(angles_deg):
     return mean_angle_deg
 
 
-def circular_std_deg(angles_deg):
+def circular_std_deg(angles_deg: numpy.ndarray) -> float:
     angles_rad = numpy.deg2rad(angles_deg)
     R = numpy.sqrt(
         numpy.mean(numpy.sin(angles_rad)) ** 2 + numpy.mean(numpy.cos(angles_rad)) ** 2
@@ -428,18 +472,23 @@ def circular_std_deg(angles_deg):
     return numpy.rad2deg(numpy.sqrt(-2 * numpy.log(R)))
 
 
-def apply_symmetry_and_translation(st, op, t, pos_cart):
+def apply_symmetry_and_translation(
+    st: gemmi.Structure,
+    op: gemmi.Op,
+    t: tuple[int, int, int],
+    pos_cart: gemmi.Position,
+) -> gemmi.Position:
     # Convert Cartesian to fractional
     pos_frac = st.cell.fractionalize(pos_cart)
     # Apply symmetry op (returns list), then wrap as Fractional
-    sym_applied = gemmi.Fractional(*op.apply_to_xyz(pos_frac))
+    sym_applied = gemmi.Fractional(*op.apply_to_xyz(pos_frac.tolist()))
     new_frac = sym_applied + gemmi.Fractional(t[0], t[1], t[2])
     # Convert back to Cartesian
     pos_cart_new = st.cell.orthogonalize(new_frac)
     return pos_cart_new
 
 
-def select_cids_for_geometry_analysis(geometry_cids_file):
+def select_cids_for_geometry_analysis(geometry_cids_file: str) -> list[dict]:
     """
     Read a file with atom CIDs for geometry analysis.
 
@@ -471,7 +520,7 @@ def select_cids_for_geometry_analysis(geometry_cids_file):
                     3,
                     4,
                 ], f"Invalid line in {geometry_cids_file}: {line}"
-                object_geom = {}
+                object_geom: dict = {}
                 object_geom["values"] = []
                 object_geom["atom1"] = cids[0]
                 object_geom["atom2"] = ""
@@ -497,7 +546,7 @@ def select_cids_for_geometry_analysis(geometry_cids_file):
     return objects_geom
 
 
-def geometry_analysis_load(st, objects_cids):
+def geometry_analysis_load(st: gemmi.Structure, objects_cids: list[dict]) -> list[dict]:
     """
     For a given structure, calculate bond lengths, angles, and torsions
     for the specified atom CIDs.
@@ -541,7 +590,9 @@ def geometry_analysis_load(st, objects_cids):
     return objects_cids
 
 
-def get_pos_from_cid(st, cid, pos_reference=None):
+def get_pos_from_cid(
+    st: gemmi.Structure, cid: str, pos_reference: gemmi.Position | None = None
+) -> gemmi.Position:
     """
     Get Cartesian position of an atom from its CID in a structure.
     Extended CID format: /model/chain/residue/atom[@symop]
@@ -592,15 +643,19 @@ def get_pos_from_cid(st, cid, pos_reference=None):
     return pos
 
 
-def get_smcif_tables(smcif_block):
+def get_smcif_tables(
+    smcif_block: gemmi.cif.Block,
+) -> tuple[tuple[gemmi.cif.Table | None, list], ...]:
     """Extract relevant tables from a small molecule CIF block and their columns."""
 
-    def get_table_and_columns(smcif_block, col_names):
+    def get_table_and_columns(
+        smcif_block: gemmi.cif.Block, col_names: list[str]
+    ) -> tuple[gemmi.cif.Table | None, list]:
         table = smcif_block.find(col_names)
         if not table:
             logging.warning(f"Table not found in small molecule CIF block. {col_names}")
             return None, []
-        columns = []
+        columns: list = []
         for col in col_names:
             col = col.strip("?")  # Remove '?' prefix if present
             try:
@@ -676,7 +731,7 @@ def get_smcif_tables(smcif_block):
     )
 
 
-def extract_value_and_stdev(value):
+def extract_value_and_stdev(value: str) -> tuple[float, float | None]:
     """
     Extract base value and standard deviation from
     e.g. '-0.1234(5)' -> (-0.1234, 0.0005)
@@ -697,13 +752,13 @@ def extract_value_and_stdev(value):
 
 
 def collect_geometry_lists(
-    table,
-    atom_cols,
-    symmetry_cols=[],
-    value_sigma_cols=[],
-    value_sigma_cols_names=[],
-    elem_col="",
-):
+    table: gemmi.cif.Table,
+    atom_cols: list[gemmi.cif.Column],
+    symmetry_cols: list[gemmi.cif.Column | list[None]] = [],
+    value_sigma_cols: list[gemmi.cif.Column | list[None]] = [],
+    value_sigma_cols_names: list[str] = [],
+    elem_col: gemmi.cif.Column | str = "",
+) -> list[dict]:
     """Collect atom lists (for bonds, angles, torsions).
     Do not include atoms from symmetry-related molecules specified in symmetry_cols.
     If elem_col is provided, hydrogen atoms will be excluded.
@@ -730,7 +785,7 @@ def collect_geometry_lists(
             and (not elem_col or elem_col[j] != "H")
         )
     ]
-    geom_list = [
+    geom_list: list[dict] = [
         {f"atom{i + 1}": atom_cols[i][j_idx] for i in range(len(atom_cols))}
         for j_idx in j_idx_filtered
     ]
@@ -745,19 +800,26 @@ def collect_geometry_lists(
                         else None
                     )
                 else:
-                    value, sigma = extract_value_and_stdev(value_sigma_cols[i][j_idx])
+                    value_sigma = value_sigma_cols[i][j_idx]
+                    # placeholders of None are only used for missing
+                    # symmetry and disorder columns, see get_smcif_tables()
+                    assert value_sigma is not None
+                    value, sigma = extract_value_and_stdev(value_sigma)
                     entry[f"{value_sigma_cols_names[i]}_deposit"] = value
                     entry[f"sigma_{value_sigma_cols_names[i]}_deposit"] = sigma
 
     return geom_list
 
 
-def collect_values_smcif(smcif, skip_hydrogen=True):
+def collect_values_smcif(
+    smcif: str, skip_hydrogen: bool = True
+) -> tuple[list[dict], list[dict], list[dict], list[dict], list[dict], list[dict]]:
     """
     Collect values about geometry from a small molecule CIF file from SHELX.
 
     Args:
         smcif (str): Path to the small molecule CIF file.
+        skip_hydrogen (bool): If True, exclude hydrogen atoms.
 
     Returns:
         tuple: (atoms_list, occ_list,
@@ -950,19 +1012,16 @@ def collect_values_smcif(smcif, skip_hydrogen=True):
 
 
 def bootstrap_analyse_structures(
-    refined_mmcifs,
-    mmcif_ref,
-    idx=0,
-    prefix="",
-    skip_hydrogen=True,
-    smcif="",
-    geometry_cids_file="",
-    geometry_objects_ref=[],
-    no_origin_shift=False,
+    refined_mmcifs: list[str],
+    mmcif_ref: str,
+    idx: int = 0,
+    prefix: str = "",
+    skip_hydrogen: bool = True,
+    smcif: str = "",
+    geometry_cids_file: str = "",
+    geometry_objects_ref: list[dict] = [],
+    no_origin_shift: bool = False,
 ) -> tuple[numpy.ndarray, dict]:
-    obj_occ_refs: list[dict[str, list]] = []
-    obj_bond_refs: list[dict[str, list]] = []
-    obj_angle_torsion_refs: list[dict[str, list]] = []
     """
     Analyse structure models (mmCIF files) to compute mean coordinates and B-factors.
     The structure models are expected to be after refinement against a bootstrapped
@@ -970,20 +1029,29 @@ def bootstrap_analyse_structures(
 
     Args:
         refined_mmcifs (list of str): List of mmCIF filenames.
-        mmcif_ref: Reference mmCIF (refined in a standard way)
+        mmcif_ref (str): Reference mmCIF (refined in a standard way)
         idx (int): Index for naming the output files (applies if not set to 0).
         prefix (str): Prefix for the output filenames.
         skip_hydrogen (bool): If True, skip hydrogen atoms in the analysis.
         smcif (str): Path to a corresponding small molecule CIF file.
-        geometry_cids_file (str)
-        geometry_objects_ref (list)
+        geometry_cids_file (str): File with atom CIDs for geometry analysis.
+        geometry_objects_ref (list of dict): Geometry objects from
+            the reference structure, see select_cids_for_geometry_analysis().
         no_origin_shift (bool): Do not perform correction for floating origin
 
     Returns:
-        None: Writes the statistics in '{prefix}group{idx}_bootstrap_mean_stats.csv' and
-              the mean structure to '{prefix}group{idx}_bootstrap_mean_structure.mmcif'
-              where 1000 * sigma_coordinate is saved as B-value.
+        tuple: (mean_b_values_per_structure, b_values_distr)
+            mean_b_values_per_structure (numpy.ndarray): Mean B-value of each
+                structure model, shape (n_structures,).
+            b_values_distr (dict): Distribution statistics of these mean B-values
+                from plot_histogram().
+        Also writes the statistics in '{prefix}group{idx}_bootstrap_mean_stats.csv'
+        and the mean structure to '{prefix}group{idx}_bootstrap_mean_structure.mmcif'
+        where the joint sigma of coordinates is saved as B-value.
     """
+    obj_occ_refs: list[dict[str, float]] = []
+    obj_bond_refs: list[dict[str, float]] = []
+    obj_angle_torsion_refs: list[dict[str, float]] = []
 
     # numpy.set_printoptions(threshold=numpy.inf)
     st_first = gemmi.read_structure(refined_mmcifs[0])
@@ -1015,7 +1083,7 @@ def bootstrap_analyse_structures(
         (len(st_first_cras), len(refined_mmcifs)), dtype=numpy.float32
     )
 
-    ref_b_value = {}
+    ref_b_value: dict[str, float] = {}
     if mmcif_ref and os.path.isfile(mmcif_ref):
         st_ref = gemmi.read_structure(mmcif_ref)
         st_ref_cras = [
@@ -1037,12 +1105,12 @@ def bootstrap_analyse_structures(
                 f" ({len(st_first_cras)} atoms)"
             )
         ref_b_values = [cra.atom.b_iso for cra in st_ref_cras]
-        ref_b_value = {"median B-value": numpy.median(ref_b_values)}
+        ref_b_value = {"median B-value": float(numpy.median(ref_b_values))}
 
         if not no_origin_shift:
             basis_vectors, eigenindices_nonzero = floating_origin_detect(st_ref)
         else:
-            basis_vectors = eigenindices_nonzero = []
+            basis_vectors, eigenindices_nonzero = [], []
         if eigenindices_nonzero:
             alphas_frac = numpy.zeros((3, len(refined_mmcifs)), dtype=numpy.float32)
             alphas_cart = numpy.zeros((3, len(refined_mmcifs)), dtype=numpy.float32)
@@ -1064,7 +1132,7 @@ def bootstrap_analyse_structures(
 
     if smcif:
         atoms_list, occ_list, u_aniso_list, bonds_list, angles_list, torsions_list = (
-            collect_values_smcif(smcif)
+            collect_values_smcif(smcif, skip_hydrogen=skip_hydrogen)
         )
         bonds = numpy.full(
             (len(bonds_list), len(refined_mmcifs)), numpy.nan, dtype=numpy.float32

@@ -1,4 +1,6 @@
 # coding: utf-8
+from __future__ import annotations
+
 import os
 import logging
 import warnings
@@ -11,7 +13,7 @@ from .tools import write_mtz_from_df
 def bootstrap_dataset(
     mtz_file: str,
     binner: gemmi.Binner,
-    seeds=[1001, 1002, 1003],
+    seeds: list[int] | range = [1001, 1002, 1003],
     labin: str = "",
     draw_factor: float = 1.0,
     random_weights: bool = False,
@@ -25,7 +27,7 @@ def bootstrap_dataset(
     Args:
         mtz_file (str): Path to the input MTZ file.
         binner (gemmi.Binner): gemmi.Binner object for resolution binning.
-        seeds (list of int): List of random seeds for bootstrapping.
+        seeds (list of int or range): Random seeds for bootstrapping.
         labin (str): Column label (e.g. `IMEAN,SIGIMEAN`)
             to apply `df.dropna(subset=[labin.split(",")[0]])`.
         draw_factor (float): Factor for a number of draws in resampling.
@@ -33,10 +35,12 @@ def bootstrap_dataset(
                               reflections in each bin (draw_factor==1.0).
         random_weights (bool): Assign random weights instead of
                                resampling with replacement.
+        dirichlet_alpha (float): Alpha parameter of the Dirichlet distribution
+                                 used if `random_weights` is True.
         col_free (str): Label for free R flag in `mtz_file` which would be used to set
                         zero weight for reflections of the free set
                         if `fraction_zero` is zero
-        fraction zero (float): Sets fraction of reflections with zero weight [0.0, 1.0)
+        fraction_zero (float): Sets fraction of reflections with zero weight [0.0, 1.0)
     Returns:
         list of str: List of output MTZ filenames created during bootstrapping.
         str: Path to the MTZ file without reflections without data
@@ -90,7 +94,7 @@ def bootstrap_dataset(
 
         Args:
             n (int): Number of items to resample.
-            zero_mask (numpy.ndarray): Optional boolean mask;
+            zero_mask (numpy.ndarray): Boolean mask;
                                        rows set to True are forced to zero.
                                        Applied if `fraction_zero` is zero.
             dirichlet_alpha (float): Alpha parameter for the uniform Dirichlet
@@ -317,7 +321,7 @@ def bootstrap_dataset(
                 f" {completeness_mean:.2%}\n"
             )
     else:
-        completeness_std = numpy.std(completeness_list, ddof=1, mean=completeness_mean)
+        completeness_std = numpy.std(completeness_list, ddof=1)
         logging.info(
             "Completeness of bootstrap datasets"
             " after exclusion of zero-weighted reflections:"

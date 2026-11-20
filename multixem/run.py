@@ -1,4 +1,6 @@
 # coding: utf-8
+from __future__ import annotations
+
 import os
 import sys
 import argparse
@@ -14,6 +16,7 @@ import glob
 import re
 import yaml
 from collections import Counter
+from types import TracebackType
 import concurrent.futures
 
 # servalcat 0.4.145 must be imported before gemmi
@@ -51,7 +54,7 @@ from .bootstrap_maps import bootstrap_mean_map, bootstrap_mean_map_sigmaa
 matplotlib.use("Agg")
 
 
-def setup_logging():
+def setup_logging() -> logging.Logger:
     """
     Set up logging to output to both console and file.
     """
@@ -65,7 +68,7 @@ def setup_logging():
 
     # Create formatters - simple format for INFO, detailed for others
     class CustomFormatter(logging.Formatter):
-        def format(self, record):
+        def format(self, record: logging.LogRecord) -> str:
             if record.levelno in [logging.INFO, logging.DEBUG]:
                 return record.getMessage()
             else:
@@ -92,7 +95,11 @@ def setup_logging():
     warnings_logger.setLevel(logging.WARNING)
 
     # Also capture uncaught exceptions
-    def handle_exception(exc_type, exc_value, exc_traceback):
+    def handle_exception(
+        exc_type: type[BaseException],
+        exc_value: BaseException,
+        exc_traceback: TracebackType | None,
+    ) -> None:
         if issubclass(exc_type, KeyboardInterrupt):
             # Allow KeyboardInterrupt to be handled normally
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
@@ -108,7 +115,7 @@ def setup_logging():
     return logger
 
 
-def sort_llweight_files(file_list):
+def sort_llweight_files(file_list: list[str]) -> list[str]:
     """
     Sort files containing '_llweight<number>_' by the numerical value.
 
@@ -119,7 +126,7 @@ def sort_llweight_files(file_list):
         Sorted list of file paths
     """
 
-    def extract_llweight_number(filepath):
+    def extract_llweight_number(filepath: str) -> int:
         match = re.search(r"_llweight(\d+)_", filepath)
         if match:
             return int(match.group(1))
@@ -128,7 +135,7 @@ def sort_llweight_files(file_list):
     return sorted(file_list, key=extract_llweight_number)
 
 
-def filter_out_refined_files(files, llweights):
+def filter_out_refined_files(files: list[str], llweights: list[int]) -> list[str]:
     """
     Filter out refined files based on their llweight in the file name.
     Typically used to exclude R1-value outliers.
@@ -157,7 +164,7 @@ def filter_out_refined_files(files, llweights):
     return filtered_files
 
 
-def create_parser():
+def create_parser() -> argparse.ArgumentParser:
     """
     Create the argument parser for the command-line interface.
 
@@ -165,19 +172,17 @@ def create_parser():
         argparse.ArgumentParser: The argument parser object.
     """
 
-    def positive_int(value):
-        if isinstance(value, list):
-            positive_int(v for v in value)
-        else:
-            try:
-                ivalue = int(value)
-            except ValueError:
-                raise argparse.ArgumentTypeError(f"{value} is not an integer.")
-            if ivalue <= 0:
-                raise argparse.ArgumentTypeError(f"{value} is not a positive integer.")
-            return ivalue
+    def positive_int(value: str) -> int:
+        # argparse calls this for each value separately, also with nargs
+        try:
+            ivalue = int(value)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"{value} is not an integer.")
+        if ivalue <= 0:
+            raise argparse.ArgumentTypeError(f"{value} is not a positive integer.")
+        return ivalue
 
-    def positive_float(value):
+    def positive_float(value: str) -> float:
         try:
             fvalue = float(value)
         except ValueError:
@@ -186,13 +191,13 @@ def create_parser():
             raise argparse.ArgumentTypeError(f"{value} is not a positive float.")
         return fvalue
 
-    def existing_file(path):
+    def existing_file(path: str) -> str:
         abs_norm_path = os.path.abspath(os.path.normpath(path))
         if not os.path.isfile(abs_norm_path):
             raise argparse.ArgumentTypeError(f"File does not exist: {abs_norm_path}")
         return abs_norm_path
 
-    def existing_directory(path):
+    def existing_directory(path: str) -> str:
         abs_norm_path = os.path.abspath(os.path.normpath(path))
         if not os.path.isdir(abs_norm_path):
             raise argparse.ArgumentTypeError(
@@ -201,10 +206,17 @@ def create_parser():
         return abs_norm_path
 
     class ArgumentDefaultsHelpFormatterCustom(argparse.ArgumentDefaultsHelpFormatter):
-        def _get_help_string(self, action):
+        def _get_help_string(self, action: argparse.Action) -> str | None:
             help_str = action.help
-            # Only show default if it's not None and not suppressed
-            if action.default is not None and action.default != argparse.SUPPRESS:
+            # Only show default if there is a help text,
+            # and the default is not None, "", [] and not suppressed
+            if (
+                help_str
+                and action.default is not None
+                and action.default != ""
+                and action.default != []
+                and action.default != argparse.SUPPRESS
+            ):
                 if "%(default)" not in help_str:
                     help_str += f" (default: {action.default})"
             return help_str
@@ -262,11 +274,10 @@ def create_parser():
     )
 
     common_refinement_parent = argparse.ArgumentParser(add_help=False)
-    # TODO does not work for single command line argument
     common_refinement_parent.add_argument(
         "--servalcat_args",
         type=str,
-        default=[],
+        default="",
         help="Command line arguments for Servalcat (quoted)."
         + " Do not use options -s, --source, --config and --hout here.",
     )
@@ -391,10 +402,11 @@ def create_parser():
         "--n_batches",
         type=positive_int,
         nargs="+",
-        default=0,  # default values set up in validate_args()
+        default=[],  # default value [60] set up in validate_pipeline()
         help="Number of batches per merging group, or list of batch edges"
         + " where to split the data."
-        + " Must be a positive integer or space-separated list of positive integers.",
+        + " Must be a positive integer or space-separated list of positive integers."
+        + " Default: 60 batches per group.",
     )
     pipeline_parser.add_argument(
         "--merge_whole_file",
@@ -467,11 +479,11 @@ def create_parser():
         ),
     )
 
-    def validate_common(args):
+    def validate_common(args: argparse.Namespace) -> None:
         if args.n_proc <= 0:
             parser.error("--n_proc must be positive")
 
-    def validate_model_dir(args, n_required):
+    def validate_model_dir(args: argparse.Namespace, n_required: int) -> None:
         if not args.model_dir:
             return
         model_files = []
@@ -485,7 +497,7 @@ def create_parser():
             )
         args.models = sorted(model_files)[:n_required]
 
-    def validate_pipeline(args):
+    def validate_pipeline(args: argparse.Namespace) -> None:
         validate_common(args)
         if args.n_batches and not args.hklin_unmerged:
             parser.error("--n_batches requires --hklin_unmerged to be provided.")
@@ -514,10 +526,10 @@ def create_parser():
         ):
             parser.error("--fraction_zero must be in the range [0.0, 1.0).")
 
-    def validate_mean(args):
+    def validate_mean(args: argparse.Namespace) -> None:
         validate_common(args)
 
-    def validate_bootstrap(args):
+    def validate_bootstrap(args: argparse.Namespace) -> None:
         validate_common(args)
         # TODO
         if not args.hklin:
@@ -548,18 +560,37 @@ def create_parser():
     # Parse and validate immediately
     original_parse_args = parser.parse_args
 
-    def parse_and_validate(cmd_args=None):
+    def join_option_value(cmd_args: list[str], option: str) -> list[str]:
+        # "--option value" -> "--option=value", so that a value starting with "-"
+        # (e.g. --servalcat_args "--nscr") is not taken for another option
+        joined = []
+        i = 0
+        while i < len(cmd_args):
+            if cmd_args[i] == option and i + 1 < len(cmd_args):
+                joined.append(f"{option}={cmd_args[i + 1]}")
+                i += 2
+            else:
+                joined.append(cmd_args[i])
+                i += 1
+        return joined
+
+    def parse_and_validate(cmd_args: list[str] | None = None) -> argparse.Namespace:
+        if cmd_args is None:
+            cmd_args = sys.argv[1:]
+        cmd_args = join_option_value(cmd_args, "--servalcat_args")
         args = original_parse_args(cmd_args)
         if hasattr(args, "func"):
             args.func(args)
         return args
 
-    parser.parse_args = parse_and_validate
+    # argparse.ArgumentParser.parse_args is overloaded in the type stubs,
+    # so mypy does not accept replacing it
+    parser.parse_args = parse_and_validate  # type: ignore[method-assign, assignment]
 
     return parser
 
 
-def read_small_molecule_cif(hklin: str):
+def read_small_molecule_cif(hklin: str) -> gemmi.Mtz | None:
     """Read reflection data from a small molecule CIF (SHELX) using Servalcat.
 
     Same as `servalcat util sm2mm`, including the wavelength.
@@ -579,26 +610,30 @@ def read_small_molecule_cif(hklin: str):
 
 
 def check_reflection_file_columns(
-    hklin: str,
+    hklin: str | gemmi.Mtz,
     unmerged: bool = False,
     prefer_amplitude: bool = False,
     search_col_free: bool = False,
-):
+) -> tuple[str, bool, str]:
     """
     Check the input reflection file for the presence of intensities,
     amplitudes and Friedel pairs. Find the column labels and decide which to use.
 
     Args:
-        hklin (str): gemmi.Mtz object or path to the input reflection file.
+        hklin (str | gemmi.Mtz): gemmi.Mtz object or path to the input
+            reflection file.
         unmerged (bool): Whether the input file is unmerged data.
         prefer_amplitude (bool): If both intensities and amplitudes are found,
             prefer amplitudes over intensities.
         search_col_free (bool): Whether to search only for a free reflection column
 
     Returns:
-        tuple: A tuple containing three boolean values:
+        tuple: A tuple containing three values:
             - labin (str): Column labels for --labin option in Servalcat.
-            - anom: True if Friedel pairs are present.
+            - anom (bool): True if Friedel pairs are present.
+            - col_free (str): Label of the free R flag column, "" if not found.
+            With search_col_free, returns ("", False, col_free) as soon as
+            the free R flag column is found.
     """
     if not isinstance(hklin, gemmi.Mtz):
         m = gemmi.read_mtz_file(hklin)
@@ -629,7 +664,7 @@ def check_reflection_file_columns(
                 logging.info(f"Column with free R flag (type I) found: {column.label}")
                 if search_col_free:
                     logging.info("Free R flag column found successfully.")
-                    return None, None, col_free
+                    return "", False, col_free
         elif column.type == "K":
             logging.info(
                 f"Column with intensity (type K, Friedel pairs) found: {column.label}"
@@ -678,7 +713,7 @@ def check_reflection_file_columns(
             if unmerged:
                 logging.warning(unexpected_column_warning)
 
-    labin = None
+    labin = ""
     if not prefer_amplitude:
         if len(col_iplusminus) >= 2 and len(col_sigiplusminus) >= 2:
             labin = (
@@ -714,7 +749,7 @@ def check_reflection_file_columns(
     return labin, anom, col_free
 
 
-def copy_cell_mtz(mtz_input, mtz_reference):
+def copy_cell_mtz(mtz_input: str, mtz_reference: str) -> str:
     """
     Copy unit cell parameters from a reference MTZ file to
     an MTZ file using gemmi.
@@ -740,28 +775,28 @@ def copy_cell_mtz(mtz_input, mtz_reference):
 
 
 def merge_in_groups(
-    unmerged,
-    n_bins,
-    prefix,
-    n_batches_per_group=60,
-    batches_edges=[],
-    merge_whole_file=False,
-    i_group_prefix=0,
-):
+    unmerged: str,
+    n_bins: int,
+    prefix: str,
+    n_batches_per_group: int = 60,
+    batches_edges: list[int] = [],
+    merge_whole_file: bool = False,
+    i_group_prefix: int = 0,
+) -> tuple[list[str], list[list[dict]], list[int], gemmi.Binner]:
 
     def merge_group(
-        df_groups,
-        i_group,
-        cell,
-        spacegroup,
-        binner,
-        n_expected,
-        wavelength=0,
-        n_groups=0,
-        anom=True,
-        prefix="",
-        i_group_prefix=0,
-    ):
+        df_groups: list[pandas.DataFrame],
+        i_group: int,
+        cell: gemmi.UnitCell,
+        spacegroup: gemmi.SpaceGroup,
+        binner: gemmi.Binner,
+        n_expected: int,
+        wavelength: float = 0.0,
+        n_groups: int = 0,
+        anom: bool = True,
+        prefix: str = "",
+        i_group_prefix: int = 0,
+    ) -> tuple[str, list[dict]]:
         intensities = gemmi.Intensities()
         intensities.set_data(
             cell,
@@ -776,7 +811,7 @@ def merge_in_groups(
             intensities.prepare_for_merging(gemmi.DataType.Mean)
         bin_stats = intensities.calculate_merging_stats(binner)
         # Collect bin statistics into a list of dictionaries
-        bin_stats_list = []
+        bin_stats_list: list[dict] = []
         for n, stats in enumerate(bin_stats):
             bin_stats_list.append(
                 {
@@ -816,7 +851,7 @@ def merge_in_groups(
                 len(str(n_groups))
             )
         else:
-            g_with_leading_zeros = i_group_prefix + i_group + 1
+            g_with_leading_zeros = str(i_group_prefix + i_group + 1)
         # After merging, add <I> <I/sigI> n_unique n_obs completeness multiplicity
         df = pandas.DataFrame(
             data=mtz_group_merged.array, columns=mtz_group_merged.column_labels()
@@ -879,7 +914,7 @@ def merge_in_groups(
         d_array = m.cell.calculate_d_array(m.make_miller_array())
         dmax = max(d_array)
         dmin = min(d_array)
-    if unmerged.lower().endswith(".cif") or unmerged.lower().endswith(".ent"):
+    elif unmerged.lower().endswith(".cif") or unmerged.lower().endswith(".ent"):
         doc = gemmi.cif.read(unmerged)
         rblocks = gemmi.as_refln_blocks(doc)
         for rblock in rblocks:
@@ -1003,7 +1038,7 @@ def merge_in_groups(
     return mtz_groups, bin_stats_lists, n_expected_list, binner_master
 
 
-def run_molrep(model, mtz):
+def run_molrep(model: str, mtz: str) -> str:
     import shutil
 
     prefix_local = f"{os.path.splitext(os.path.basename(mtz))[0]}_molrep"
@@ -1052,7 +1087,7 @@ def dict_deep_merge(base: dict, update: dict) -> dict:
     --------
     >>> base = {"a": [1, 2], "b": {"x": 1}}
     >>> update = {"a": [2, 3], "b": {"y": 2}}
-    >>> deep_merge(base, update)
+    >>> dict_deep_merge(base, update)
     {'a': [1, 2, 3], 'b': {'x': 1, 'y': 2}}
     """
     for key, value in update.items():
@@ -1072,14 +1107,14 @@ def dict_deep_merge(base: dict, update: dict) -> dict:
     return base
 
 
-def run_servalcat_fwt(mtz_groups_i, prefix="", n_proc=1):
+def run_servalcat_fwt(mtz_groups_i: list[str], n_proc: int = 1) -> list[str]:
     """
     Run `servalcat fw` to perform French Wilson conversion of intensities
        to structure factor amplitudes.
 
     Args:
-        mtz_groups_i (list): List of input MTZ files.
-        prefix (str): Prefix for the output files.
+        mtz_groups_i (list[str]): List of input MTZ files.
+        n_proc (int): Number of parallel servalcat fw runs.
 
     Returns:
         list: List of output MTZ files, columns
@@ -1091,7 +1126,7 @@ def run_servalcat_fwt(mtz_groups_i, prefix="", n_proc=1):
     )
     mtz_groups_fi = []
 
-    def run_fw_one(args):
+    def run_fw_one(args: tuple[int, str]) -> str:
         i_group, mtz_group_i = args
         group_fi_prefix = os.path.splitext(os.path.basename(mtz_group_i))[0] + "F"
         log_group_fi = f"{group_fi_prefix}.log"
@@ -1106,7 +1141,7 @@ def run_servalcat_fwt(mtz_groups_i, prefix="", n_proc=1):
             return mtz_group_fi
         except subprocess.CalledProcessError as e:
             logging.error(f"Error occurred while running command: {e}")
-            return None
+            return ""
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=n_proc) as executor:
         results = list(executor.map(run_fw_one, enumerate(mtz_groups_i)))
@@ -1115,24 +1150,70 @@ def run_servalcat_fwt(mtz_groups_i, prefix="", n_proc=1):
 
 
 def run_servalcat_refine(
-    mtzs_fi,
-    labins,
-    models,
-    mtzs_free=[],
-    prefix="multixem_",
-    source="xray",
-    keyword_file="",
-    config_yaml="",
-    arguments=[],
-    sigmaa=True,
-    quick=False,
-    n_proc=1,
-):
+    mtzs_fi: list[str],
+    labins: list[str],
+    models: list[str],
+    mtzs_free: list[str] = [],
+    prefix: str = "multixem_",
+    source: str = "xray",
+    keyword_file: str = "",
+    config_yaml: str = "",
+    arguments: list[str] = [],
+    sigmaa: bool = True,
+    quick: bool = False,
+    n_proc: int = 1,
+) -> tuple[list[str], list[str], list[str]]:
+    """
+    Refine models against reflection data with `servalcat refine_xtal_norefmac`,
+    running up to n_proc refinements in parallel.
+
+    Returns:
+        tuple: Three lists of file names, one item per refinement,
+            in the order of the refinement jobs:
+            - refined_mmcifs (list[str]): Refined models, {prefix}.mmcif.
+            - refined_mtzs (list[str]): Map coefficients. With sigmaa,
+              {prefix}_sigmaa.mtz from `servalcat sigmaa`, or "" if it was
+              not created; otherwise {prefix}.mtz from the refinement.
+            - refined_jsons (list[str]): Refinement statistics,
+              {prefix}_stats.json.
+            Here {prefix} is the output prefix of each refinement, see refine_one().
+    """
     refined_mmcifs = []
     refined_mtzs = []
     refined_jsons = []
 
-    def refine_one(params):
+    def refine_one(
+        params: tuple[int, tuple[str, str, str, str, str]],
+    ) -> tuple[str, str, str]:
+        """
+        Run one refinement, and `servalcat sigmaa` if sigmaa is True.
+
+        The output prefix is the given prefix, + "llweight{i_mtz}_" when refining
+        against a bootstrap data set (+ "unre_" with --weight), + "refine".
+
+        Args:
+            params (tuple): (i_mtz, (mtz_fi, labin, mtz_free, model, prefix)),
+                as produced by enumerate() over the refinement jobs:
+                - i_mtz (int): Index of the refinement job, used for
+                  "llweight{i_mtz}_" in the output prefix.
+                - mtz_fi (str): MTZ file with the reflection data (--hklin).
+                - labin (str): Column labels of the data (--labin).
+                - mtz_free (str): MTZ file passed as --hklin_free: the file with
+                  free R flags, or the bootstrap data set with the llweight
+                  column; "" if not given.
+                - model (str): Input model file (--model).
+                - prefix (str): Base of the output prefix.
+
+        Returns:
+            tuple: File names (refined_mmcif, refined_mtz, refined_json):
+                - refined_mmcif (str): {prefix}.mmcif
+                - refined_mtz (str): {prefix}_sigmaa.mtz with sigmaa
+                  ("" if it was not created), {prefix}.mtz otherwise.
+                - refined_json (str): {prefix}_stats.json
+
+        Raises:
+            FileNotFoundError: If the refinement did not create {prefix}_stats.json.
+        """
         i_mtz, (mtz_fi, labin, mtz_free, model, prefix) = params
         local_refined_mmcifs = []
         local_refined_mtzs = []
@@ -1176,6 +1257,7 @@ def run_servalcat_refine(
                 process = subprocess.Popen(
                     cmd, stdout=log_file, stderr=subprocess.PIPE, text=True, bufsize=1
                 )
+                assert process.stderr is not None  # stderr=subprocess.PIPE
                 for line in process.stderr:
                     logging.error(line.rstrip())
                     log_file.write(line)
@@ -1233,7 +1315,7 @@ def run_servalcat_refine(
             prefixes = [prefix] * len(mtzs_fi)
         else:
             prefixes = [f"{prefix}group{i_mtz + 1}_" for i_mtz in range(len(mtzs_fi))]
-        params = zip(mtzs_fi, labins, [None] * len(mtzs_fi), models_list, prefixes)
+        params = zip(mtzs_fi, labins, [""] * len(mtzs_fi), models_list, prefixes)
     elif len(mtzs_free) == 1:
         # refinement after merging, single free set provided
         if len(mtzs_fi) == 1 and "group" not in prefix:
@@ -1262,12 +1344,12 @@ def run_servalcat_refine(
 
 
 def compare_mtzs_fi(
-    mtzs_fi: list,
+    mtzs_fi: list[str],
     binner: gemmi.Binner,
-    labins: list = ["IMEAN,SIGIMEAN"],
-    bin_stats_matrix: list = [],
-    n_expected: list = [],
-):
+    labins: list[str] = ["IMEAN,SIGIMEAN"],
+    bin_stats_matrix: list[list[list[dict]]] = [],
+    n_expected: list[int] = [],
+) -> tuple[list[list[list[dict]]], numpy.ndarray, numpy.ndarray]:
     """
     Compare multiple MTZ files containing reflection data (preferably
     reflection intensities) and calculate statistics for each pair of MTZ files.
@@ -1279,9 +1361,9 @@ def compare_mtzs_fi(
         mtz_fi2: str,
         binner: gemmi.Binner,
         labin: str = "IMEAN,SIGIMEAN",
-        bin_stats_list1: list = [],
-        bin_stats_list2: list = [],
-    ):
+        bin_stats_list1: list[dict] = [],
+        bin_stats_list2: list[dict] = [],
+    ) -> tuple[list[dict], list[int], float]:
         # f_col = "F"
         i_col = labin.split(",")[
             0
@@ -1624,7 +1706,7 @@ def compare_mtzs_fi(
     return bin_stats_matrix, n_refl_matrix, ratio_refl_matrix
 
 
-def main():
+def main() -> None:
     parser = create_parser()
     args = parser.parse_args()
     if hasattr(args, "func"):
@@ -1651,7 +1733,7 @@ def main():
         refined_json_ref = (
             refined_json_ref_candidate
             if os.path.isfile(refined_json_ref_candidate)
-            else None
+            else ""
         )
         llweight_R1_outliers = []
         if refined_jsons:
@@ -1663,19 +1745,19 @@ def main():
         refined_mmcif_ref = (
             refined_mmcif_ref_candidate
             if os.path.isfile(refined_mmcif_ref_candidate)
-            else None
+            else ""
         )
 
         refined_mtz_ref_candidate = f"{args.file_name_template}_refine.mtz"
         refined_mtz_ref = (
             refined_mtz_ref_candidate
             if os.path.isfile(refined_mtz_ref_candidate)
-            else None
+            else ""
         )
 
-        for f in [refined_json_ref, refined_mmcif_ref, refined_mtz_ref]:
-            if f:
-                logging.info(f"Reference file found: {f}")
+        for ref_file in [refined_json_ref, refined_mmcif_ref, refined_mtz_ref]:
+            if ref_file:
+                logging.info(f"Reference file found: {ref_file}")
 
         refined_mmcifs = sort_llweight_files(
             glob.glob(f"{args.file_name_template}_llweight*_refine.mmcif")
@@ -1853,7 +1935,7 @@ def main():
             if i == 0:
                 binner_master = _binner_master
             if args.amplitude:
-                _mtzs_fwt = run_servalcat_fwt(_mtz_groups_i, prefix, n_proc)
+                _mtzs_fwt = run_servalcat_fwt(_mtz_groups_i, n_proc=n_proc)
                 mtzs_merged.extend(_mtzs_fwt)
                 labins.extend(["F,SIGF"] * n_groups_this_file)
             else:
@@ -1954,7 +2036,7 @@ def main():
     assert n_mtzs_merged == len(labins)
 
     # Avoid shared inner-list aliasing by creating separate lists
-    bin_stats_matrix = [
+    bin_stats_matrix: list[list[list[dict]]] = [
         [[] for _ in range(n_mtzs_merged)] for _ in range(n_mtzs_merged)
     ]
     for i in range(n_mtzs_merged):
@@ -2000,9 +2082,7 @@ def main():
         logging.info("")
 
     if args.command == "pipeline" and args.unify_cell:
-        for i, mtz in enumerate(mtzs_merged):
-            if i == 0:
-                continue
+        for i in range(1, len(mtzs_merged)):  # i==0 is skipped
             mtzs_merged[i] = copy_cell_mtz(mtzs_merged[i], mtzs_merged[0])
 
     models = []
@@ -2022,7 +2102,7 @@ def main():
         config_yaml = ""
         geometry_objects_ref = []
         if args.geometry_cids or args.servalcat_config:
-            config_yaml_dict = {}
+            config_yaml_dict: dict = {}
             if args.servalcat_config:
                 with open(args.servalcat_config, "r") as f:
                     config_yaml_dict = yaml.safe_load(f) or {}
@@ -2042,7 +2122,7 @@ def main():
             mtzs_merged,
             labins,
             models,
-            mtzs_free=[args.hklin_free],
+            mtzs_free=[args.hklin_free] if args.hklin_free else [],
             prefix=prefix,
             source=args.source,
             arguments=servalcat_args,
@@ -2172,7 +2252,7 @@ def main():
                     prefix=prefix,
                 )
 
-                if llweight_R1_outliers is not None:
+                if llweight_R1_outliers:
                     # Filter out the outliers
                     refined_mmcifs_bootstrap = filter_out_refined_files(
                         refined_mmcifs_bootstrap, llweight_R1_outliers
