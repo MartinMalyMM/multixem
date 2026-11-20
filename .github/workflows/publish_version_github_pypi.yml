@@ -37,10 +37,30 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Auto-release
+      # check the version, read CHANGELOG.md and build dist/ of the tested commit
+      - name: Check version and build
+        id: build
         uses: ./.github/actions/pypi-auto-publish
         with:
-          gh-token: ${{ secrets.GITHUB_TOKEN }}
           parse-changelog: true
-          # build, publish and tag the tested commit
           git-ref: ${{ github.event.workflow_run.head_sha }}
+
+      # trusted publishing (OIDC), no API token; must be called from the workflow,
+      # not from inside the composite action
+      - name: Publish to PyPI
+        if: steps.build.outputs.is-released == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+      # tag and GitHub release of the tested commit, after PyPI succeeded;
+      # gh (GitHub CLI) is preinstalled on the runner. The values are passed
+      # via env, so quotes or $ in the changelog cannot break the command.
+      - name: GitHub release
+        if: steps.build.outputs.is-released == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.build.outputs.version }}
+          NOTES: ${{ steps.build.outputs.changes }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: gh release create "$VERSION" --target "$SHA" --title "$VERSION" --notes "$NOTES"

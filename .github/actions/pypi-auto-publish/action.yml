@@ -1,16 +1,13 @@
-name: 'Python auto-release (PyPI & GitHub)'
+name: 'Python auto-release: check version and build'
 author: 'Conchylicultor'
-description: 'Auto-detect version increase, build and publish PyPI, tag and release on GitHub, parse `CHANGELOG.md`.'
+description: 'Auto-detect version increase, parse `CHANGELOG.md` and build the package. Publishing to PyPI and the GitHub release are done by the calling workflow.'
 branding:
   icon: upload-cloud
   color: orange
 
-# PyPI: trusted publishing (OIDC), the calling job needs `permissions: id-token: write`
-# and must match the trusted publisher set up on PyPI (workflow file, environment).
+# pypa/gh-action-pypi-publish cannot run inside a composite action (it derives its
+# Docker image from the calling action), so the workflow publishes the built dist/.
 inputs:
-  gh-token:
-    description: 'Github action token. If missing, GitHub release is skipped.'
-    required: false
   parse-changelog:
     description: 'Parse the `CHANGELOG.md` (`keep a changelog` format).'
     required: false
@@ -32,8 +29,11 @@ outputs:
     description: "Local project version detected (e.g. `'1.0.0'`)"
     value: ${{ steps.compare-version.outputs.version }}
   is-released:
-    description: "Whether a new release was triggered (`'true'` / `'false'`)"
+    description: "Whether a new release should be published (`'true'` / `'false'`)"
     value: ${{ steps.compare-version.outputs.should-release }}
+  changes:
+    description: "CHANGELOG.md entry of the version (with parse-changelog)"
+    value: ${{ steps.changelog.outputs.changes }}
 
 runs:
   using: "composite"
@@ -81,44 +81,20 @@ runs:
         inputs.parse-changelog == 'true'
         && steps.compare-version.outputs.should-release == 'true'
       id: changelog
-      uses: mindsers/changelog-reader-action@v2
+      # pinned to a commit: a tag can be moved, a commit SHA cannot
+      uses: mindsers/changelog-reader-action@1faaf50aa09d5793d9a100819973df801febfb31  # v2.4.0
       with:
         path: ${{ inputs.path }}/CHANGELOG.md
         # the entry of the released version, not e.g. an empty [Unreleased]
         version: ${{ steps.compare-version.outputs.version }}
 
-    # Build and publish the package (if local `__version__` > PyPI version)
+    # Build the package into dist/ (if local `__version__` > PyPI version)
     - if: steps.compare-version.outputs.should-release == 'true'
       run: |
         python -m pip install --upgrade build
         python -m build
       shell: bash
       working-directory: ${{ inputs.path }}
-
-    # trusted publishing (OIDC), no API token
-    - if: steps.compare-version.outputs.should-release == 'true'
-      uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        packages-dir: ${{ inputs.path }}/dist
-
-    # Use env indirection to support multi-lines variable
-    - if: steps.compare-version.outputs.should-release == 'true'
-      run: |
-        echo "release-body=$RELEASE_BODY"
-      env:
-        RELEASE_BODY: ${{ steps.changelog.outputs.changes }}
-      shell: bash
-
-    - if: |
-        inputs.gh-token
-        && steps.compare-version.outputs.should-release == 'true'
-      uses: ncipollo/release-action@v1
-      with:
-        # tag the commit which was built (git-ref), github.sha otherwise
-        commit: ${{ inputs.git-ref != '' && inputs.git-ref != 'skip' && inputs.git-ref || github.sha }}
-        tag: ${{ steps.compare-version.outputs.version }}
-        token: ${{ inputs.gh-token }}
-        body: ${{ steps.changelog.outputs.changes }}
 
 # Based on etils-actions/pypi-auto-publish
 # Original: Apache License 2.0
