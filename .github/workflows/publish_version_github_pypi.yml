@@ -10,7 +10,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 # never run two releases at the same time
 concurrency:
@@ -26,6 +26,11 @@ jobs:
       && github.event.workflow_run.event == 'push'
       && github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
+    # must match the environment of the trusted publisher on PyPI
+    environment: pypi
+    permissions:
+      contents: write  # GitHub tag and release
+      id-token: write  # OIDC token for PyPI trusted publishing
     steps:
       # the commit which was tested, not the latest commit on main
       - uses: actions/checkout@v4
@@ -35,7 +40,6 @@ jobs:
       - name: Auto-release
         uses: ./.github/actions/pypi-auto-publish
         with:
-          pypi-token: ${{ secrets.PYPI_API_TOKEN }}
           gh-token: ${{ secrets.GITHUB_TOKEN }}
           parse-changelog: true
           # build, publish and tag the tested commit
