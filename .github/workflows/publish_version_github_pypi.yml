@@ -1,19 +1,33 @@
 name: Python auto-release
 
+# Release only after the "Test" workflow passed (all jobs of its matrix)
+# for a push to main. A new version is released only if the version
+# in the package is higher than the last version on PyPI.
 on:
   workflow_run:
-    workflows: ["Lint", "Test"]
+    workflows: ["Test"]
     types: [completed]
     branches: [main]
 
 permissions:
   contents: write
 
+# never run two releases at the same time
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # only a successful test run of a push to main of this repository,
+    # not a pull request (e.g. from a fork with a branch named main)
+    if: >-
+      github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.event == 'push'
+      && github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
+      # the commit which was tested, not the latest commit on main
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
@@ -24,3 +38,5 @@ jobs:
           pypi-token: ${{ secrets.PYPI_API_TOKEN }}
           gh-token: ${{ secrets.GITHUB_TOKEN }}
           parse-changelog: true
+          # build, publish and tag the tested commit
+          git-ref: ${{ github.event.workflow_run.head_sha }}

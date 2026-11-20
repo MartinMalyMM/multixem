@@ -86,6 +86,8 @@ runs:
       uses: mindsers/changelog-reader-action@v2
       with:
         path: ${{ inputs.path }}/CHANGELOG.md
+        # the entry of the released version, not e.g. an empty [Unreleased]
+        version: ${{ steps.compare-version.outputs.version }}
 
     # Publish the package (if local `__version__` < pip version)
     - if: |
@@ -114,7 +116,8 @@ runs:
         && steps.compare-version.outputs.should-release == 'true'
       uses: ncipollo/release-action@v1
       with:
-        commit: ${{ github.sha }}
+        # tag the commit which was built (git-ref), github.sha otherwise
+        commit: ${{ inputs.git-ref != '' && inputs.git-ref != 'skip' && inputs.git-ref || github.sha }}
         tag: ${{ steps.compare-version.outputs.version }}
         token: ${{ inputs.gh-token }}
         body: ${{ steps.changelog.outputs.changes }}
