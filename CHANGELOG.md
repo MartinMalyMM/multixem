@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-20
+- Type annotations
+- Several bug fixes and a new test
+- Automated build and release using OICD
+
 ## [0.4.1] - 2026-11-18
 - Bug fix related to conversion of diffraction data from small molecule CIF to MTZ
 - Minor bug fix related to mean maps using servalcat sigmaa
